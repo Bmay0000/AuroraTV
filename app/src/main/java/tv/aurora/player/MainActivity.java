@@ -390,8 +390,14 @@ public class MainActivity extends Activity {
      body.addView(button("CATEGORIES   /   "+selectedCategory+"  ▾",this::chooseGuideCategory));
      TextView helper=text("Live programmes shown in your device's local time · only visible channels appear",14);
      helper.setTextColor(0xffa8c4ce);body.addView(helper);
+     // TV hardware reports different dp widths; keep the timeline horizontally
+     // navigable instead of clipping programme and mapping controls.
+     HorizontalScrollView horizontal=new HorizontalScrollView(this);
+     horizontal.setHorizontalScrollBarEnabled(false);
+     horizontal.setFillViewport(true);
+     body.addView(horizontal,new LinearLayout.LayoutParams(-1,0,1));
      ScrollView scroll=new ScrollView(this);
-     body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+     horizontal.addView(scroll,new FrameLayout.LayoutParams(dp(940),-1));
      LinearLayout feed=column();scroll.addView(feed);
      LinearLayout timeline=new LinearLayout(this);
      timeline.setPadding(0,dp(6),0,dp(6));timeline.setBackground(shape(0xff18374a));
