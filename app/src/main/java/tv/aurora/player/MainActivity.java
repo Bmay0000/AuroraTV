@@ -23,8 +23,8 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff080f1d,PANEL=0xff142238,ACCENT=0xff54e0c5;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;ExecutorService artworkIO=Executors.newFixedThreadPool(3);LruCache<String,Bitmap> artworkCache=new LruCache<String,Bitmap>(8192){@Override protected int sizeOf(String key,Bitmap bitmap){return bitmap.getByteCount()/1024;}};
- @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;
+ @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV2",false)&&!allowed.isEmpty()){
     // An existing English-only choice previously retained unclassified groups.
     // Migrate once to strict filtering; user can turn this off in Smart Library.
@@ -185,14 +185,14 @@ public class MainActivity extends Activity {
   if(rows.isEmpty()){cards.addView(text("No visible titles. Try changing your library filters.",15));return;}
   for(LibraryCore.Item item:rows)cards.addView(mediaCard(item,type));
   cards.addView(button("VIEW ALL  →",()->{section=type;page=0;category="All";query="";favOnly=false;hiddenOnly=false;browse();}),
-    new LinearLayout.LayoutParams(dp(170),dp(174)));
+    new LinearLayout.LayoutParams(dp(160),dp(type.equals("live")?174:250)));
  }
  View mediaCard(LibraryCore.Item item,String type){
   LinearLayout card=column();card.setPadding(dp(5),dp(5),dp(5),dp(5));
-  LinearLayout.LayoutParams outer=new LinearLayout.LayoutParams(dp(178),dp(191));outer.rightMargin=dp(12);card.setLayoutParams(outer);
+  LinearLayout.LayoutParams outer=new LinearLayout.LayoutParams(dp(170),dp(type.equals("live")?191:273));outer.rightMargin=dp(12);card.setLayoutParams(outer);
   int start=type.equals("live")?0xff117168:type.equals("movie")?0xff5b3c79:0xff255f83;
   FrameLayout artwork=new FrameLayout(this);artwork.setBackground(gradient(start,PANEL,14));
-  card.addView(artwork,new LinearLayout.LayoutParams(-1,dp(123)));
+  card.addView(artwork,new LinearLayout.LayoutParams(-1,dp(type.equals("live")?123:205)));
   TextView badge=headline(type.equals("live")?"● LIVE":type.equals("movie")?"◆ MOVIE":"▣ SERIES",12,0xffd5fff6);
   FrameLayout.LayoutParams badgeParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.LEFT);
   badgeParams.setMargins(dp(10),dp(8),0,0);artwork.addView(badge,badgeParams);
@@ -201,39 +201,17 @@ public class MainActivity extends Activity {
   displayArtwork(artwork,item.artwork);
   TextView title=text(item.name,15);title.setMaxLines(2);title.setEllipsize(TextUtils.TruncateAt.END);
   card.addView(title);
-  card.setOnClickListener(v->open(item));
+  card.setOnClickListener(v->{if(type.equals("live"))open(item);else showMediaDetails(item);});
   card.setFocusable(true);card.setBackground(shape(PANEL));
   card.setOnFocusChangeListener((v,focused)->card.setBackground(shape(focused?0xff1d746f:PANEL)));
   return card;
  }
  void displayArtwork(FrameLayout frame,String url){
-  if(url==null||!url.startsWith("http")||url.length()>1000)return;
-  if(url.matches("(?i).*(username=|password=|token=).*"))return;
-  Bitmap existing=artworkCache.get(url);
-  ImageView poster=new ImageView(this);poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
-  FrameLayout.LayoutParams size=new FrameLayout.LayoutParams(-1,-1);
-  frame.addView(poster,0,size);
-  if(existing!=null){poster.setImageBitmap(existing);return;}
-  artworkIO.execute(()->{
-   Bitmap bitmap=null;
-   HttpURLConnection conn=null;
-   try{
-    conn=(HttpURLConnection)new URL(url).openConnection();
-    conn.setConnectTimeout(4500);conn.setReadTimeout(4500);
-    if(conn.getResponseCode()!=200||conn.getContentLength()>2*1024*1024)return;
-    try(InputStream in=conn.getInputStream()){
-     BitmapFactory.Options options=new BitmapFactory.Options();options.inSampleSize=4;
-     bitmap=BitmapFactory.decodeStream(in,null,options);
-    }
-   }catch(Exception ignored){}finally{if(conn!=null)conn.disconnect();}
-   if(bitmap!=null){
-    Bitmap safe=bitmap;
-    artworkCache.put(url,safe);
-    runOnUiThread(()->{if(!isDestroyed())poster.setImageBitmap(safe);});
-   }
-  });
+  ImageView image=new ImageView(this);
+  image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+  frame.addView(image,0,new FrameLayout.LayoutParams(-1,-1));
+  posters.bind(image,url);
  }
-
 
  void browse(){
   if(!store.hasLibrary()){loginScreen(false);return;}
@@ -1048,7 +1026,7 @@ public class MainActivity extends Activity {
  }
  @Override protected void onDestroy(){
   generation++;browseToken++;
-  release();io.shutdownNow();artworkIO.shutdownNow();epgRefreshIO.shutdownNow();shortEpgIO.shutdownNow();store.close();epg.close();
+  release();io.shutdownNow();posters.close();epgRefreshIO.shutdownNow();shortEpgIO.shutdownNow();store.close();epg.close();
   super.onDestroy();
  }
  void toast(String s){if(!isDestroyed())Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
