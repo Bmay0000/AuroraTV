@@ -382,6 +382,17 @@ public final class GuideEngine extends SQLiteOpenHelper {
             }
         }finally{connection.disconnect();}
     }
+    public void clearSource(String source){
+        if(!supportedSource(source))return;
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try{
+            db.execSQL("DELETE FROM programs WHERE source=?",new Object[]{source});
+            db.execSQL("DELETE FROM guide_channels WHERE source=?",new Object[]{source});
+            db.execSQL("DELETE FROM manual WHERE source=?",new Object[]{source});
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
+    }
     public void clearProvider(){
         SQLiteDatabase db=getWritableDatabase();
         db.beginTransaction();
