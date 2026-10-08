@@ -567,11 +567,11 @@ public class MainActivity extends Activity {
   }else{
    card=column();
    card.setPadding(dp(5),dp(5),dp(5),dp(5));
-   card.setLayoutParams(new AbsListView.LayoutParams(-1,dp(292)));
+   card.setLayoutParams(new AbsListView.LayoutParams(-1,dp(tv().posterCardHeight+8)));
    holder=new PosterTile();
    FrameLayout cover=new FrameLayout(this);
    cover.setBackground(gradient(0xff234554,0xff121f36,12));
-   card.addView(cover,new LinearLayout.LayoutParams(-1,dp(222)));
+   card.addView(cover,new LinearLayout.LayoutParams(-1,dp(tv().posterHeight)));
    holder.initial=headline("A",48,0xff557f97);
    cover.addView(holder.initial,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
    holder.image=new ImageView(this);
@@ -587,7 +587,7 @@ public class MainActivity extends Activity {
    holder.title.setTypeface(null,Typeface.BOLD);
    holder.title.setMaxLines(2);
    holder.title.setEllipsize(TextUtils.TruncateAt.END);
-   holder.title.setPadding(dp(6),dp(4),dp(6),0);
+   holder.title.setPadding(dp(7),dp(5),dp(7),0);
    card.addView(holder.title,new LinearLayout.LayoutParams(-1,dp(43)));
    holder.category=text("",12);
    holder.category.setSingleLine(true);
@@ -598,9 +598,9 @@ public class MainActivity extends Activity {
    card.setTag(holder);
    card.setFocusable(false);
    card.setClickable(false);
-   card.setBackground(shape(PANEL));
+   card.setBackground(rounded(PANEL,14,0xff24384c));
    card.setOnFocusChangeListener((v,focused)->{
-    card.setBackground(shape(focused?0xff227d78:PANEL));
+    card.setBackground(rounded(focused?0xff21514c:PANEL,14,focused?ACCENT:0xff24384c));
     card.setScaleX(focused?1.025f:1f);card.setScaleY(focused?1.025f:1f);
    });
   }
@@ -612,32 +612,67 @@ public class MainActivity extends Activity {
   return card;
  }
  void showMediaDetails(LibraryCore.Item item){
+  TvLayout dim=tv();
+  android.app.Dialog dialog=new android.app.Dialog(this);
   LinearLayout panel=column();
-  panel.setPadding(dp(18),dp(8),dp(18),dp(8));
-  LinearLayout horizontal=new LinearLayout(this);
-  panel.addView(horizontal);
-  FrameLayout poster=new FrameLayout(this);
-  poster.setBackground(gradient(0xff22667b,0xff142238,12));
-  horizontal.addView(poster,new LinearLayout.LayoutParams(dp(155),dp(230)));
-  TextView initial=headline(item.name.isEmpty()?"A":item.name.substring(0,1),52,0xff7b98b1);
-  poster.addView(initial,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
-  displayArtwork(poster,item.artwork);
-  LinearLayout detail=column();
-  detail.setPadding(dp(17),dp(4),0,0);
-  horizontal.addView(detail,new LinearLayout.LayoutParams(0,-2,1));
-  detail.addView(headline(item.name,24,Color.WHITE));
-  detail.addView(text(item.type.equals("movie")?"MOVIE":"TV SERIES",13));
-  TextView group=text(item.category,15);group.setTextColor(0xffa9c4d4);
-  detail.addView(group);
-  detail.addView(text(favorites.contains(item.id)?"★ In your favorites":"Add this title to favorites from Options.",13));
-  new AlertDialog.Builder(this)
-   .setTitle("AURORA  /  "+(item.type.equals("movie")?"MOVIES":"SERIES"))
-   .setView(panel)
-   .setPositiveButton(item.type.equals("movie")?"PLAY MOVIE":"VIEW EPISODES",(d,n)->open(item))
-   .setNeutralButton("OPTIONS",(d,n)->actions(item))
-   .setNegativeButton("CLOSE",null)
-   .show();
+  panel.setBackground(gradient(0xff18283d,0xff071321,20));
+  panel.setPadding(dp(23),dp(19),dp(23),dp(23));
+  panel.addView(brand(24));
+  LinearLayout layout=new LinearLayout(this);
+  layout.setGravity(Gravity.CENTER_VERTICAL);
+  LinearLayout.LayoutParams gap=new LinearLayout.LayoutParams(-1,-2);gap.topMargin=dp(14);
+  panel.addView(layout,gap);
+  int posterWidth=TvLayout.clamp(dim.widthDp/5,145,228);
+  int posterHeight=(int)(posterWidth*1.45);
+  FrameLayout cover=new FrameLayout(this);
+  cover.setBackground(gradient(0xff215c6c,0xff102439,15));
+  cover.setClipToOutline(true);
+  layout.addView(cover,new LinearLayout.LayoutParams(dp(posterWidth),dp(posterHeight)));
+  TextView letter=headline(item.name.isEmpty()?"A":item.name.substring(0,1),55,0xff77acc0);
+  cover.addView(letter,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
+  displayArtwork(cover,item.artwork);
+  LinearLayout info=column();info.setGravity(Gravity.CENTER_VERTICAL);
+  info.setPadding(dp(22),0,0,0);layout.addView(info,new LinearLayout.LayoutParams(0,-2,1));
+  info.addView(kicker(item.type.equals("movie")?"MOVIE FROM YOUR LIBRARY":"TV SERIES FROM YOUR LIBRARY"));
+  TextView heading=headline(item.name,TvLayout.clamp(dim.headingSize(),26,37),Color.WHITE);
+  heading.setMaxLines(3);heading.setEllipsize(TextUtils.TruncateAt.END);
+  info.addView(heading);
+  TextView group=text(item.category,16);group.setTextColor(MUTED);info.addView(group);
+  TextView description=text("Ready when you are. Watch or manage this title from your AuroraTV library.",15);
+  description.setTextColor(0xffb4c7d3);
+  LinearLayout.LayoutParams ds=new LinearLayout.LayoutParams(-1,-2);ds.topMargin=dp(13);
+  info.addView(description,ds);
+  LinearLayout controls=new LinearLayout(this);
+  controls.setGravity(Gravity.CENTER_VERTICAL);
+  LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(56));
+  actions.topMargin=dp(17);info.addView(controls,actions);
+  Button play=button(item.type.equals("movie")?"▶  PLAY MOVIE":"▶  VIEW EPISODES",()->{
+   dialog.dismiss();open(item);
+  });
+  play.setBackground(rounded(0xff1a8d7b,12,ACCENT));
+  controls.addView(play,new LinearLayout.LayoutParams(0,-1,1));
+  Button manageButton=button("★  OPTIONS",()->{
+   dialog.dismiss();actions(item);
+  });
+  LinearLayout.LayoutParams manageSpace=new LinearLayout.LayoutParams(0,-1,1);
+  manageSpace.leftMargin=dp(12);controls.addView(manageButton,manageSpace);
+  Button close=button("✕  CLOSE",dialog::dismiss);
+  LinearLayout.LayoutParams closeBounds=new LinearLayout.LayoutParams(-1,dp(43));
+  closeBounds.topMargin=dp(10);panel.addView(close,closeBounds);
+  dialog.setContentView(panel);
+  android.view.Window window=dialog.getWindow();
+  if(window!=null){
+   window.setBackgroundDrawableResource(android.R.color.transparent);
+   window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+   WindowManager.LayoutParams attrs=window.getAttributes();
+   attrs.dimAmount=.74f;window.setAttributes(attrs);
+   window.setLayout(dp(Math.min(dim.widthDp-2*dim.marginX,1080)),-2);
+  }
+  dialog.show();
+  if(window!=null)window.setLayout(dp(Math.min(dim.widthDp-2*dim.marginX,1080)),-2);
+  play.requestFocus();
  }
+
  void browse(){
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="browse";
