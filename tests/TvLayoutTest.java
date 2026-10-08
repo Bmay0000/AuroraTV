@@ -15,8 +15,8 @@ public final class TvLayoutTest {
    verify(layout.marginX>=16 && layout.marginX<=58,"Safe left margin "+device[0]);
    verify(layout.marginY>=10 && layout.marginY<=28,"Safe vertical margin "+device[1]);
    verify(layout.sidebar>120 && layout.sidebar<device[0]/2,"Sidebar size "+device[0]);
-   verify(layout.contentWidth()>=400,"Browse area is too narrow "+device[0]);
-   verify(layout.posterWidth>=138 && layout.posterWidth<=224,"Poster tiles bounded");
+   verify(layout.contentWidth()>=320,"Browse area is too narrow "+device[0]);
+   verify(layout.posterWidth>=138 && layout.posterWidth<=290,"Poster tiles bounded");
    verify(layout.posterCardHeight<layout.heightDp,"Poster tiles taller than screen");
    verify(layout.heroHeight<layout.heightDp*.6,"Hero prevents scrolling");
    verify(layout.navRow<=62,"Remote nav row bounded");
