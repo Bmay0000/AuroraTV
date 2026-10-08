@@ -152,11 +152,10 @@ public class MainActivity extends Activity {
     LibraryStore.Page live=store.page("live","All","",false,false,h,c,fav,langs,unknown,manual,manualGroups,0,10);
     LibraryStore.Page movies=store.page("movie","All","",false,false,h,c,fav,langs,unknown,manual,manualGroups,0,10);
     LibraryStore.Page series=store.page("series","All","",false,false,h,c,fav,langs,unknown,manual,manualGroups,0,10);
-    int l=store.count("live"),m=store.count("movie"),t=store.count("series");
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||!screen.equals("home"))return;
      body.removeAllViews();
-     subtitle.setText(String.format(Locale.US,"%1$,d titles available · Your library, your rules",l+m+t));
+     subtitle.setText("Only your visible entertainment · Your library, your rules");
      ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);body.addView(scroll,new LinearLayout.LayoutParams(-1,-1));
      LinearLayout feed=column();feed.setPadding(0,0,dp(12),dp(30));scroll.addView(feed);
      LinearLayout hero=column();hero.setPadding(dp(24),dp(16),dp(24),dp(18));
@@ -166,20 +165,20 @@ public class MainActivity extends Activity {
      TextView description=text("Browse live television, discover a film or settle in for a series.\nCurated from your own IPTV library.",16);
      description.setTextColor(0xffc6d9e3);hero.addView(description);
      hero.addView(button("EXPLORE LIVE TV  →",()->{section="live";page=0;category="All";favOnly=false;hiddenOnly=false;browse();}));
-     homeShelf(feed,"LIVE TELEVISION","live",l,live.rows);
-     homeShelf(feed,"MOVIES FOR YOU","movie",m,movies.rows);
-     homeShelf(feed,"SERIES TO EXPLORE","series",t,series.rows);
+     homeShelf(feed,"LIVE TELEVISION","live",live.rows);
+     homeShelf(feed,"MOVIES FOR YOU","movie",movies.rows);
+     homeShelf(feed,"SERIES TO EXPLORE","series",series.rows);
     });
    }catch(Exception e){
     runOnUiThread(()->{if(isDestroyed()||token!=browseToken)return;body.removeAllViews();body.addView(text("Unable to load your catalog: "+e.getClass().getSimpleName(),19));body.addView(button("Refresh your library",this::refresh));});
    }
   });
  }
- void homeShelf(LinearLayout feed,String title,String type,int count,List<LibraryCore.Item> rows){
+ void homeShelf(LinearLayout feed,String title,String type,List<LibraryCore.Item> rows){
   LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
   LinearLayout.LayoutParams margin=new LinearLayout.LayoutParams(-1,-2);margin.topMargin=dp(15);feed.addView(top,margin);
   TextView heading=headline(title,21,Color.WHITE);top.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
-  TextView total=text(String.format(Locale.US,"%1$,d titles",count),14);total.setTextColor(0xffadc4d4);top.addView(total);
+  TextView more=text("EXPLORE  →",14);more.setTextColor(ACCENT);top.addView(more);
   HorizontalScrollView scroller=new HorizontalScrollView(this);scroller.setHorizontalScrollBarEnabled(false);feed.addView(scroller);
   LinearLayout cards=new LinearLayout(this);cards.setOrientation(LinearLayout.HORIZONTAL);scroller.addView(cards);
   if(rows.isEmpty()){cards.addView(text("No visible titles. Try changing your library filters.",15));return;}
@@ -334,7 +333,8 @@ public class MainActivity extends Activity {
      String title=(isEditing?"EDIT  /  ":"")+(showHidden?"HIDDEN":onlyFavorites?"FAVORITES":
        type.equals("live")?"LIVE TV":type.equals("movie")?"MOVIES":"TV SHOWS");
      heading.addView(headline(title,25,Color.WHITE),new LinearLayout.LayoutParams(0,-2,1));
-     Button back=button("⌂ Home",this::home);heading.addView(back,new LinearLayout.LayoutParams(dp(135),dp(52)));
+     Button filters=button("LANGUAGE",this::smart);heading.addView(filters,new LinearLayout.LayoutParams(dp(135),dp(52)));
+     Button back=button("⌂ Home",this::home);heading.addView(back,new LinearLayout.LayoutParams(dp(125),dp(52)));
      body.addView(heading);
 
      // Users can search within the selected media type without going back to
