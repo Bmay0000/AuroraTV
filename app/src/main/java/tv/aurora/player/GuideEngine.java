@@ -322,10 +322,20 @@ public final class GuideEngine extends SQLiteOpenHelper {
             Matcher m=STREAM_ID.matcher(new URL(streamUrl).getPath());
             if(!m.find())return false;
             String id=m.group(1);
-            String api=Provider.base(host)+"/player_api.php?username="+Provider.enc(user)+
-              "&password="+Provider.enc(password)+"&action=get_short_epg&stream_id="+id+"&limit=10";
-            JSONObject result=new JSONObject(smallGet(api));
-            JSONArray entries=result.optJSONArray("epg_listings");
+            String baseApi=Provider.base(host)+"/player_api.php?username="+Provider.enc(user)+
+              "&password="+Provider.enc(password);
+            JSONArray entries=null;
+            try{
+                JSONObject result=new JSONObject(smallGet(baseApi+
+                    "&action=get_short_epg&stream_id="+id+"&limit=10"));
+                entries=result.optJSONArray("epg_listings");
+            }catch(Exception ignored){}
+            if(entries==null||entries.length()==0){
+                JSONObject table=new JSONObject(smallGet(baseApi+
+                    "&action=get_simple_data_table&stream_id="+id));
+                entries=table.optJSONArray("epg_listings");
+                if(entries==null)entries=table.optJSONArray("data");
+            }
             if(entries==null||entries.length()==0)return false;
             int added=0;
             db.beginTransaction();
