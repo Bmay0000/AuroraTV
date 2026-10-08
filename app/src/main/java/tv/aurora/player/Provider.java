@@ -15,7 +15,11 @@ public final class Provider {
 
  // Xtream's large get_live_streams/get_vod_streams/get_series arrays must be
  // parsed as a stream. Reading them as Strings/JSONArrays duplicates memory.
+ public interface ImportProgress { void update(String stage,int count); }
  public static int xtreamStream(String host,String user,String pass,LibraryStore.Writer output)throws Exception{
+  return xtreamStream(host,user,pass,output,(stage,count)->{});
+ }
+ public static int xtreamStream(String host,String user,String pass,LibraryStore.Writer output,ImportProgress progress)throws Exception{
   host=base(host);
   String api=host+"/player_api.php?username="+enc(user)+"&password="+enc(pass);
   JSONObject auth=new JSONObject(get(api));
@@ -23,6 +27,7 @@ public final class Provider {
    throw new IOException("Login rejected");
   int total=0;
   for(String kind:new String[]{"live","vod","series"}){
+   progress.update(kind,total);
    Map<String,String> names=new HashMap<>();
    try{
     JSONArray cats=new JSONArray(get(api+"&action=get_"+kind+"_categories"));
@@ -45,7 +50,7 @@ public final class Provider {
      reader.beginArray();
      while(reader.hasNext()){
       if(reader.peek()!=android.util.JsonToken.BEGIN_OBJECT){reader.skipValue();continue;}
-      String id="",name="",cat="",epg="",ext="";
+      String id="",name="",cat="",epg="",ext="",artwork="";
       reader.beginObject();
       while(reader.hasNext()){
        String key=reader.nextName();
@@ -58,6 +63,8 @@ public final class Provider {
          if(reader.peek()==android.util.JsonToken.STRING||reader.peek()==android.util.JsonToken.NUMBER)cat=reader.nextString();else reader.skipValue();break;
         case "epg_channel_id":
          if(reader.peek()==android.util.JsonToken.STRING)epg=reader.nextString();else reader.skipValue();break;
+        case "stream_icon":case "cover":case "cover_big":case "movie_image":
+         if(reader.peek()==android.util.JsonToken.STRING){String value=reader.nextString();if(artwork.isEmpty()&&value.startsWith("http"))artwork=value;}else reader.skipValue();break;
         case "container_extension":
          if(reader.peek()==android.util.JsonToken.STRING)ext=reader.nextString();else reader.skipValue();break;
         default:reader.skipValue();
@@ -69,10 +76,13 @@ public final class Provider {
       if(ext.isEmpty()||!ext.matches("[a-zA-Z0-9]{1,6}"))ext=kind.equals("live")?"ts":"mp4";
       String streamUrl=kind.equals("series")?api+"&action=get_series_info&series_id="+enc(id)
         :host+"/"+(kind.equals("vod")?"movie":kind)+"/"+segment(user)+"/"+segment(pass)+"/"+id+"."+ext;
-      output.add(new LibraryCore.Item(LibraryCore.key(host+"|"+user+"|"+type+"|"+id),
+      LibraryCore.Item item=new LibraryCore.Item(LibraryCore.key(host+"|"+user+"|"+type+"|"+id),
         name.isEmpty()?"Untitled":name,names.getOrDefault(cat,"Uncategorized"),
-        streamUrl,type,epg,""));
+        streamUrl,type,epg,"");
+      item.artwork=artwork;
+      output.add(item);
       total++;
+      if(total%3000==0)progress.update(kind,total);
      }
      reader.endArray();
     }
