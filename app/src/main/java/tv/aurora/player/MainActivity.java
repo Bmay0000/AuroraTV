@@ -32,6 +32,14 @@ public class MainActivity extends Activity {
     prefs.edit().putBoolean("unknown",hideUnknown)
      .putBoolean("smartFilterV2",true).putBoolean("smartFilterV3",true).apply();
    }
+   if(!prefs.getBoolean("guideNamesV2",false)){
+    // Existing XMLTV name indexes used to retain HDR/4K provider labels.
+    // Trigger one normal asynchronous refresh to rebuild matching metadata.
+    SharedPreferences.Editor migrate=prefs.edit().putBoolean("guideNamesV2",true);
+    for(String source:new String[]{"provider","external1","external2","external3","external4"})
+     migrate.remove("guide.attempt."+source);
+    migrate.apply();
+   }
    start();}
  Set<String> set(String k){return new HashSet<>(prefs.getStringSet(k,new HashSet<>()));}
  void save(){prefs.edit().putStringSet("hidden",hidden).putStringSet("categories",categories).putStringSet("favorites",favorites).putStringSet("allowed",allowed).putStringSet("shown",shown).putStringSet("shownCategories",shownCategories).putBoolean("unknown",hideUnknown).putBoolean("smartFilterV2",true).apply();}
