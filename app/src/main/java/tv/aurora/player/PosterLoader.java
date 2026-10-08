@@ -162,6 +162,9 @@ public final class PosterLoader implements AutoCloseable {
         }
     }
 
+    /** Clear nonessential poster bitmaps before launching a hardware decoder. */
+    public void clearMemory() { memory.evictAll(); }
+
     @Override public void close() {
         background.shutdownNow();
         memory.evictAll();
