@@ -111,7 +111,7 @@ public final class LibraryCore {
   // Check leading and trailing marked tokens, where "FR" is a tag rather than
   // an incidental fragment of a title. Avoid guessing from e.g. "Star Wars".
   String taggedTitle=title.trim().replaceFirst(
-    "(?i)^(?:(?:[|\\[(]\\s*(?:4K|8K|UHD|FHD|HD|SD|HDR)\\s*[|\\])]\\s*)+","");
+    "(?i)^(?:(?:\\[|\\|)\\s*(?:4K|8K|UHD|FHD|HD|SD|HDR)\\s*(?:\\]|\\|)\\s*)+","");
   Matcher matcher=TITLE_TAG.matcher(taggedTitle);
   if(matcher.find()){
    for(int i=1;i<=matcher.groupCount();i++){
