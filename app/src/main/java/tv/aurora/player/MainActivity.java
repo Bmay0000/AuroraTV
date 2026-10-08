@@ -654,23 +654,88 @@ public class MainActivity extends Activity {
  }
  void guideSettings(){
   String[] options={
-   "Refresh provider XMLTV schedule",
+   "Guide health · diagnose missing programmes",
+   "Enable public US + UK guide feeds",
+   "Enable public Free TV + Sports feeds",
+   "Disable public EPG presets",
    "Set independent XMLTV source A",
    "Set independent XMLTV source B",
    "Refresh all configured guide sources",
-   "Manage channel mapping (from guide rows)",
-   "About Smart EPG"
+   "About Aurora Smart EPG"
   };
-  new AlertDialog.Builder(this).setTitle("AURORA  /  SMART EPG")
-   .setItems(options,(d,n)->{
-    if(n==0){scheduleGuideSync(true,true);toast("Provider guide refresh requested");return;}
-    if(n==1||n==2){promptGuideUrl(n==1?"external1":"external2");return;}
-    if(n==3){scheduleGuideSync(true,true);toast("Guide refresh running in background");return;}
-    if(n==4){toast("Use the Match button beside a channel in TV Guide");return;}
-    new AlertDialog.Builder(this).setTitle("Hybrid Smart EPG")
-     .setMessage("Aurora combines provider XMLTV, up to two independent XMLTV feeds and per-channel Xtream schedules. Exact guide IDs are matched first, then unambiguous channel names. You can manually map a channel. Real schedules are cached for up to 7 days; the app never invents listings.")
+  new AlertDialog.Builder(this).setTitle("AURORA / SMART EPG")
+   .setItems(options,(dialog,index)->{
+    if(index==0){epgDiagnostics();return;}
+    if(index==1){confirmGuidePreset("US + UK guide feeds",
+      "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/US_guide.xml.gz",
+      "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/UK_guide.xml.gz");return;}
+    if(index==2){confirmGuidePreset("Free streaming + sports guide feeds",
+      "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/FreeTV_guide.xml.gz",
+      "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Sports_guide.xml.gz");return;}
+    if(index==3){confirmGuidePreset("Disable public guide feeds","","");return;}
+    if(index==4||index==5){promptGuideUrl(index==4?"external1":"external2");return;}
+    if(index==6){scheduleGuideSync(true,true);toast("Updating configured EPG feeds in the background");return;}
+    new AlertDialog.Builder(this).setTitle("About Smart EPG")
+     .setMessage("Aurora combines your provider's XMLTV and per-channel data with two custom XMLTV and two optional public feeds. A schedule can only be displayed when a real source supplies it. Unmatched stations can be mapped through their guide row.")
      .setPositiveButton("OK",null).show();
    }).show();
+ }
+ void confirmGuidePreset(String title,String url1,String url2){
+  new AlertDialog.Builder(this).setTitle(title)
+   .setMessage(url1.isEmpty()?
+      "Disable the optional public feeds? Your own provider and custom XMLTV sources stay unchanged.":
+      "Import public, independently maintained XMLTV data. Coverage varies by provider and channel name. These feeds are optional and update in the background.")
+   .setPositiveButton("APPLY",(dialog,button)->{
+    try{
+     SharedPreferences.Editor edit=prefs.edit();
+     for(String slot:new String[]{"external3","external4"})
+      edit.remove("guide.updated."+slot).remove("guide.attempt."+slot).remove("guide.error."+slot);
+     if(url1.isEmpty())edit.remove("guide.external3");else edit.putString("guide.external3",Vault.seal(url1));
+     if(url2.isEmpty())edit.remove("guide.external4");else edit.putString("guide.external4",Vault.seal(url2));
+     edit.apply();
+     epgRefreshIO.execute(()->{
+      epg.clearSource("external3");epg.clearSource("external4");
+      if(!url1.isEmpty())scheduleGuideSync(true,false);
+      else runOnUiThread(()->{if(!isDestroyed()&&screen.equals("guide"))tvGuide();});
+     });
+     toast(url1.isEmpty()?"Public guide feeds disabled":"Importing public guide feeds in background");
+    }catch(Exception e){toast("Could not save the public guide settings");}
+   }).setNegativeButton("CANCEL",null).show();
+ }
+ void epgDiagnostics(){
+  AlertDialog waiting=new AlertDialog.Builder(this).setTitle("Guide health")
+   .setMessage("Checking current programme coverage…").setCancelable(false).create();
+  waiting.show();
+  io.execute(()->{
+   StringBuilder report=new StringBuilder();
+   for(String source:new String[]{"provider","external1","external2","external3","external4","short"}){
+    try{
+     GuideEngine.SourceStats stats=epg.sourceStats(source);
+     String label=source.equals("provider")?"Provider XMLTV":
+       source.equals("short")?"Xtream fallback":
+       source.equals("external1")?"Custom source A":
+       source.equals("external2")?"Custom source B":
+       source.equals("external3")?"Public source 1":"Public source 2";
+     report.append(label).append(": ").append(stats.channelsWithPrograms)
+       .append(" channel IDs / ").append(stats.futurePrograms).append(" available programmes");
+     String error=prefs.getString("guide.error."+source,"");
+     if(!error.isEmpty())report.append("\n").append(error);
+     long last=prefs.getLong("guide.updated."+source,0);
+     if(last>0)report.append("\nUpdated ").append(
+       android.text.format.DateFormat.format("MMM d, h:mm a",last));
+     report.append("\n\n");
+    }catch(Exception e){report.append(source).append(": no diagnostics available\n\n");}
+   }
+   report.append("Feeds can contain programmes for channels not in your playlist. " +
+     "If rows are blank, select More → Match this channel. " +
+     "If a source shows zero programmes, refresh it or add an independent XMLTV feed.");
+   runOnUiThread(()->{
+    waiting.dismiss();if(isDestroyed())return;
+    new AlertDialog.Builder(this).setTitle("GUIDE HEALTH").setMessage(report.toString())
+     .setPositiveButton("REFRESH ALL",(d,n)->{scheduleGuideSync(true,true);toast("Guide refresh started");})
+     .setNegativeButton("CLOSE",null).show();
+   });
+  });
  }
  void promptGuideUrl(String source){
   LinearLayout form=column();
@@ -717,8 +782,8 @@ public class MainActivity extends Activity {
   // One long-running source refresh at a time, separate from fast catalog queries.
   epgRefreshIO.execute(()->{
    boolean newData=false;
-   String[] options=includeProvider?new String[]{"external1","external2","provider"}:
-     new String[]{"external1","external2"};
+   String[] options=includeProvider?new String[]{"external1","external2","external3","external4","provider"}:
+     new String[]{"external1","external2","external3","external4"};
    for(String source:options){
     if(Thread.currentThread().isInterrupted())break;
     long now=System.currentTimeMillis();
