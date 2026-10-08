@@ -346,6 +346,324 @@ public class MainActivity extends Activity {
  }
 
 
+
+ // -------------------------------------------------------------
+ // HYBRID SMART EPG
+ // -------------------------------------------------------------
+ String displayTime(long timestamp){
+  return android.text.format.DateFormat.format("h:mm a",timestamp).toString();
+ }
+ String programLabel(GuideEngine.Program p,String fallback){
+  if(p==null)return fallback;
+  String time=displayTime(p.start)+" – "+displayTime(p.end);
+  return p.title+"\n"+time;
+ }
+ void tvGuide(){
+  if(!store.hasLibrary()){loginScreen(false);return;}
+  screen="guide";section="live";
+  final int token=++browseToken;
+  final String selectedCategory=category;
+  final int selectedPage=guidePage,limit=18;
+  final Set<String> h=new HashSet<>(hidden),c=new HashSet<>(categories),
+    fav=new HashSet<>(favorites),lang=new HashSet<>(allowed),
+    manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
+  final boolean strict=hideUnknown;
+  body.removeAllViews();
+  body.addView(text("Preparing your TV guide…",19));
+  io.execute(()->{
+   try{
+    LibraryStore.Page result=store.page("live",selectedCategory,"",false,false,
+      h,c,fav,lang,strict,manual,manualGroups,selectedPage*limit,limit);
+    final List<GuideEngine.Slot> listings=new ArrayList<>();
+    for(LibraryCore.Item channel:result.rows)listings.add(epg.nowNext(channel));
+    runOnUiThread(()->{
+     if(isDestroyed()||token!=browseToken||!screen.equals("guide"))return;
+     body.removeAllViews();
+     LinearLayout heading=new LinearLayout(this);
+     heading.setGravity(Gravity.CENTER_VERTICAL);
+     heading.addView(headline("LIVE TV  /  GUIDE",25,Color.WHITE),new LinearLayout.LayoutParams(0,-2,1));
+     heading.addView(button("Guide settings",this::guideSettings),new LinearLayout.LayoutParams(dp(156),dp(52)));
+     heading.addView(button("Refresh",()->{scheduleGuideSync(true,true);toast("Refreshing guide sources in background");}),
+       new LinearLayout.LayoutParams(dp(110),dp(52)));
+     body.addView(heading);
+     body.addView(button("CATEGORIES   /   "+selectedCategory+"  ▾",this::chooseGuideCategory));
+     TextView helper=text("Live programmes shown in your device's local time · only visible channels appear",14);
+     helper.setTextColor(0xffa8c4ce);body.addView(helper);
+     ScrollView scroll=new ScrollView(this);
+     body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+     LinearLayout feed=column();scroll.addView(feed);
+     LinearLayout timeline=new LinearLayout(this);
+     timeline.setPadding(0,dp(6),0,dp(6));timeline.setBackground(shape(0xff18374a));
+     timeline.addView(guideColumn("CHANNEL",dp(178),ACCENT));
+     timeline.addView(guideColumn("ON NOW  ·  "+displayTime(System.currentTimeMillis()),dp(305),ACCENT));
+     timeline.addView(guideColumn("UP NEXT",dp(305),ACCENT));
+     timeline.addView(guideColumn("OPTIONS",dp(100),ACCENT));
+     feed.addView(timeline);
+     if(result.rows.isEmpty()){
+      feed.addView(text("No channels in this category. Check your Smart Library filter or restore a hidden category.",18));
+     }
+     final List<TextView[]> cells=new ArrayList<>();
+     for(int n=0;n<result.rows.size();n++){
+      LibraryCore.Item channel=result.rows.get(n);
+      GuideEngine.Slot slot=listings.get(n);
+      LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
+      row.setPadding(0,dp(4),0,dp(4));
+      row.setBackground(shape(n%2==0?0xff101e30:0xff142638));
+      Button watch=button("▶  "+channel.name,()->open(channel));
+      watch.setTextSize(15);watch.setGravity(Gravity.CENTER_VERTICAL|Gravity.LEFT);
+      watch.setPadding(dp(12),0,dp(7),0);
+      row.addView(watch,new LinearLayout.LayoutParams(dp(178),dp(87)));
+      LinearLayout current=column();
+      TextView now=text("",15);now.setTextColor(Color.WHITE);now.setMaxLines(3);
+      current.addView(now,new LinearLayout.LayoutParams(-1,0,1));
+      ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
+      progress.setMax(1000);progress.setProgressTintList(ColorStateList.valueOf(ACCENT));
+      current.addView(progress,new LinearLayout.LayoutParams(-1,dp(4)));
+      LinearLayout.LayoutParams nowLp=new LinearLayout.LayoutParams(dp(305),dp(87));
+      nowLp.setMargins(dp(8),0,dp(8),0);row.addView(current,nowLp);
+      TextView next=text("",15);next.setMaxLines(3);next.setTextColor(0xffc2d3df);
+      LinearLayout.LayoutParams nextLp=new LinearLayout.LayoutParams(dp(305),dp(87));
+      row.addView(next,nextLp);
+      row.addView(button("⋯  Match",()->chooseGuideMatch(channel)),
+        new LinearLayout.LayoutParams(dp(104),dp(60)));
+      feed.addView(row);
+      updateGuideCells(slot,now,next,progress);
+      cells.add(new TextView[]{now,next});
+     }
+     LinearLayout controls=new LinearLayout(this);
+     if(selectedPage>0)controls.addView(button("◀ Previous",()->{guidePage--;tvGuide();}),
+       new LinearLayout.LayoutParams(0,dp(55),1));
+     if(result.more)controls.addView(button("Next channels ▶",()->{guidePage++;tvGuide();}),
+       new LinearLayout.LayoutParams(0,dp(55),1));
+     body.addView(controls);
+     int scheduled=0;
+     for(GuideEngine.Slot item:listings)if(item.hasData())scheduled++;
+     subtitle.setText(scheduled+" of "+result.rows.size()+" channels have cached schedule data · page "+(selectedPage+1));
+     queueVisibleShortEpg(result.rows,listings,cells,token);
+     scheduleGuideSync(false,true);
+    });
+   }catch(Exception e){
+    runOnUiThread(()->{
+     if(isDestroyed()||token!=browseToken||!screen.equals("guide"))return;
+     body.removeAllViews();
+     body.addView(text("Unable to open guide: "+e.getClass().getSimpleName(),18));
+     body.addView(button("Retry guide",this::tvGuide));
+    });
+   }
+  });
+ }
+ TextView guideColumn(String text,int width,int color){
+  TextView title=headline(text,14,color);title.setGravity(Gravity.CENTER_VERTICAL);
+  title.setPadding(dp(8),dp(10),dp(5),dp(10));
+  title.setWidth(width);return title;
+ }
+ void updateGuideCells(GuideEngine.Slot slot,TextView now,TextView next,ProgressBar progress){
+  if(slot.now==null){
+   now.setText(slot.next==null?"No programme data available":"Schedule pending");
+   progress.setProgress(0);
+  }else{
+   now.setText(programLabel(slot.now,""));
+   long span=slot.now.end-slot.now.start;
+   int percentage=span<=0?0:(int)(1000*Math.min(1d,Math.max(0d,
+     (System.currentTimeMillis()-slot.now.start)/(double)span)));
+   progress.setProgress(percentage);
+  }
+  next.setText(slot.next==null?"No upcoming listing":programLabel(slot.next,""));
+ }
+ void chooseGuideCategory(){
+  final Set<String> h=new HashSet<>(hidden),c=new HashSet<>(categories),
+    fav=new HashSet<>(favorites),lang=new HashSet<>(allowed),
+    manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
+  io.execute(()->{
+   try{
+    String[] names=store.visibleCategoryNames("live",false,h,c,fav,lang,hideUnknown,manual,manualGroups);
+    runOnUiThread(()->{
+     if(isDestroyed()||!screen.equals("guide"))return;
+     String[] list=new String[names.length+1];list[0]="All";
+     System.arraycopy(names,0,list,1,names.length);
+     new AlertDialog.Builder(this).setTitle("Visible TV categories")
+      .setItems(list,(d,n)->{category=list[n];guidePage=0;tvGuide();}).show();
+    });
+   }catch(Exception error){runOnUiThread(()->toast("Could not load guide categories"));}
+  });
+ }
+ void queueVisibleShortEpg(List<LibraryCore.Item> channels,List<GuideEngine.Slot> snapshots,
+         List<TextView[]> cells,int token){
+  if(!prefs.getString("mode","").equals("xtream"))return;
+  // Request only the first handful of visible channels; never the full catalog.
+  List<LibraryCore.Item> needs=new ArrayList<>();
+  List<TextView[]> targets=new ArrayList<>();
+  for(int n=0;n<Math.min(10,channels.size());n++){
+   if(!snapshots.get(n).hasData()){
+    needs.add(channels.get(n));targets.add(cells.get(n));
+   }
+  }
+  if(needs.isEmpty())return;
+  shortEpgIO.execute(()->{
+   try{
+    String url=Vault.open(prefs.getString("url",""));
+    String user=Vault.open(prefs.getString("user",""));
+    String password=Vault.open(prefs.getString("pass",""));
+    for(int n=0;n<needs.size();n++){
+     if(Thread.currentThread().isInterrupted()||token!=browseToken||!screen.equals("guide"))break;
+     LibraryCore.Item item=store.resolve(needs.get(n));
+     if(epg.fetchShort(item,url,user,password)){
+      GuideEngine.Slot updated=epg.nowNext(item);
+      TextView[] targetsForRow=targets.get(n);
+      runOnUiThread(()->{
+       if(isDestroyed()||token!=browseToken||!screen.equals("guide"))return;
+       // The progress indicator is owned by the row; update textual guide cells.
+       targetsForRow[0].setText(programLabel(updated.now,"No programme data available"));
+       targetsForRow[1].setText(programLabel(updated.next,"No upcoming listing"));
+      });
+     }
+    }
+   }catch(Exception ignored){}
+  });
+ }
+ void guideSettings(){
+  String[] options={
+   "Refresh provider XMLTV schedule",
+   "Set independent XMLTV source A",
+   "Set independent XMLTV source B",
+   "Refresh all configured guide sources",
+   "Manage channel mapping (from guide rows)",
+   "About Smart EPG"
+  };
+  new AlertDialog.Builder(this).setTitle("AURORA  /  SMART EPG")
+   .setItems(options,(d,n)->{
+    if(n==0){scheduleGuideSync(true,true);toast("Provider guide refresh requested");return;}
+    if(n==1||n==2){promptGuideUrl(n==1?"external1":"external2");return;}
+    if(n==3){scheduleGuideSync(true,true);toast("Guide refresh running in background");return;}
+    if(n==4){toast("Use the Match button beside a channel in TV Guide");return;}
+    new AlertDialog.Builder(this).setTitle("Hybrid Smart EPG")
+     .setMessage("Aurora combines provider XMLTV, up to two independent XMLTV feeds and per-channel Xtream schedules. Exact guide IDs are matched first, then unambiguous channel names. You can manually map a channel. Real schedules are cached for up to 7 days; the app never invents listings.")
+     .setPositiveButton("OK",null).show();
+   }).show();
+ }
+ void promptGuideUrl(String source){
+  LinearLayout form=column();
+  EditText field=field(form,"XMLTV URL (also supports .xml.gz)",false);
+  try{
+   String stored=prefs.getString("guide."+source,"");
+   if(!stored.isEmpty())field.setText(Vault.open(stored));
+  }catch(Exception ignored){}
+  new AlertDialog.Builder(this).setTitle(source.equals("external1")?"Independent XMLTV A":"Independent XMLTV B")
+   .setMessage("Enter a direct XMLTV URL. Leave empty to remove this source.")
+   .setView(form).setPositiveButton("Save and refresh",(d,n)->
+    setGuideUrl(source,field.getText().toString().trim()))
+   .setNegativeButton("Cancel",null).show();
+ }
+ void setGuideUrl(String source,String url){
+  if(!source.equals("external1")&&!source.equals("external2"))return;
+  if(!url.isEmpty()&&!(url.startsWith("https://")||url.startsWith("http://"))){
+   toast("Enter a direct HTTP or HTTPS XMLTV URL");return;
+  }
+  try{
+   String old=prefs.getString("guide."+source,"");
+   String previous=old.isEmpty()?"":Vault.open(old);
+   if(!previous.equals(url)){
+    epg.clearSource(source);
+    prefs.edit().remove("guide.updated."+source).remove("guide.attempt."+source).apply();
+   }
+   if(url.isEmpty()){
+    prefs.edit().remove("guide."+source).apply();
+    toast("Removed independent guide source");
+    if(screen.equals("guide"))tvGuide();
+    return;
+   }
+   prefs.edit().putString("guide."+source,Vault.seal(url)).apply();
+   scheduleGuideSync(true,false);
+   toast("Loading XMLTV in the background; channels remain usable");
+  }catch(Exception e){toast("Unable to save guide source");}
+ }
+ void scheduleGuideSync(boolean force,boolean includeProvider){
+  // One long-running source refresh at a time, separate from fast catalog queries.
+  epgRefreshIO.execute(()->{
+   boolean newData=false;
+   String[] options=includeProvider?new String[]{"external1","external2","provider"}:
+     new String[]{"external1","external2"};
+   for(String source:options){
+    if(Thread.currentThread().isInterrupted())break;
+    long now=System.currentTimeMillis();
+    if(!force&&now-prefs.getLong("guide.attempt."+source,0)<GuideEngine.REFRESH_INTERVAL)continue;
+    String address="";
+    try{
+     if(source.equals("provider")){
+      if(!prefs.getString("mode","").equals("xtream"))continue;
+      String host=Vault.open(prefs.getString("url",""));
+      String username=Vault.open(prefs.getString("user",""));
+      String password=Vault.open(prefs.getString("pass",""));
+      address=Provider.base(host)+"/xmltv.php?username="+Provider.enc(username)+
+        "&password="+Provider.enc(password);
+     }else{
+      String stored=prefs.getString("guide."+source,"");
+      if(stored.isEmpty())continue;
+      address=Vault.open(stored);
+     }
+     prefs.edit().putLong("guide.attempt."+source,now).apply();
+     int records=epg.importXmltv(address,source);
+     prefs.edit().putLong("guide.updated."+source,System.currentTimeMillis())
+       .putInt("guide.count."+source,records).remove("guide.error."+source).apply();
+     newData=true;
+    }catch(Exception e){
+     // Deliberately never display exception text: provider URLs can include credentials.
+     prefs.edit().putString("guide.error."+source,"Source unavailable or invalid XMLTV").apply();
+    }
+   }
+   if(newData){
+    runOnUiThread(()->{if(!isDestroyed()&&screen.equals("guide"))tvGuide();});
+   }
+  });
+ }
+ void chooseGuideMatch(LibraryCore.Item item){
+  io.execute(()->{
+   List<GuideEngine.Match> candidates=epg.findCandidates(item.name,20);
+   runOnUiThread(()->{
+    if(isDestroyed())return;
+    String[] options=new String[candidates.size()+2];
+    for(int n=0;n<candidates.size();n++){
+     GuideEngine.Match c=candidates.get(n);
+     options[n]=c.name+"  ·  "+c.source;
+    }
+    options[candidates.size()]="Enter XMLTV channel ID manually";
+    options[candidates.size()+1]="Remove manual guide match";
+    new AlertDialog.Builder(this).setTitle("Match guide: "+item.name)
+     .setItems(options,(d,index)->{
+      if(index<candidates.size()){
+       GuideEngine.Match choice=candidates.get(index);
+       io.execute(()->{epg.setManual(item.id,choice.source,choice.id);
+        runOnUiThread(()->{toast("Guide mapping saved");if(screen.equals("guide"))tvGuide();else browse();});});
+      }else if(index==candidates.size())promptManualGuideMatch(item);
+      else{
+       io.execute(()->{epg.clearManual(item.id);
+        runOnUiThread(()->{toast("Automatic guide matching restored");if(screen.equals("guide"))tvGuide();else browse();});});
+      }
+     }).show();
+   });
+  });
+ }
+ void promptManualGuideMatch(LibraryCore.Item item){
+  String[] sources={"Provider XMLTV","Independent XMLTV A","Independent XMLTV B"};
+  String[] keys={"provider","external1","external2"};
+  new AlertDialog.Builder(this).setTitle("Choose guide source")
+   .setItems(sources,(d,n)->{
+    EditText id=new EditText(this);
+    id.setTextColor(Color.WHITE);id.setHintTextColor(0xffaaaaaa);
+    id.setHint("Exact XMLTV channel id");
+    new AlertDialog.Builder(this).setTitle("XMLTV channel ID").setView(id)
+     .setPositiveButton("Save",(a,b)->{
+      String value=id.getText().toString().trim();
+      if(value.isEmpty()){toast("Enter a channel ID");return;}
+      io.execute(()->{
+       epg.setManual(item.id,keys[n],value);
+       runOnUiThread(()->{toast("Manual guide match saved");
+        if(screen.equals("guide"))tvGuide();else browse();});
+      });
+     }).setNegativeButton("Cancel",null).show();
+   }).show();
+ }
+
  void search(){
   new AlertDialog.Builder(this).setTitle("SEARCH YOUR LIBRARY")
    .setItems(new String[]{"Live TV","Movies","TV Shows"},(d,index)->{
