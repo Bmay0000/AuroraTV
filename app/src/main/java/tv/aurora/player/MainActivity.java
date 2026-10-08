@@ -691,8 +691,7 @@ public class MainActivity extends Activity {
    if(n==1){
     if(isHidden){
      hidden.remove(i.id);
-     shown.add(i.id);
-     categories.remove(i.type+"|"+i.category); // manual re-enable wins filter
+     shown.add(i.id); // Show just this title; do not restore the entire category
     }else{
      hidden.add(i.id);shown.remove(i.id);
     }
