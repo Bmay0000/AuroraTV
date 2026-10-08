@@ -143,6 +143,16 @@ public final class LibraryStore extends SQLiteOpenHelper {
                      boolean favoritesOnly, Set<String> hidden, Set<String> hiddenCategories,
                      Set<String> favorites, Set<String> allowed, boolean hideUnknown,
                      int offset, int limit) throws Exception {
+        return page(type, category, query, hiddenOnly, favoritesOnly,
+                hidden, hiddenCategories, favorites, allowed, hideUnknown,
+                java.util.Collections.emptySet(), java.util.Collections.emptySet(), offset, limit);
+    }
+
+    public Page page(String type, String category, String query, boolean hiddenOnly,
+                     boolean favoritesOnly, Set<String> hidden, Set<String> hiddenCategories,
+                     Set<String> favorites, Set<String> allowed, boolean hideUnknown,
+                     Set<String> visibleItems, Set<String> visibleCategories,
+                     int offset, int limit) throws Exception {
         StringBuilder sql = new StringBuilder("SELECT ").append(FIELDS)
                 .append(" FROM entries WHERE type=?");
         List<String> args = new ArrayList<>();
@@ -165,7 +175,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
                 if (Thread.currentThread().isInterrupted()) break;
                 LibraryCore.Item current = item(c);
                 boolean isVisible = LibraryCore.visible(current, hidden, hiddenCategories,
-                        favorites, allowed, hideUnknown);
+                        favorites, allowed, hideUnknown, visibleItems, visibleCategories);
                 if (hiddenOnly ? isVisible : !isVisible) continue;
                 if (favoritesOnly && !favorites.contains(current.id)) continue;
                 if (matches++ < offset) continue;
@@ -174,6 +184,32 @@ public final class LibraryStore extends SQLiteOpenHelper {
             }
         }
         return new Page(result, false);
+    }
+
+    /**
+     * Unlike categories(), this returns only categories having at least one
+     * item that passes the CURRENT visibility rules. Used by Live TV and EPG,
+     * so hidden foreign groups never appear in navigation.
+     */
+    public String[] visibleCategoryNames(String type, boolean hiddenOnly,
+                    Set<String> hidden, Set<String> hiddenCategories, Set<String> favorites,
+                    Set<String> allowed, boolean hideUnknown, Set<String> visibleItems,
+                    Set<String> visibleCategories) {
+        java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
+        try (Cursor c = getReadableDatabase().rawQuery(
+                "SELECT " + FIELDS + " FROM entries WHERE type=? ORDER BY category COLLATE NOCASE",
+                new String[]{type})) {
+            while (c.moveToNext()) {
+                if (Thread.currentThread().isInterrupted()) break;
+                String group = c.getString(2);
+                if (found.contains(group)) continue;
+                LibraryCore.Item entry = item(c);
+                boolean visible = LibraryCore.visible(entry, hidden, hiddenCategories,
+                        favorites, allowed, hideUnknown, visibleItems, visibleCategories);
+                if (hiddenOnly ? !visible : visible) found.add(group);
+            }
+        }
+        return found.toArray(new String[0]);
     }
 
     public String[] categories(String type) {
