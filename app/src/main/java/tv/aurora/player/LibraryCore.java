@@ -83,6 +83,8 @@ public final class LibraryCore {
  // IPTV providers frequently put language identifiers in the title even when
  // the category is a broad "UK" or "4K" bucket. Title tags override category
  // country cues, but plain language-like words in movie names do not.
+ private static final Pattern QUALITY_PREFIX=Pattern.compile(
+   "(?i)^(?:(?:\\[|\\|)\\s*(?:4K|8K|UHD|FHD|HD|SD|HDR)\\s*(?:\\]|\\|)\\s*)+");
  private static final Pattern TITLE_TAG=Pattern.compile(
    "(?i)(?:^\\s*[|\\[(]\\s*([A-Z]{2,3})\\s*[|\\])]\\s*|" +
    "^\\s*([A-Z]{2,3})\\s*[:|\\-]\\s*|" +
@@ -110,8 +112,7 @@ public final class LibraryCore {
   if(title==null)return "unknown";
   // Check leading and trailing marked tokens, where "FR" is a tag rather than
   // an incidental fragment of a title. Avoid guessing from e.g. "Star Wars".
-  String taggedTitle=title.trim().replaceFirst(
-    "(?i)^(?:(?:\\[|\\|)\\s*(?:4K|8K|UHD|FHD|HD|SD|HDR)\\s*(?:\\]|\\|)\\s*)+","");
+  String taggedTitle=QUALITY_PREFIX.matcher(title.trim()).replaceFirst("");
   Matcher matcher=TITLE_TAG.matcher(taggedTitle);
   if(matcher.find()){
    for(int i=1;i<=matcher.groupCount();i++){
