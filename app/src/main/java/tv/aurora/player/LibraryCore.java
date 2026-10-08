@@ -108,7 +108,9 @@ public final class LibraryCore {
   if(visibleItems.contains(i.id)||visibleCategories.contains(i.type+"|"+i.category))return true;
   if(favorites.contains(i.id))return true; // protect favorites
   if(categories.contains(i.type+"|"+i.category))return false;
-  if(!i.type.equals("live")||allowed.isEmpty())return true;
+  // Apply the same language rules to live channels, films and series.
+  // Type-specific hidden/restored categories are still keyed by item.type.
+  if(allowed.isEmpty())return true;
   String lang=language(i);
   return lang.equals("unknown")?!hideUnknown:allowed.contains(lang);
  }
