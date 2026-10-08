@@ -673,9 +673,58 @@ public class MainActivity extends Activity {
   play.requestFocus();
  }
 
+ static final class ChannelTile{
+  ImageView logo;TextView name,subtitle,now,icon;
+ }
+ View liveChannelRow(LibraryCore.Item channel,View recycle){
+  LinearLayout row;ChannelTile holder;
+  if(recycle instanceof LinearLayout && recycle.getTag() instanceof ChannelTile){
+   row=(LinearLayout)recycle;holder=(ChannelTile)row.getTag();
+  }else{
+   row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
+   row.setPadding(dp(11),dp(7),dp(11),dp(7));
+   row.setBackground(rounded(0xff111e30,13,0xff1f3247));
+   row.setLayoutParams(new AbsListView.LayoutParams(-1,dp(88)));
+   holder=new ChannelTile();
+   FrameLayout thumbnail=new FrameLayout(this);
+   thumbnail.setBackground(rounded(0xff21384b,10,0xff294d57));
+   thumbnail.setClipToOutline(true);
+   row.addView(thumbnail,new LinearLayout.LayoutParams(dp(82),dp(60)));
+   holder.icon=headline("TV",19,0xff91ebdc);
+   FrameLayout.LayoutParams iconLoc=new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER);
+   thumbnail.addView(holder.icon,iconLoc);
+   holder.logo=new ImageView(this);holder.logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+   holder.logo.setPadding(dp(5),dp(5),dp(5),dp(5));
+   thumbnail.addView(holder.logo,new FrameLayout.LayoutParams(-1,-1));
+   LinearLayout description=column();
+   description.setPadding(dp(16),0,dp(7),0);
+   row.addView(description,new LinearLayout.LayoutParams(0,-2,1));
+   holder.name=text("",TvLayout.clamp(tv().bodySize()+1,16,21));
+   holder.name.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+   holder.name.setMaxLines(1);holder.name.setEllipsize(TextUtils.TruncateAt.END);
+   description.addView(holder.name);
+   holder.subtitle=text("",12);holder.subtitle.setTextColor(MUTED);
+   holder.subtitle.setSingleLine(true);holder.subtitle.setEllipsize(TextUtils.TruncateAt.END);
+   description.addView(holder.subtitle);
+   holder.now=text("",12);holder.now.setTextColor(0xff84e8d8);
+   holder.now.setSingleLine(true);holder.now.setEllipsize(TextUtils.TruncateAt.END);
+   description.addView(holder.now);
+   TextView play=headline("▶",22,ACCENT);
+   play.setGravity(Gravity.CENTER);row.addView(play,new LinearLayout.LayoutParams(dp(42),dp(50)));
+   row.setTag(holder);
+  }
+  holder.name.setText((favorites.contains(channel.id)?"★  ":"")+channel.name);
+  holder.subtitle.setText(channel.category);
+  String now=nowNext(channel);
+  holder.now.setText(now.isEmpty()?"READY TO WATCH":now.replace('\n',' ').trim());
+  holder.icon.setText(channel.name.isEmpty()?"TV":channel.name.substring(0,1).toUpperCase(Locale.ROOT));
+  posters.bind(holder.logo,channel.artwork);
+  return row;
+ }
+
  void browse(){
   if(!store.hasLibrary()){loginScreen(false);return;}
-  screen="browse";
+  screen="browse";refreshSidebar();
   final int token=++browseToken;
   final String type=section,cat=category,search=query;
   final boolean showHidden=hiddenOnly,onlyFavorites=favOnly,isEditing=editing,hide=hideUnknown;
@@ -708,9 +757,12 @@ public class MainActivity extends Activity {
      heading.setGravity(Gravity.CENTER_VERTICAL);
      String title=(isEditing?"EDIT  /  ":"")+(showHidden?"HIDDEN":onlyFavorites?"FAVORITES":
        type.equals("live")?"LIVE TV":type.equals("movie")?"MOVIES":"TV SHOWS");
-     heading.addView(headline(title,25,Color.WHITE),new LinearLayout.LayoutParams(0,-2,1));
-     Button filters=button("LANGUAGE",this::smart);heading.addView(filters,new LinearLayout.LayoutParams(dp(135),dp(52)));
-     Button back=button("⌂ Home",this::home);heading.addView(back,new LinearLayout.LayoutParams(dp(125),dp(52)));
+     heading.addView(headline(title,TvLayout.clamp(tv().headingSize(),25,35),Color.WHITE),new LinearLayout.LayoutParams(0,-2,1));
+     int actionsWidth=tv().contentWidth()<650?105:134;
+     Button filters=button("☷  FILTERS",this::smart);
+     heading.addView(filters,new LinearLayout.LayoutParams(dp(actionsWidth),dp(49)));
+     Button back=button("⌂  HOME",this::home);
+     heading.addView(back,new LinearLayout.LayoutParams(dp(actionsWidth),dp(49)));
      body.addView(heading);
 
      // Users can search within the selected media type without going back to
@@ -718,7 +770,8 @@ public class MainActivity extends Activity {
      LinearLayout controls=new LinearLayout(this);
      controls.setGravity(Gravity.CENTER_VERTICAL);
      body.addView(controls);
-     Button selectCategory=button("CATEGORY  /  "+cat+"   ▾",this::chooseCategory);
+     Button selectCategory=button("▦  "+cat+"   ▾",this::chooseCategory);
+     selectCategory.setSingleLine(true);selectCategory.setEllipsize(TextUtils.TruncateAt.END);
      controls.addView(selectCategory,new LinearLayout.LayoutParams(0,dp(52),2));
      EditText searchField=new EditText(this);
      searchField.setTextColor(Color.WHITE);
@@ -726,7 +779,12 @@ public class MainActivity extends Activity {
      searchField.setSingleLine(true);
      searchField.setText(search);
      searchField.setHint(type.equals("live")?"Search channel":type.equals("movie")?"Search movie titles":"Search TV series");
-     searchField.setTextSize(15);
+     searchField.setTextSize(TvLayout.clamp(tv().bodySize(),14,18));
+     searchField.setPadding(dp(15),0,dp(15),0);
+     searchField.setBackground(rounded(0xff102139,12,0xff2a4a5b));
+     searchField.setOnFocusChangeListener((view,focused)->
+       searchField.setBackground(rounded(focused?0xff193849:0xff102139,12,
+         focused?ACCENT:0xff2a4a5b)));
      searchField.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
      LinearLayout.LayoutParams searchSize=new LinearLayout.LayoutParams(0,dp(52),2);
      searchSize.leftMargin=dp(10);controls.addView(searchField,searchSize);
@@ -758,15 +816,15 @@ public class MainActivity extends Activity {
      if(type.equals("movie")||type.equals("series")){
       GridView grid=new GridView(this);
       grid.setNumColumns(GridView.AUTO_FIT);
-      grid.setColumnWidth(dp(180));
+      grid.setColumnWidth(dp(tv().posterWidth));
       grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
-      grid.setHorizontalSpacing(dp(12));
-      grid.setVerticalSpacing(dp(12));
+      grid.setHorizontalSpacing(dp(tv().columnGap));
+      grid.setVerticalSpacing(dp(tv().columnGap));
       grid.setVerticalScrollBarEnabled(false);
       grid.setClipToPadding(false);
       grid.setPadding(dp(5),dp(10),dp(5),dp(16));
       grid.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
-      grid.setSelector(shape(0xff257871));
+      grid.setSelector(rounded(0x224be0cc,13,ACCENT));
       body.addView(grid,new LinearLayout.LayoutParams(-1,0,1));
       grid.setAdapter(new BaseAdapter(){
        public int getCount(){return result.rows.size();}
@@ -783,21 +841,17 @@ public class MainActivity extends Activity {
       grid.setOnItemLongClickListener((parent,v,n,id)->{actions(result.rows.get(n));return true;});
      }else{
       ListView list=new ListView(this);
-      list.setDividerHeight(dp(5));
+      list.setDividerHeight(dp(9));
       body.addView(list,new LinearLayout.LayoutParams(-1,0,1));
       list.setAdapter(new BaseAdapter(){
        public int getCount(){return result.rows.size();}
        public Object getItem(int n){return result.rows.get(n);}
        public long getItemId(int n){return n;}
        public View getView(int n,View reuse,ViewGroup parent){
-        LibraryCore.Item i=result.rows.get(n);
-        TextView t=reuse instanceof TextView?(TextView)reuse:text("",17);
-        t.setText((favorites.contains(i.id)?"★  ":"")+i.name+"   ·   "+i.category+nowNext(i));
-        t.setMaxLines(3);t.setPadding(dp(14),dp(12),dp(14),dp(12));t.setBackground(shape(PANEL));
-        return t;
+        return liveChannelRow(result.rows.get(n),reuse);
        }
       });
-      list.setSelector(shape(0xff27786c));
+      list.setSelector(rounded(0x224be0cc,13,ACCENT));
       list.setOnItemClickListener((parent,v,n,id)->{
        LibraryCore.Item picked=result.rows.get(n);if(editing)actions(picked);else open(picked);
       });
