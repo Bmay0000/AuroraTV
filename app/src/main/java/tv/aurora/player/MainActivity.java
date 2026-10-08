@@ -211,7 +211,7 @@ public class MainActivity extends Activity {
    try{
     conn=(HttpURLConnection)new URL(url).openConnection();
     conn.setConnectTimeout(4500);conn.setReadTimeout(4500);
-    if(conn.getResponseCode()!=200||conn.getContentLengthLong()>2*1024*1024)return;
+    if(conn.getResponseCode()!=200||conn.getContentLength()>2*1024*1024)return;
     try(InputStream in=conn.getInputStream()){
      BitmapFactory.Options options=new BitmapFactory.Options();options.inSampleSize=4;
      bitmap=BitmapFactory.decodeStream(in,null,options);
@@ -383,7 +383,7 @@ public class MainActivity extends Activity {
    }).setNegativeButton("Cancel",null).show();
  }
 
-  EditText field(LinearLayout form,String hint,boolean secret){EditText e=new EditText(this);e.setHint(hint);e.setSingleLine();if(secret)e.setInputType(129);form.addView(e);return e;}
+  EditText field(LinearLayout form,String hint,boolean secret){EditText e=new EditText(this);e.setHint(hint);e.setTextColor(Color.WHITE);e.setHintTextColor(0xff9caebe);e.setBackgroundTintList(ColorStateList.valueOf(ACCENT));e.setSingleLine();if(secret)e.setInputType(129);form.addView(e);return e;}
 
  void connect(){
   new AlertDialog.Builder(this).setTitle("MANAGE YOUR CONNECTION")
