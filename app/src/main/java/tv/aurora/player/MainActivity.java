@@ -256,8 +256,8 @@ public class MainActivity extends Activity {
    holder.category.setPadding(dp(6),0,dp(6),0);
    card.addView(holder.category);
    card.setTag(holder);
-   card.setFocusable(true);
-   card.setClickable(true);
+   card.setFocusable(false);
+   card.setClickable(false);
    card.setBackground(shape(PANEL));
    card.setOnFocusChangeListener((v,focused)->{
     card.setBackground(shape(focused?0xff227d78:PANEL));
@@ -269,8 +269,6 @@ public class MainActivity extends Activity {
   holder.badge.setText(item.type.equals("movie")?"MOVIE":"TV SERIES");
   holder.initial.setText(item.name.isEmpty()?"A":item.name.substring(0,1).toUpperCase(Locale.ROOT));
   posters.bind(holder.image,item.artwork);
-  card.setOnClickListener(v->{if(editing)actions(item);else showMediaDetails(item);});
-  card.setOnLongClickListener(v->{actions(item);return true;});
   return card;
  }
  void showMediaDetails(LibraryCore.Item item){
@@ -391,7 +389,7 @@ public class MainActivity extends Activity {
       grid.setVerticalScrollBarEnabled(false);
       grid.setClipToPadding(false);
       grid.setPadding(dp(5),dp(10),dp(5),dp(16));
-      grid.setItemsCanFocus(true);
+      grid.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
       grid.setSelector(shape(0xff257871));
       body.addView(grid,new LinearLayout.LayoutParams(-1,0,1));
       grid.setAdapter(new BaseAdapter(){
