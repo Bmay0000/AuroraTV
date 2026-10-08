@@ -12,6 +12,74 @@ public final class Provider {
  static String get(String url)throws Exception{HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setConnectTimeout(15000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","AuroraTV/0.1");try{if(c.getResponseCode()!=200)throw new IOException("Provider returned HTTP "+c.getResponseCode());try(InputStream in=c.getInputStream();ByteArrayOutputStream b=new ByteArrayOutputStream()){byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1){b.write(buf,0,n);if(b.size()>128*1024*1024)throw new IOException("Provider response exceeds 128 MB");}return b.toString("UTF-8");}}finally{c.disconnect();}}
  static String base(String s)throws Exception{URL u=new URL(s);if(!u.getProtocol().matches("https?"))throw new IOException("Use an http:// or https:// address");return s.replaceAll("/+$","");}
  public static List<LibraryCore.Item> xtream(String host,String user,String pass)throws Exception{host=base(host);String api=host+"/player_api.php?username="+enc(user)+"&password="+enc(pass);JSONObject auth=new JSONObject(get(api));if(auth.optJSONObject("user_info")==null||auth.getJSONObject("user_info").optInt("auth")!=1)throw new IOException("Login rejected");List<LibraryCore.Item> out=new ArrayList<>();String[] kinds={"live","vod","series"};for(String kind:kinds){JSONArray cats;try{cats=new JSONArray(get(api+"&action=get_"+kind+"_categories"));}catch(JSONException ex){cats=new JSONArray();}Map<String,String> names=new HashMap<>();for(int j=0;j<cats.length();j++){JSONObject c=cats.optJSONObject(j);if(c==null)continue;names.put(c.optString("category_id"),c.optString("category_name"));}JSONArray rows=new JSONArray(get(api+"&action=get_"+kind+(kind.equals("series")?"":"_streams")));for(int j=0;j<rows.length();j++){JSONObject r=rows.optJSONObject(j);if(r==null)continue;String id=r.optString(kind.equals("series")?"series_id":"stream_id");if(id.isEmpty()||id.equals("null"))continue;String type=kind.equals("vod")?"movie":kind;String ext=kind.equals("live")?"ts":r.optString("container_extension","mp4");if(ext.isEmpty()||ext.equals("null"))ext="mp4";String url=kind.equals("series")?api+"&action=get_series_info&series_id="+enc(id):host+"/"+(kind.equals("vod")?"movie":kind)+"/"+segment(user)+"/"+segment(pass)+"/"+id+"."+ext;out.add(new LibraryCore.Item(LibraryCore.key(host+"|"+user+"|"+type+"|"+id),r.optString("name"),names.getOrDefault(r.optString("category_id"),"Uncategorized"),url,type,r.optString("epg_channel_id"),""));}}return out;}
+
+ // Xtream's large get_live_streams/get_vod_streams/get_series arrays must be
+ // parsed as a stream. Reading them as Strings/JSONArrays duplicates memory.
+ public static int xtreamStream(String host,String user,String pass,LibraryStore.Writer output)throws Exception{
+  host=base(host);
+  String api=host+"/player_api.php?username="+enc(user)+"&password="+enc(pass);
+  JSONObject auth=new JSONObject(get(api));
+  if(auth.optJSONObject("user_info")==null||auth.getJSONObject("user_info").optInt("auth")!=1)
+   throw new IOException("Login rejected");
+  int total=0;
+  for(String kind:new String[]{"live","vod","series"}){
+   Map<String,String> names=new HashMap<>();
+   try{
+    JSONArray cats=new JSONArray(get(api+"&action=get_"+kind+"_categories"));
+    for(int j=0;j<cats.length();j++){
+     JSONObject c=cats.optJSONObject(j);
+     if(c!=null)names.put(c.optString("category_id"),c.optString("category_name"));
+    }
+   }catch(JSONException badCategories){/* Some providers omit category endpoints. */}
+   String endpoint=api+"&action=get_"+kind+(kind.equals("series")?"":"_streams");
+   HttpURLConnection connection=(HttpURLConnection)new URL(endpoint).openConnection();
+   connection.setConnectTimeout(15000);connection.setReadTimeout(45000);
+   connection.setRequestProperty("User-Agent","AuroraTV/0.1");
+   try{
+    int status=connection.getResponseCode();
+    if(status!=200)throw new IOException("Provider "+kind+" request returned HTTP "+status);
+    try(android.util.JsonReader reader=new android.util.JsonReader(new InputStreamReader(connection.getInputStream(),"UTF-8"))){
+     reader.setLenient(true);
+     if(reader.peek()!=android.util.JsonToken.BEGIN_ARRAY)
+      throw new IOException("Provider returned invalid "+kind+" list");
+     reader.beginArray();
+     while(reader.hasNext()){
+      if(reader.peek()!=android.util.JsonToken.BEGIN_OBJECT){reader.skipValue();continue;}
+      String id="",name="",cat="",epg="",ext="";
+      reader.beginObject();
+      while(reader.hasNext()){
+       String key=reader.nextName();
+       switch(key){
+        case "stream_id":case "series_id":
+         if(reader.peek()==android.util.JsonToken.STRING||reader.peek()==android.util.JsonToken.NUMBER)id=reader.nextString();else reader.skipValue();break;
+        case "name":
+         if(reader.peek()==android.util.JsonToken.STRING)name=reader.nextString();else reader.skipValue();break;
+        case "category_id":
+         if(reader.peek()==android.util.JsonToken.STRING||reader.peek()==android.util.JsonToken.NUMBER)cat=reader.nextString();else reader.skipValue();break;
+        case "epg_channel_id":
+         if(reader.peek()==android.util.JsonToken.STRING)epg=reader.nextString();else reader.skipValue();break;
+        case "container_extension":
+         if(reader.peek()==android.util.JsonToken.STRING)ext=reader.nextString();else reader.skipValue();break;
+        default:reader.skipValue();
+       }
+      }
+      reader.endObject();
+      if(id.isEmpty()||id.equals("null"))continue;
+      String type=kind.equals("vod")?"movie":kind;
+      if(ext.isEmpty()||!ext.matches("[a-zA-Z0-9]{1,6}"))ext=kind.equals("live")?"ts":"mp4";
+      String streamUrl=kind.equals("series")?api+"&action=get_series_info&series_id="+enc(id)
+        :host+"/"+(kind.equals("vod")?"movie":kind)+"/"+segment(user)+"/"+segment(pass)+"/"+id+"."+ext;
+      output.add(new LibraryCore.Item(LibraryCore.key(host+"|"+user+"|"+type+"|"+id),
+        name.isEmpty()?"Untitled":name,names.getOrDefault(cat,"Uncategorized"),
+        streamUrl,type,epg,""));
+      total++;
+     }
+     reader.endArray();
+    }
+   }finally{connection.disconnect();}
+  }
+  return total;
+ }
  public static List<LibraryCore.Item> episodes(LibraryCore.Item series)throws Exception{JSONObject root=new JSONObject(get(series.url));JSONObject seasons=root.getJSONObject("episodes");List<LibraryCore.Item> out=new ArrayList<>();List<String> keys=new ArrayList<>();seasons.keys().forEachRemaining(keys::add);Collections.sort(keys,(a,b)->{try{return Integer.compare(Integer.parseInt(a),Integer.parseInt(b));}catch(NumberFormatException ex){return a.compareTo(b);}});URL u=new URL(series.url);Map<String,String> args=new HashMap<>();for(String q:u.getQuery().split("&")){String[] p=q.split("=",2);if(p.length==2)args.put(p[0],URLDecoder.decode(p[1],"UTF-8"));}String host=series.url.substring(0,series.url.indexOf("/player_api.php"));for(String key:keys){JSONArray eps=seasons.getJSONArray(key);for(int i=0;i<eps.length();i++){JSONObject e=eps.getJSONObject(i);String id=e.optString("id");out.add(new LibraryCore.Item(series.id+"|"+id,"S"+key+" · E"+e.optString("episode_num")+"  "+e.optString("title"),series.category,host+"/series/"+segment(args.get("username"))+"/"+segment(args.get("password"))+"/"+id+"."+e.optString("container_extension","mp4"),"episode","",""));}}return out;}
  public static class Program { public String channel,title;public long start,end; }
  public static List<Program> epg(String url)throws Exception{String xml=get(base(url));XmlPullParser p=Xml.newPullParser();p.setInput(new StringReader(xml));List<Program> out=new ArrayList<>();Program current=null;for(int event=p.getEventType();event!=XmlPullParser.END_DOCUMENT;event=p.next()){if(event==XmlPullParser.START_TAG&&p.getName().equals("programme")){current=new Program();current.channel=p.getAttributeValue(null,"channel");current.start=date(p.getAttributeValue(null,"start"));current.end=date(p.getAttributeValue(null,"stop"));}else if(event==XmlPullParser.START_TAG&&p.getName().equals("title")&&current!=null)current.title=p.nextText();else if(event==XmlPullParser.END_TAG&&p.getName().equals("programme")&&current!=null){out.add(current);current=null;}}return out;}
