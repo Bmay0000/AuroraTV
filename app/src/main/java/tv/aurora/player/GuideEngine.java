@@ -75,14 +75,7 @@ public final class GuideEngine extends SQLiteOpenHelper {
     }
 
     /** Resolve exact XMLTV identifiers before conservative name matching. */
-    static String normalized(String name){
-        if(name==null)return "";
-        String s=Normalizer.normalize(name,Normalizer.Form.NFD)
-              .replaceAll("\\p{M}+","").toUpperCase(Locale.ROOT);
-        s=s.replaceFirst("^(UK|GB|US|USA|NZ|AU|CA)\\s*[|:/-]\\s*","");
-        s=s.replaceAll("(?<![A-Z0-9])(SD|HD|FHD|UHD|4K|HEVC|H265)(?![A-Z0-9])","");
-        return s.replaceAll("[^A-Z0-9]","");
-    }
+    static String normalized(String name){return GuideName.normalized(name);}
     private static boolean supportedSource(String s){
         return "provider".equals(s)||"external1".equals(s)||"external2".equals(s);
     }
