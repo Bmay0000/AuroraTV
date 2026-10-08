@@ -1,0 +1,19 @@
+<resources>
+ <style name="AuroraTheme" parent="android:style/Theme.Material.NoActionBar">
+  <item name="android:fontFamily">sans</item>
+  <item name="android:colorAccent">#5DEBD0</item>
+  <item name="android:colorControlActivated">#5DEBD0</item>
+  <item name="android:colorControlHighlight">#335DEBD0</item>
+  <item name="android:windowBackground">#070C17</item>
+  <item name="android:statusBarColor">#070C17</item>
+  <item name="android:navigationBarColor">#070C17</item>
+  <item name="android:windowLightStatusBar">false</item>
+  <item name="android:alertDialogTheme">@style/AuroraDialogTheme</item>
+ </style>
+ <style name="AuroraDialogTheme" parent="android:style/Theme.Material.Dialog.Alert">
+  <item name="android:colorAccent">#5DEBD0</item>
+  <item name="android:windowBackground">#142033</item>
+  <item name="android:textColorPrimary">#F5FAFF</item>
+  <item name="android:textColorSecondary">#B5C5D8</item>
+ </style>
+</resources>
