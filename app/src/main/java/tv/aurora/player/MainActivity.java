@@ -1136,7 +1136,7 @@ public class MainActivity extends Activity {
    "Refresh all configured guide sources",
    "About Aurora Smart EPG"
   };
-  new AlertDialog.Builder(this).setTitle("AURORA / SMART EPG")
+  new AlertDialog.Builder(this).setTitle("AuroraTV · Smart EPG")
    .setItems(options,(dialog,index)->{
     if(index==0){epgDiagnostics();return;}
     if(index==1){confirmGuidePreset("US + UK guide feeds",
@@ -1661,7 +1661,7 @@ public class MainActivity extends Activity {
   details.setTypeface(Typeface.MONOSPACE);
   scrolling.addView(details);
   column.addView(scrolling,new LinearLayout.LayoutParams(-1,dp(340)));
-  new AlertDialog.Builder(this).setTitle("AURORA / PLAYBACK HEALTH")
+  new AlertDialog.Builder(this).setTitle("AuroraTV · Playback Health")
    .setView(column)
    .setPositiveButton("COPY REPORT",(d,n)->{
     android.content.ClipboardManager clipboard=
