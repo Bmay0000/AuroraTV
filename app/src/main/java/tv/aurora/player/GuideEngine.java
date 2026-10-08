@@ -278,6 +278,29 @@ public final class GuideEngine extends SQLiteOpenHelper {
         return best;
     }
 
+    public List<Program> schedule(LibraryCore.Item item,int max){
+        ArrayList<Program> result=new ArrayList<>();
+        Slot preferred=nowNext(item);
+        if(!preferred.hasData())return result;
+        SQLiteDatabase db=getReadableDatabase();
+        String channelId=channel(db,preferred.source,item);
+        try(Cursor manual=db.rawQuery(
+                "SELECT channel FROM manual WHERE item=? AND source=?",
+                new String[]{item.id,preferred.source})){
+            if(manual.moveToFirst())channelId=manual.getString(0);
+        }
+        if(channelId==null||channelId.isEmpty())return result;
+        try(Cursor c=db.rawQuery(
+                "SELECT title,description,source,channel,start,end FROM programs "+
+                "WHERE source=? AND channel=? AND end>? ORDER BY start LIMIT ?",
+                new String[]{preferred.source,channelId,
+                    String.valueOf(System.currentTimeMillis()-60*60*1000L),
+                    String.valueOf(Math.max(1,Math.min(max,30)))})){
+            while(c.moveToNext())result.add(readProgram(c));
+        }
+        return result;
+    }
+
     public List<Match> findCandidates(String title,int limit){
         String name=normalized(title);
         String loose=title==null?"":title.replaceAll("[%_]","").trim();
