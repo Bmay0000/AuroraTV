@@ -17,22 +17,22 @@ public final class TvLayout {
         sidebar=clamp((int)Math.round(w*.155),136,232);
         navRow=clamp((int)Math.round(h*.081),43,62);
         columnGap=clamp((int)Math.round(w*.011),9,20);
-        int usable=Math.max(440,w-2*marginX-sidebar-columnGap-18);
-        posterWidth=clamp((int)Math.round(usable*.215),138,224);
+        int usable=Math.max(300,w-2*marginX-sidebar-columnGap-18);
+        posterWidth=clamp((int)Math.round(usable*.215),138,290);
         posterHeight=(int)Math.round(posterWidth*1.36);
         posterCardHeight=posterHeight+66;
         liveCardWidth=clamp((int)Math.round(usable*.27),166,264);
         liveCardHeight=(int)Math.round(liveCardWidth*.68)+56;
         heroHeight=clamp((int)Math.round(h*.355),164,314);
-        guideChannel=clamp((int)Math.round(usable*.235),145,260);
-        guideNow=clamp((int)Math.round(usable*.34),190,380);
-        guideNext=clamp((int)Math.round(usable*.305),190,360);
-        guideAction=clamp((int)Math.round(usable*.12),98,140);
+        guideChannel=clamp((int)Math.round(usable*.235),145,900);
+        guideNow=clamp((int)Math.round(usable*.34),190,1200);
+        guideNext=clamp((int)Math.round(usable*.305),190,1100);
+        guideAction=clamp((int)Math.round(usable*.12),98,380);
     }
     public static TvLayout of(int widthDp,int heightDp){
         return new TvLayout(Math.max(560,widthDp),Math.max(360,heightDp));
     }
-    public int contentWidth(){return Math.max(400,widthDp-2*marginX-sidebar-columnGap-18);}
+    public int contentWidth(){return Math.max(280,widthDp-2*marginX-sidebar-columnGap-18);}
     public int guideWidth(){return guideChannel+guideNow+guideNext+guideAction+16;}
     public int headerHeight(){return clamp((int)Math.round(heightDp*.087),52,78);}
     public int headingSize(){return clamp((int)Math.round(widthDp*.031),25,39);}
