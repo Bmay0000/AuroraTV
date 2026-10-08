@@ -1,6 +1,11 @@
 package tv.aurora.player;
 
 import android.app.Activity;
+import android.app.ActivityManager;
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.os.SystemClock;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -20,6 +25,11 @@ import android.widget.Toast;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
+import androidx.media3.common.MimeTypes;
+import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.common.Player;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
@@ -39,6 +49,15 @@ public final class PlaybackScreen {
     private final Activity activity;
     private final PlaybackDiagnostics diagnostics;
     private final String type;
+    private final LibraryCore.Item media;
+    private final SharedPreferences settings;
+    private final boolean lowRam;
+    private String sourceUrl;
+    private boolean isHls;
+    private String bufferProfile;
+    private int priorState=Player.STATE_IDLE;
+    private long bufferStartMs;
+    private int rebufferCount;
     private final Exit exit;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
@@ -48,6 +67,7 @@ public final class PlaybackScreen {
     private ExoPlayer player;
     private TextView state;
     private Button playPause;
+    private Button optionsButton;
     private View primaryButton;
     private boolean closed;
     private boolean overlayVisible;
@@ -114,8 +134,12 @@ public final class PlaybackScreen {
         this.activity = activity;
         this.diagnostics = diagnostics;
         this.type = media.type;
+        this.media = media;
         this.exit = exit;
         this.resumeAt = Math.max(0, resumeAt);
+        this.settings = activity.getSharedPreferences("playback_options",Context.MODE_PRIVATE);
+        ActivityManager manager=(ActivityManager)activity.getSystemService(Context.ACTIVITY_SERVICE);
+        this.lowRam=manager!=null&&manager.isLowRamDevice();
 
         activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         activity.getWindow().getDecorView().setSystemUiVisibility(
@@ -185,60 +209,222 @@ public final class PlaybackScreen {
             buttons.addView(seek,new LinearLayout.LayoutParams(0,dp(56),1));
         }
 
+        optionsButton=control("Playback Settings",v -> showSettings());
+        buttons.addView(optionsButton,new LinearLayout.LayoutParams(0,dp(56),1));
         Button back = control("Back to Library",v -> exit.goBack());
         buttons.addView(back,new LinearLayout.LayoutParams(0,dp(56),1));
         setControlsVisible(false);
         activity.setContentView(root);
         root.requestFocus();
 
+        startPlayer(this.resumeAt);
+    }
+
+    private void startPlayer(long resumePosition) {
+        if (closed) return;
+        bufferProfile=PlaybackTuning.profile(settings.getString("buffer","stable"));
+        String preferred=PlaybackTuning.format(settings.getString("live_format","original"));
+        sourceUrl=PlaybackTuning.resolveUrl(media.url,media.type,preferred);
+        isHls=PlaybackTuning.isHls(sourceUrl);
+        PlaybackTuning.Buffer config=PlaybackTuning.buffer(bufferProfile,
+                "live".equals(type),isHls,lowRam);
         try {
-            // Fire TV decoders vary; try a compatible decoder before failing.
-            DefaultRenderersFactory renderers =
-                    new DefaultRenderersFactory(activity).setEnableDecoderFallback(true);
-            DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(12000,40000,1500,3000).build();
-            player = new ExoPlayer.Builder(activity,renderers)
-                    .setLoadControl(loadControl).build();
+            // Keep memory use proportional to Fire TV's RAM class while
+            // allowing substantially more buffering than the old 12s/3s.
+            DefaultLoadControl loadControl=new DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(config.minMs,config.maxMs,
+                            config.startMs,config.afterRebufferMs)
+                    .setTargetBufferBytes(config.maxBytes)
+                    .setBackBuffer(0,false)
+                    .build();
+            DefaultHttpDataSource.Factory http=new DefaultHttpDataSource.Factory()
+                    .setUserAgent("AuroraTV/0.3")
+                    .setConnectTimeoutMs(15000)
+                    .setReadTimeoutMs(20000)
+                    .setAllowCrossProtocolRedirects(true);
+            DefaultDataSource.Factory data=new DefaultDataSource.Factory(activity,http);
+            DefaultMediaSourceFactory factory=new DefaultMediaSourceFactory(data)
+                    .setLoadErrorHandlingPolicy(new DefaultLoadErrorHandlingPolicy(6));
+            DefaultRenderersFactory renderers=new DefaultRenderersFactory(activity)
+                    .setEnableDecoderFallback(true);
+            player=new ExoPlayer.Builder(activity,renderers)
+                    .setLoadControl(loadControl)
+                    .setMediaSourceFactory(factory)
+                    .build();
             player.setWakeMode(C.WAKE_MODE_NETWORK);
             player.setHandleAudioBecomingNoisy(true);
             view.setPlayer(player);
+            priorState=Player.STATE_IDLE;
+            bufferStartMs=0;
+            rebufferCount=0;
 
-            player.addListener(new Player.Listener() {
-                @Override public void onPlaybackStateChanged(int playbackState) {
-                    if (closed) return;
-                    diagnostics.event("Player state=" + playbackState);
+            player.addListener(new Player.Listener(){
+                @Override public void onPlaybackStateChanged(int playbackState){
+                    if(closed || player==null)return;
+                    if(playbackState==Player.STATE_BUFFERING &&
+                        priorState==Player.STATE_READY && player.getPlayWhenReady()){
+                        rebufferCount++;
+                        bufferStartMs=SystemClock.elapsedRealtime();
+                        diagnostics.event("Rebuffer #"+rebufferCount+"; buffered ahead "+
+                            Math.max(0,player.getBufferedPosition()-player.getCurrentPosition())+" ms");
+                    }else if(playbackState==Player.STATE_READY && bufferStartMs>0){
+                        long duration=SystemClock.elapsedRealtime()-bufferStartMs;
+                        diagnostics.event("Rebuffer ended after "+duration+" ms");
+                        bufferStartMs=0;
+                    }
+                    priorState=playbackState;
+                    diagnostics.event("Player state="+playbackState);
                     updatePlaybackState();
                 }
-                @Override public void onIsPlayingChanged(boolean isPlaying) {
-                    if (!closed) updatePlaybackState();
+                @Override public void onIsPlayingChanged(boolean playing){
+                    if(!closed)updatePlaybackState();
                 }
-                @Override public void onPlayerError(PlaybackException error) {
-                    if (closed) return;
-                    String cause = error.getCause()==null?"unknown":
+                @Override public void onPositionDiscontinuity(
+                        Player.PositionInfo oldPosition,Player.PositionInfo newPosition,int reason){
+                    long delta=newPosition.positionMs-oldPosition.positionMs;
+                    if(Math.abs(delta)>=500 &&
+                       reason!=Player.DISCONTINUITY_REASON_SEEK){
+                        diagnostics.event("Position discontinuity reason="+reason+
+                                " deltaMs="+delta+"; bufferAheadMs="+
+                                Math.max(0,player.getBufferedPosition()-player.getCurrentPosition()));
+                    }
+                }
+                @Override public void onPlaybackParametersChanged(
+                        androidx.media3.common.PlaybackParameters parameters){
+                    if(Math.abs(parameters.speed-1f)>0.005f)
+                        diagnostics.event("Playback speed adjustment="+parameters.speed);
+                }
+                @Override public void onPlayerError(PlaybackException error){
+                    if(closed)return;
+                    String cause=error.getCause()==null?"unknown":
                             error.getCause().getClass().getSimpleName();
-                    diagnostics.event("Playback error: " + error.getErrorCodeName() +
-                            " cause=" + cause);
-                    state.setText("Playback interrupted (" + error.getErrorCodeName() +
+                    diagnostics.event("Playback error: "+error.getErrorCodeName()+
+                            " cause="+cause+" rebuffers="+rebufferCount);
+                    state.setText("Playback interrupted ("+error.getErrorCodeName()+
                             "). Select Retry.");
-                    Toast.makeText(activity,
-                            "Playback stopped; open controls to retry.",Toast.LENGTH_LONG).show();
+                    Toast.makeText(activity,"Playback stopped. Select Retry.",
+                            Toast.LENGTH_LONG).show();
                     showControls();
                 }
             });
-
-            // Never record the stream URL. It can contain account credentials.
             diagnostics.start(type);
-            player.setMediaItem(MediaItem.fromUri(media.url));
+            diagnostics.event("Stream="+(isHls?"HLS":"progressive")+
+                    " profile="+bufferProfile+(lowRam?" lowRAM":"")+
+                    " targetMinMs="+config.minMs+" maxMs="+config.maxMs+
+                    " afterRebufferMs="+config.afterRebufferMs);
+            MediaItem.Builder mediaItem=new MediaItem.Builder().setUri(sourceUrl);
+            if(isHls) mediaItem.setMimeType(MimeTypes.APPLICATION_M3U8);
+            player.setMediaItem(mediaItem.build());
             player.prepare();
-            if (!"live".equals(type) && this.resumeAt > 0)
-                player.seekTo(this.resumeAt);
+            if(!"live".equals(type) && resumePosition>0)player.seekTo(resumePosition);
             player.play();
-            handler.postDelayed(sampleHealth, HEALTH_INTERVAL_MS);
-        } catch (Exception ex) {
-            diagnostics.event("Player setup error: " + ex.getClass().getSimpleName());
-            Toast.makeText(activity,"Could not initialize video decoder.",Toast.LENGTH_LONG).show();
+            handler.removeCallbacks(sampleHealth);
+            handler.postDelayed(sampleHealth,HEALTH_INTERVAL_MS);
+        }catch(Exception error){
+            diagnostics.event("Player setup error: "+error.getClass().getSimpleName());
+            Toast.makeText(activity,"Could not initialize playback; open Settings.",
+                    Toast.LENGTH_LONG).show();
             showControls();
         }
+    }
+
+    private void restartPlayer(){
+        if(closed)return;
+        long position=resumeAt;
+        if(player!=null){
+            position="live".equals(type)?0:Math.max(0,player.getCurrentPosition());
+            view.setPlayer(null);
+            try{player.stop();player.release();}
+            catch(Exception e){diagnostics.event("Restart release="+e.getClass().getSimpleName());}
+            player=null;
+        }
+        diagnostics.event("Player restarting after settings change");
+        state.setText("Applying playback settings…");
+        startPlayer(position);
+        scheduleHide();
+    }
+
+    private void showSettings(){
+        String[] options={
+                "Buffering: "+labelBuffer(),
+                "Live stream format: "+labelFormat(),
+                "Restart this stream",
+                "Why does Live TV buffer?"
+        };
+        new AlertDialog.Builder(activity).setTitle("AURORA / PLAYBACK SETTINGS")
+          .setItems(options,(dialog,index)->{
+              if(index==0){chooseBuffering();return;}
+              if(index==1){chooseFormat();return;}
+              if(index==2){restartPlayer();return;}
+              new AlertDialog.Builder(activity).setTitle("Playback buffering")
+                 .setMessage("Stable mode builds a bigger buffer to help smooth out uneven IPTV streams. "
+                   +"Original keeps your provider's stream type. Some Xtream providers offer both MPEG-TS and HLS. "
+                   +"Try HLS if live TS frequently stalls or repeats. Stream formats only switch when the provider "
+                   +"uses the standard Xtream /live/ endpoint. Playback errors and buffering counts are available "
+                   +"in Connect / Refresh → Playback diagnostics.")
+                 .setPositiveButton("OK",null).show();
+          }).show();
+    }
+
+    private String labelBuffer(){
+        switch(PlaybackTuning.profile(settings.getString("buffer","stable"))){
+            case "fast": return "Low latency";
+            case "balanced": return "Balanced";
+            default: return "Stable (recommended)";
+        }
+    }
+    private String labelFormat(){
+        switch(PlaybackTuning.format(settings.getString("live_format","original"))){
+            case "hls": return "HLS (.m3u8)";
+            case "ts": return "MPEG-TS (.ts)";
+            default: return "Provider original";
+        }
+    }
+    private void chooseBuffering(){
+        final String[] labels={
+                "Stable – fewer stalls; slightly slower start",
+                "Balanced – moderate buffer",
+                "Low latency – starts sooner, may buffer more"
+        };
+        final String[] values={"stable","balanced","fast"};
+        int selection=0;
+        String current=PlaybackTuning.profile(settings.getString("buffer","stable"));
+        for(int i=0;i<values.length;i++)if(values[i].equals(current))selection=i;
+        new AlertDialog.Builder(activity).setTitle("Choose buffering profile")
+             .setSingleChoiceItems(labels,selection,(dialog,index)->{
+                 settings.edit().putString("buffer",values[index]).apply();
+                 dialog.dismiss();
+                 restartPlayer();
+             }).setNegativeButton("CANCEL",null).show();
+    }
+    private void chooseFormat(){
+        if(!"live".equals(type)){
+            Toast.makeText(activity,"Stream format switching is for Live TV.",
+                    Toast.LENGTH_SHORT).show();return;
+        }
+        String[] labels={"Provider original (recommended)",
+                "HLS (.m3u8) – try for choppy MPEG-TS",
+                "MPEG-TS (.ts) – continuous transport stream"};
+        String[] values={"original","hls","ts"};
+        int selection=0;
+        String current=PlaybackTuning.format(settings.getString("live_format","original"));
+        for(int i=0;i<values.length;i++)if(values[i].equals(current))selection=i;
+        new AlertDialog.Builder(activity).setTitle("Live streaming format")
+          .setMessage("Not every provider supports both formats. If HLS fails, switch back to Original.")
+          .setSingleChoiceItems(labels,selection,(dialog,index)->{
+              String selected=values[index];
+              String testUrl=PlaybackTuning.resolveUrl(media.url,type,selected);
+              if(!selected.equals("original") && testUrl.equals(media.url) &&
+                      !PlaybackTuning.isHls(media.url)){
+                  Toast.makeText(activity,
+                    "This playlist uses a custom URL. Format cannot be switched safely.",
+                    Toast.LENGTH_LONG).show();
+              }else{
+                  settings.edit().putString("live_format",selected).apply();
+                  restartPlayer();
+              }
+              dialog.dismiss();
+          }).setNegativeButton("CANCEL",null).show();
     }
 
     private void updatePlaybackState() {
