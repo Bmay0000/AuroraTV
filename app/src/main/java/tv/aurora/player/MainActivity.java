@@ -23,7 +23,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff080f1d,PANEL=0xff142238,ACCENT=0xff54e0c5;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;boolean focusSearchNext=false;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV2",false)&&!allowed.isEmpty()){
     // An existing English-only choice previously retained unclassified groups.
@@ -351,6 +351,7 @@ public class MainActivity extends Activity {
      searchField.setHintTextColor(0xffa6bbc9);
      searchField.setSingleLine(true);
      searchField.setText(search);
+     if(focusSearchNext){focusSearchNext=false;searchField.requestFocus();}
      searchField.setHint(type.equals("live")?"Search channel":type.equals("movie")?"Search movie titles":"Search TV series");
      searchField.setTextSize(15);
      searchField.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
@@ -854,18 +855,20 @@ public class MainActivity extends Activity {
    }).show();
  }
 
+
+ interface SectionChoice { void choose(String type); }
+ void chooseLibrarySection(String title,SectionChoice action){
+  new AlertDialog.Builder(this).setTitle(title)
+   .setItems(new String[]{"Live TV","Movies","TV Shows"},(d,index)->
+     action.choose(index==0?"live":index==1?"movie":"series"))
+   .show();
+ }
  void search(){
-  new AlertDialog.Builder(this).setTitle("SEARCH YOUR LIBRARY")
-   .setItems(new String[]{"Live TV","Movies","TV Shows"},(d,index)->{
-    section=index==0?"live":index==1?"movie":"series";
-    EditText entry=new EditText(this);entry.setTextColor(Color.WHITE);entry.setHintTextColor(0xffbbbbbb);
-    entry.setSingleLine();entry.setHint("Search "+(index==0?"channels":index==1?"movies":"series"));
-    new AlertDialog.Builder(this).setTitle("Search "+(index==0?"Live TV":index==1?"Movies":"TV Shows"))
-     .setView(entry).setPositiveButton("Search",(a,b)->{
-       query=entry.getText().toString().trim();category="All";page=0;
-       hiddenOnly=false;favOnly=false;editing=false;browse();
-     }).setNegativeButton("Cancel",null).show();
-   }).show();
+  chooseLibrarySection("SEARCH YOUR LIBRARY",type->{
+   section=type;query="";category="All";page=0;
+   hiddenOnly=false;favOnly=false;editing=false;
+   focusSearchNext=true;browse();
+  });
  }
  void actions(LibraryCore.Item i){
   boolean isHidden=!visible(i);
@@ -893,43 +896,57 @@ public class MainActivity extends Activity {
    new AlertDialog.Builder(this).setTitle(i.name).setMessage(i.category).setPositiveButton("OK",null).show();
   }).show();
  }
+
  void manage(){
-  new AlertDialog.Builder(this).setTitle("EDIT LIBRARY")
+  new AlertDialog.Builder(this).setTitle("EDIT YOUR LIBRARY")
    .setItems(new String[]{
      editing?"Finish editing":"Edit individual titles",
-     "Manage categories · hide by group",
-     "Smart language filter · Live TV",
-     "Hidden channels · restore anything filtered",
-     "Restore an entire filtered category",
+     "Hide / manage a category",
+     "Smart language filter · All media",
+     "Hidden titles · Browse and restore",
+     "Restore an entire hidden category",
      "Manage manually restored categories",
      "Undo previous bulk filter change",
-     "Return to visible library"
+     "Return to your visible library"
    },(d,n)->{
-    if(n==0)editing=!editing;
-    if(n==1){manageCategories();return;}
+    if(n==1){
+     chooseLibrarySection("MANAGE CATEGORIES",type->{section=type;manageCategories();});
+     return;
+    }
     if(n==2){smart();return;}
-    if(n==3){hiddenOnly=true;editing=true;favOnly=false;section="live";page=0;category="All";query="";}
+    if(n==3){
+     chooseLibrarySection("SHOW HIDDEN ITEMS FROM",type->{
+      section=type;hiddenOnly=true;editing=true;favOnly=false;page=0;category="All";query="";browse();
+     });
+     return;
+    }
     if(n==4){restoreCategory();return;}
     if(n==5){manageRestoredCategories();return;}
     if(n==6)undo();
+    if(n==0)editing=!editing;
     if(n==7){hiddenOnly=false;editing=false;category="All";page=0;}
     browse();
    }).show();
  }
  void restoreCategory(){
+  chooseLibrarySection("RESTORE A CATEGORY FROM",this::restoreCategoryFor);
+ }
+ void restoreCategoryFor(String type){
   final Set<String> h=new HashSet<>(hidden),c=new HashSet<>(categories),fav=new HashSet<>(favorites),
     lang=new HashSet<>(allowed),manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
   io.execute(()->{
    try{
-    String[] groups=store.visibleCategoryNames("live",true,h,c,fav,lang,hideUnknown,manual,manualGroups);
+    String[] groups=store.visibleCategoryNames(type,true,h,c,fav,lang,hideUnknown,manual,manualGroups);
     runOnUiThread(()->{
      if(isDestroyed())return;
-     if(groups.length==0){toast("No hidden categories");return;}
-     new AlertDialog.Builder(this).setTitle("Restore a hidden category")
+     if(groups.length==0){toast("No hidden categories in this section");return;}
+     new AlertDialog.Builder(this).setTitle("Restore an entire "+(type.equals("movie")?"movie":type.equals("series")?"TV show":"channel")+" category")
       .setItems(groups,(d,n)->{
-       snapshot();String key="live|"+groups[n];
+       snapshot();
+       String key=type+"|"+groups[n];
        shownCategories.add(key);categories.remove(key);
-       save();section="live";category=groups[n];hiddenOnly=false;editing=false;page=0;browse();
+       save();section=type;category=groups[n];hiddenOnly=false;editing=false;
+       favOnly=false;page=0;query="";browse();
       }).show();
     });
    }catch(Exception error){runOnUiThread(()->toast("Could not list hidden categories"));}
