@@ -225,122 +225,133 @@ public class MainActivity extends Activity {
   });
  }
 
+
  void browse(){
+  if(!store.hasLibrary()){loginScreen(false);return;}
+  screen="browse";
   final int token=++browseToken;
-  final String wantedSection=section,wantedCategory=category,wantedQuery=query.toLowerCase(Locale.ROOT);
-  final boolean onlyHidden=hiddenOnly,onlyFavorites=favOnly,isEditing=editing;
-  final int requestedPage=page;
+  final String type=section,cat=category,search=query;
+  final boolean showHidden=hiddenOnly,onlyFavorites=favOnly,isEditing=editing,hide=hideUnknown;
+  final int requested=page;
+  final Set<String> h=new HashSet<>(hidden),hc=new HashSet<>(categories),
+     fav=new HashSet<>(favorites),lang=new HashSet<>(allowed);
   body.removeAllViews();
-  body.addView(text((isEditing?"EDIT LIBRARY · ":"")+(onlyHidden?"Hidden content":onlyFavorites?"Favorites":wantedSection.equals("live")?"Live TV / Guide":wantedSection.equals("movie")?"Movies":"TV Shows"),28));
-  if(!store.hasLibrary()){
-   body.addView(text("A quieter way to watch.",32));
-   body.addView(text("Connect your Xtream Codes account or an M3U playlist.\nThen choose what belongs in your library.",20));
-   body.addView(button("Connect a source",this::connect));
-   return;
-  }
-  body.addView(text("Loading library page…",19));
+  body.addView(text("Finding your "+(type.equals("live")?"channels":type.equals("movie")?"movies":"series")+"…",18));
   io.execute(()->{
-   final List<LibraryCore.Item> rows=new ArrayList<>();
-   final int[] matching={0};
    try{
-    store.forEach(i->{
-     boolean v=visible(i);
-     if(!i.type.equals(wantedSection)||(onlyHidden?v:!v)||
-       (onlyFavorites&&!favorites.contains(i.id))||
-       (!wantedCategory.equals("All")&&!wantedCategory.equals(i.category))||
-       !i.name.toLowerCase(Locale.ROOT).contains(wantedQuery))return true;
-     if(matching[0]>=requestedPage*PAGE_SIZE&&rows.size()<PAGE_SIZE)rows.add(i);
-     matching[0]++;
-     return true;
-    });
+    LibraryStore.Page result=store.page(type,cat,search,showHidden,onlyFavorites,h,hc,fav,lang,hide,
+         requested*PAGE_SIZE,PAGE_SIZE);
     runOnUiThread(()->{
-     if(token!=browseToken||isDestroyed())return;
-     items=rows;
+     if(isDestroyed()||token!=browseToken||!screen.equals("browse"))return;
+     items=result.rows;
      body.removeAllViews();
-     body.addView(text((isEditing?"EDIT LIBRARY · ":"")+(onlyHidden?"Hidden content":onlyFavorites?"Favorites":wantedSection.equals("live")?"Live TV / Guide":wantedSection.equals("movie")?"Movies":"TV Shows"),28));
-     body.addView(button("Category: "+wantedCategory,this::chooseCategory));
-     if(isEditing)body.addView(text("Select a title for visibility and favorite actions.",14));
-     if(matching[0]==0){body.addView(text("No matching titles. Change category, search, or filter.",18));return;}
-     if(rows.isEmpty()&&page>0){page=0;browse();return;}
-     body.addView(text("Showing "+(requestedPage*PAGE_SIZE+1)+"–"+(requestedPage*PAGE_SIZE+rows.size())+" of "+matching[0],16));
-     ListView list=new ListView(this);list.setDividerHeight(dp(6));
+     LinearLayout heading=new LinearLayout(this);
+     heading.setGravity(Gravity.CENTER_VERTICAL);
+     String title=(isEditing?"EDIT  /  ":"")+(showHidden?"HIDDEN":onlyFavorites?"FAVORITES":
+       type.equals("live")?"LIVE TV":type.equals("movie")?"MOVIES":"TV SHOWS");
+     heading.addView(headline(title,25,Color.WHITE),new LinearLayout.LayoutParams(0,-2,1));
+     Button back=button("⌂ Home",this::home);heading.addView(back,new LinearLayout.LayoutParams(dp(135),dp(52)));
+     body.addView(heading);
+     body.addView(button("CATEGORY  /  "+cat+"    ▾",this::chooseCategory));
+     if(isEditing)body.addView(text("Select a title to favorite or hide it.",14));
+     if(result.rows.isEmpty()){
+      if(requested>0){page=0;browse();return;}
+      body.addView(text("No matching titles. Try a different category or search.",18));
+      return;
+     }
+     subtitle.setText("Browse without waiting for the entire library");
+     body.addView(text("Showing "+(requested*PAGE_SIZE+1)+"–"+
+         (requested*PAGE_SIZE+result.rows.size())+(result.more?"+":"")+" matching titles",15));
+     ListView list=new ListView(this);
+     list.setDividerHeight(dp(5));
      body.addView(list,new LinearLayout.LayoutParams(-1,0,1));
      list.setAdapter(new BaseAdapter(){
-      public int getCount(){return rows.size();}
-      public Object getItem(int n){return rows.get(n);}
+      public int getCount(){return result.rows.size();}
+      public Object getItem(int n){return result.rows.get(n);}
       public long getItemId(int n){return n;}
       public View getView(int n,View reuse,ViewGroup parent){
-       LibraryCore.Item i=rows.get(n);
+       LibraryCore.Item i=result.rows.get(n);
        TextView t=reuse instanceof TextView?(TextView)reuse:text("",17);
-       t.setText((favorites.contains(i.id)?"★  ":"")+i.name+"   ·   "+i.category+(i.type.equals("live")?nowNext(i):""));
-       t.setPadding(dp(16),dp(16),dp(16),dp(16));t.setBackground(shape(PANEL));
+       t.setText((favorites.contains(i.id)?"★  ":"")+i.name+"   ·   "+i.category+
+          (i.type.equals("live")?nowNext(i):""));
+       t.setMaxLines(3);
+       t.setPadding(dp(14),dp(12),dp(14),dp(12));
+       t.setBackground(shape(PANEL));
        return t;
       }
      });
-     list.setSelector(shape(0xff287e76));
-     list.setOnItemClickListener((parent,v,n,id)->{selected=rows.get(n);if(editing)actions(selected);else open(selected);});
-     list.setOnItemLongClickListener((parent,v,n,id)->{actions(rows.get(n));return true;});
-     LinearLayout buttons=new LinearLayout(this);
-     if(requestedPage>0)buttons.addView(button("◀ Previous",()->{page--;browse();}),new LinearLayout.LayoutParams(0,dp(55),1));
-     if(matching[0]>(requestedPage+1)*PAGE_SIZE)buttons.addView(button("Next ▶",()->{page++;browse();}),new LinearLayout.LayoutParams(0,dp(55),1));
-     body.addView(buttons);
-     subtitle.setText(matching[0]+" matching titles · page "+(requestedPage+1));
+     list.setSelector(shape(0xff27786c));
+     list.setOnItemClickListener((parent,v,n,id)->{
+      LibraryCore.Item picked=result.rows.get(n);
+      if(editing)actions(picked);else open(picked);
+     });
+     list.setOnItemLongClickListener((parent,v,n,id)->{actions(result.rows.get(n));return true;});
+     LinearLayout navigation=new LinearLayout(this);
+     if(requested>0)navigation.addView(button("◀ Previous",()->{page--;browse();}),new LinearLayout.LayoutParams(0,dp(55),1));
+     if(result.more)navigation.addView(button("Next ▶",()->{page++;browse();}),new LinearLayout.LayoutParams(0,dp(55),1));
+     body.addView(navigation);
     });
    }catch(Exception error){
     runOnUiThread(()->{
-     if(token!=browseToken||isDestroyed())return;
+     if(isDestroyed()||token!=browseToken)return;
      body.removeAllViews();
-     body.addView(text("Library could not be opened. Please refresh the source.",19));
-     toast("Library read failed: "+error.getClass().getSimpleName());
+     body.addView(text("Could not open this page: "+error.getClass().getSimpleName(),19));
+     body.addView(button("Retry",this::browse));
     });
    }
   });
  }
 
-  String nowNext(LibraryCore.Item i){long now=System.currentTimeMillis();Provider.Program current=null,next=null;for(Provider.Program p:guideIndex.getOrDefault(i.epgId,Collections.emptyList())){if(p.start<=now&&p.end>now)current=p;else if(p.start>now&&(next==null||p.start<next.start))next=p;}return "\n"+(current==null?"Schedule unavailable":"Now: "+current.title)+(next==null?"":"   /   Next: "+next.title);}
+ String nowNext(LibraryCore.Item i){long now=System.currentTimeMillis();Provider.Program current=null,next=null;for(Provider.Program p:guideIndex.getOrDefault(i.epgId,Collections.emptyList())){if(p.start<=now&&p.end>now)current=p;else if(p.start>now&&(next==null||p.start<next.start))next=p;}return "\n"+(current==null?"Schedule unavailable":"Now: "+current.title)+(next==null?"":"   /   Next: "+next.title);}
+
 
  void chooseCategory(){
-  final String filterSection=section;
-  final boolean onlyHidden=hiddenOnly;
+  final String requestedType=section;
   io.execute(()->{
-   TreeSet<String> groups=new TreeSet<>();
-   try{store.forEach(i->{if(i.type.equals(filterSection)&&(onlyHidden?!visible(i):visible(i)))groups.add(i.category);return true;});}
-   catch(Exception e){runOnUiThread(()->toast("Could not read library categories"));return;}
-   runOnUiThread(()->{
-    if(isDestroyed())return;
-    List<String> names=new ArrayList<>();names.add("All");names.addAll(groups);
-    new AlertDialog.Builder(this).setTitle("Choose category").setItems(names.toArray(new String[0]),(d,n)->{category=names.get(n);page=0;browse();}).show();
-   });
+   try{
+    String[] groups=store.categories(requestedType);
+    runOnUiThread(()->{
+     if(isDestroyed()||!requestedType.equals(section))return;
+     String[] names=new String[groups.length+1];names[0]="All";
+     System.arraycopy(groups,0,names,1,groups.length);
+     new AlertDialog.Builder(this).setTitle("Choose a category")
+       .setItems(names,(d,n)->{category=names[n];page=0;browse();}).show();
+    });
+   }catch(Exception error){runOnUiThread(()->toast("Could not list categories"));}
   });
  }
 
-  void search(){EditText e=new EditText(this);e.setSingleLine();e.setHint("Search "+section);e.setText(query);new AlertDialog.Builder(this).setTitle("Search your visible library").setView(e).setPositiveButton("Search",(d,w)->{query=e.getText().toString();browse();}).setNegativeButton("Cancel",null).show();}
+ void search(){EditText e=new EditText(this);e.setSingleLine();e.setHint("Search "+section);e.setText(query);new AlertDialog.Builder(this).setTitle("Search your visible library").setView(e).setPositiveButton("Search",(d,w)->{query=e.getText().toString();browse();}).setNegativeButton("Cancel",null).show();}
  void actions(LibraryCore.Item i){String[] labels={favorites.contains(i.id)?"Remove favorite":"Add favorite",hidden.contains(i.id)?"Restore title":"Hide title","Play / Open"};new AlertDialog.Builder(this).setTitle(i.name).setItems(labels,(d,n)->{if(n==0){if(!favorites.add(i.id))favorites.remove(i.id);}else if(n==1){if(!hidden.add(i.id))hidden.remove(i.id);}else{open(i);return;}save();browse();}).show();}
  void manage(){new AlertDialog.Builder(this).setTitle("Edit Library").setItems(new String[]{editing?"Finish editing":"Edit individual titles","Manage categories","Smart language filter · Live TV","Hidden content / restore","Undo last bulk action","Return to visible library"},(d,n)->{if(n==0)editing=!editing;if(n==1){manageCategories();return;}if(n==2){smart();return;}if(n==3){hiddenOnly=true;editing=true;favOnly=false;category="All";}if(n==4)undo();if(n==5){hiddenOnly=false;editing=false;}browse();}).show();}
  void snapshot(){prefs.edit().putStringSet("undoHidden",new HashSet<>(hidden)).putStringSet("undoCategories",new HashSet<>(categories)).putStringSet("undoAllowed",new HashSet<>(allowed)).putBoolean("undoUnknown",hideUnknown).putBoolean("undo",true).apply();}
  void undo(){if(!prefs.getBoolean("undo",false)){toast("No bulk action to undo");return;}hidden=set("undoHidden");categories=set("undoCategories");allowed=set("undoAllowed");hideUnknown=prefs.getBoolean("undoUnknown",false);prefs.edit().putBoolean("undo",false).apply();save();}
 
+
  void manageCategories(){
-  final String filterSection=section;
+  final String requestedType=section;
   io.execute(()->{
-   TreeSet<String> groups=new TreeSet<>();
-   try{store.forEach(i->{if(i.type.equals(filterSection))groups.add(i.category);return true;});}
-   catch(Exception e){runOnUiThread(()->toast("Could not read categories"));return;}
-   runOnUiThread(()->{
-    if(isDestroyed())return;
-    String[] names=groups.toArray(new String[0]);boolean[] checks=new boolean[names.length];
-    for(int i=0;i<names.length;i++)checks[i]=categories.contains(filterSection+"|"+names[i]);
-    new AlertDialog.Builder(this).setTitle("Select categories to hide · "+filterSection)
-     .setMultiChoiceItems(names,checks,(d,n,c)->checks[n]=c)
-     .setPositiveButton("Apply",(d,w)->{
-      snapshot();for(int i=0;i<names.length;i++){String k=filterSection+"|"+names[i];if(checks[i])categories.add(k);else categories.remove(k);}
-      save();category="All";page=0;browse();
-     }).setNegativeButton("Cancel",null).show();
-   });
+   try{
+    String[] names=store.categories(requestedType);
+    runOnUiThread(()->{
+     if(isDestroyed())return;
+     boolean[] checks=new boolean[names.length];
+     for(int i=0;i<names.length;i++)checks[i]=categories.contains(requestedType+"|"+names[i]);
+     new AlertDialog.Builder(this).setTitle("Hide categories · "+requestedType)
+      .setMultiChoiceItems(names,checks,(d,n,checked)->checks[n]=checked)
+      .setPositiveButton("Apply",(d,w)->{
+       snapshot();
+       for(int i=0;i<names.length;i++){
+        String k=requestedType+"|"+names[i];
+        if(checks[i])categories.add(k);else categories.remove(k);
+       }
+       save();category="All";page=0;browse();
+      }).setNegativeButton("Cancel",null).show();
+    });
+   }catch(Exception error){runOnUiThread(()->toast("Could not load categories"));}
   });
  }
 
- 
  void smart(){
   String[] codes={"en","fr","de","es","ar"};
   String[] labels={"English · UK, US, AU, NZ, NA clues","French","German","Spanish","Arabic","Hide unrecognized / ambiguous channels"};
