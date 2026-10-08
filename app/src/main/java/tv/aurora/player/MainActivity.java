@@ -820,7 +820,16 @@ public class MainActivity extends Activity {
      newData=true;
     }catch(Exception e){
      // Deliberately never display exception text: provider URLs can include credentials.
-     prefs.edit().putString("guide.error."+source,"Source unavailable or invalid XMLTV").apply();
+     String reason="Guide source is unavailable or returned invalid XMLTV";
+     String message=e.getMessage()==null?"":e.getMessage();
+     if(message.startsWith("EPG returned HTTP "))reason=message;
+     else if(message.contains("no current or upcoming programmes"))
+      reason="No current or upcoming programmes in this feed";
+     else if(message.contains("safe download limit")||message.contains("safe programme limit"))
+      reason="Guide exceeded the device-safe size limit";
+     else if(e instanceof java.net.SocketTimeoutException)
+      reason="Guide source timed out";
+     prefs.edit().putString("guide.error."+source,reason).apply();
     }
    }
    if(newData){
