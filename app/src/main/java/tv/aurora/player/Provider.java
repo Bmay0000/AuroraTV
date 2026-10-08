@@ -92,7 +92,11 @@ public final class Provider {
  }
 
  /** Read M3U incrementally instead of creating a huge String and List. */
+ public interface PlaylistGuideConsumer { void accept(String xmltvUrl); }
  public static int m3uStream(String address,LibraryStore.Writer writer,ImportProgress progress)throws Exception{
+  return m3uStream(address,writer,progress,xmltvUrl->{});
+ }
+ public static int m3uStream(String address,LibraryStore.Writer writer,ImportProgress progress,PlaylistGuideConsumer guide)throws Exception{
   URL url=new URL(address);
   if(!url.getProtocol().matches("https?"))throw new IOException("Use an HTTP or HTTPS playlist URL");
   HttpURLConnection connection=(HttpURLConnection)url.openConnection();
@@ -107,6 +111,15 @@ public final class Provider {
     String line,meta=null;
     while((line=reader.readLine())!=null){
      String entry=line.trim();
+     if(entry.startsWith("#EXTM3U")){
+      String epgUrl=LibraryCore.attr(entry,"x-tvg-url");
+      if(epgUrl.isEmpty())epgUrl=LibraryCore.attr(entry,"url-tvg");
+      if(epgUrl.startsWith("http://")||epgUrl.startsWith("https://")){
+       // Comma-separated URLs can be included; pick the first valid feed.
+       guide.accept(epgUrl.split(",")[0].trim());
+      }
+      continue;
+     }
      if(entry.startsWith("#EXTINF:")){meta=entry;continue;}
      if(entry.isEmpty()||entry.startsWith("#")||meta==null)continue;
      boolean quoted=false;int comma=-1;
