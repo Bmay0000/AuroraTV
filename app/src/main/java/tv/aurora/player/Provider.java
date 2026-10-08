@@ -50,7 +50,7 @@ public final class Provider {
      reader.beginArray();
      while(reader.hasNext()){
       if(reader.peek()!=android.util.JsonToken.BEGIN_OBJECT){reader.skipValue();continue;}
-      String id="",name="",cat="",epg="",ext="",artwork="";
+      String id="",name="",cat="",epg="",ext="",artwork="",language="";
       reader.beginObject();
       while(reader.hasNext()){
        String key=reader.nextName();
@@ -63,8 +63,10 @@ public final class Provider {
          if(reader.peek()==android.util.JsonToken.STRING||reader.peek()==android.util.JsonToken.NUMBER)cat=reader.nextString();else reader.skipValue();break;
         case "epg_channel_id":
          if(reader.peek()==android.util.JsonToken.STRING)epg=reader.nextString();else reader.skipValue();break;
-        case "stream_icon":case "cover":case "cover_big":case "movie_image":
+        case "stream_icon":case "cover":case "cover_big":case "movie_image":case "poster":case "thumbnail":
          if(reader.peek()==android.util.JsonToken.STRING){String value=reader.nextString();if(artwork.isEmpty()&&value.startsWith("http"))artwork=value;}else reader.skipValue();break;
+        case "language":case "tvg_language":
+         if(reader.peek()==android.util.JsonToken.STRING)language=reader.nextString();else reader.skipValue();break;
         case "container_extension":
          if(reader.peek()==android.util.JsonToken.STRING)ext=reader.nextString();else reader.skipValue();break;
         default:reader.skipValue();
@@ -78,7 +80,7 @@ public final class Provider {
         :host+"/"+(kind.equals("vod")?"movie":kind)+"/"+segment(user)+"/"+segment(pass)+"/"+id+"."+ext;
       LibraryCore.Item item=new LibraryCore.Item(LibraryCore.key(host+"|"+user+"|"+type+"|"+id),
         name.isEmpty()?"Untitled":name,names.getOrDefault(cat,"Uncategorized"),
-        streamUrl,type,epg,"");
+        streamUrl,type,epg,language);
       item.artwork=artwork;
       output.add(item);
       total++;
