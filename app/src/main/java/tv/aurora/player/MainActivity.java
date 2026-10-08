@@ -645,7 +645,16 @@ public class MainActivity extends Activity {
  }
  void showChannelSchedule(LibraryCore.Item channel){
   io.execute(()->{
-   List<GuideEngine.Program> programs=epg.schedule(channel,22);
+   List<GuideEngine.Program> initial=epg.schedule(channel,22);
+   if(initial.isEmpty()&&prefs.getString("mode","").equals("xtream")){
+    try{
+     LibraryCore.Item resolved=store.resolve(channel);
+     epg.fetchShort(resolved,Vault.open(prefs.getString("url","")),
+       Vault.open(prefs.getString("user","")),Vault.open(prefs.getString("pass","")));
+     initial=epg.schedule(channel,22);
+    }catch(Exception ignored){}
+   }
+   final List<GuideEngine.Program> programs=initial;
    runOnUiThread(()->{
     if(isDestroyed())return;
     if(programs.isEmpty()){
