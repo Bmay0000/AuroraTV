@@ -344,73 +344,208 @@ public class MainActivity extends Activity {
  boolean visible(LibraryCore.Item i){return LibraryCore.visible(i,hidden,categories,favorites,allowed,hideUnknown,shown,shownCategories);}
  void home(){
   if(!store.hasLibrary()){loginScreen(false);return;}
-  screen="home";
-  scheduleGuideSync(false,true); // never blocks browsing, at most once per 12 hours
+  screen="home";refreshSidebar();
+  scheduleGuideSync(false,true);
   final int token=++browseToken;
   body.removeAllViews();
-  body.addView(text("Preparing your home screen…",20));
+  body.addView(kicker("PREPARING YOUR DISCOVER PAGE"));
   final Set<String> h=new HashSet<>(hidden),c=new HashSet<>(categories),
-      fav=new HashSet<>(favorites),langs=new HashSet<>(allowed),manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
-  final boolean unknown=hideUnknown;
+      fav=new HashSet<>(favorites),langs=new HashSet<>(allowed),
+      manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
+  final boolean strict=hideUnknown;
   io.execute(()->{
    try{
-    LibraryStore.Page live=store.page("live","All","",false,false,h,c,fav,langs,unknown,manual,manualGroups,0,10);
-    LibraryStore.Page movies=store.page("movie","All","",false,false,h,c,fav,langs,unknown,manual,manualGroups,0,10);
-    LibraryStore.Page series=store.page("series","All","",false,false,h,c,fav,langs,unknown,manual,manualGroups,0,10);
+    LibraryStore.Page live=store.page("live","All","",false,false,h,c,fav,langs,strict,
+       manual,manualGroups,0,12);
+    LibraryStore.Page movies=store.page("movie","All","",false,false,h,c,fav,langs,strict,
+       manual,manualGroups,0,12);
+    LibraryStore.Page series=store.page("series","All","",false,false,h,c,fav,langs,strict,
+       manual,manualGroups,0,12);
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||!screen.equals("home"))return;
      body.removeAllViews();
-     subtitle.setText("Only your visible entertainment · Your library, your rules");
-     ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);body.addView(scroll,new LinearLayout.LayoutParams(-1,-1));
-     LinearLayout feed=column();feed.setPadding(0,0,dp(12),dp(30));scroll.addView(feed);
-     LinearLayout hero=column();hero.setPadding(dp(24),dp(16),dp(24),dp(18));
-     hero.setBackground(gradient(0xff185a64,0xff102239,20));feed.addView(hero);
-     TextView eyebrow=headline("ALL YOUR ENTERTAINMENT. ONE PLACE.",12,ACCENT);hero.addView(eyebrow);
-     hero.addView(headline("Welcome to Aurora",32,Color.WHITE));
-     TextView description=text("Browse live television, discover a film or settle in for a series.\nCurated from your own IPTV library.",16);
-     description.setTextColor(0xffc6d9e3);hero.addView(description);
-     hero.addView(button("EXPLORE LIVE TV  →",()->{section="live";page=0;category="All";favOnly=false;hiddenOnly=false;browse();}));
-     homeShelf(feed,"LIVE TELEVISION","live",live.rows);
-     homeShelf(feed,"MOVIES FOR YOU","movie",movies.rows);
-     homeShelf(feed,"SERIES TO EXPLORE","series",series.rows);
+     subtitle.setText("●  YOUR LIBRARY IS READY");
+     ScrollView scroller=new ScrollView(this);
+     scroller.setVerticalScrollBarEnabled(false);
+     scroller.setFillViewport(false);
+     scroller.setClipToPadding(false);scroller.setClipChildren(false);
+     body.addView(scroller,new LinearLayout.LayoutParams(-1,-1));
+     LinearLayout feed=column();feed.setPadding(dp(6),0,dp(9),dp(24));
+     scroller.addView(feed,new ScrollView.LayoutParams(-1,-2));
+     LibraryCore.Item featured=null;
+     for(LibraryCore.Item i:movies.rows){
+      if(i.artwork!=null&&i.artwork.startsWith("http")){featured=i;break;}
+     }
+     if(featured==null&&!movies.rows.isEmpty())featured=movies.rows.get(0);
+     feed.addView(homeHero(featured));
+     quickCategories(feed);
+     homeShelf(feed,"LIVE RIGHT NOW","live",live.rows);
+     homeShelf(feed,"MOVIES TO EXPLORE","movie",movies.rows);
+     homeShelf(feed,"YOUR NEXT TV OBSESSION","series",series.rows);
     });
    }catch(Exception e){
-    runOnUiThread(()->{if(isDestroyed()||token!=browseToken)return;body.removeAllViews();body.addView(text("Unable to load your catalog: "+e.getClass().getSimpleName(),19));body.addView(button("Refresh your library",this::refresh));});
+    runOnUiThread(()->{
+     if(isDestroyed()||token!=browseToken)return;
+     body.removeAllViews();
+     body.addView(headline("Your library could not load.",24,Color.WHITE));
+     body.addView(text("Please try refreshing the connection.",16));
+     body.addView(button("RETRY",this::home));
+    });
    }
   });
  }
+ View homeHero(LibraryCore.Item selectedFeature){
+  final LibraryCore.Item feature=selectedFeature;
+  TvLayout dim=tv();
+  FrameLayout hero=new FrameLayout(this);
+  hero.setBackground(rounded(0xff132d3e,23,0xff365467));
+  hero.setClipToOutline(true);
+  LinearLayout.LayoutParams frameBounds=new LinearLayout.LayoutParams(-1,dp(dim.heroHeight));
+  hero.setLayoutParams(frameBounds);
+  if(feature!=null&&feature.artwork!=null&&feature.artwork.startsWith("http")){
+   ImageView backdrop=new ImageView(this);
+   backdrop.setScaleType(ImageView.ScaleType.CENTER_CROP);
+   hero.addView(backdrop,new FrameLayout.LayoutParams(-1,-1));
+   posters.bind(backdrop,feature.artwork);
+  }
+  View veil=new View(this);
+  GradientDrawable shade=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+    new int[]{0xff0e2634,0xf70e2634,0xbc122b3c,0x44102236});
+  shade.setCornerRadius(dp(22));veil.setBackground(shade);
+  hero.addView(veil,new FrameLayout.LayoutParams(-1,-1));
+  LinearLayout front=column();
+  front.setGravity(Gravity.CENTER_VERTICAL);
+  int textWidth=TvLayout.clamp((int)(dim.contentWidth()*.66),315,730);
+  front.setPadding(dp(20),dp(11),dp(12),dp(12));
+  FrameLayout.LayoutParams frontParams=new FrameLayout.LayoutParams(
+    dp(textWidth),-1,Gravity.TOP|Gravity.LEFT);
+  hero.addView(front,frontParams);
+  front.addView(kicker(feature==null?"WELCOME TO AURORATV":"FEATURED FROM YOUR LIBRARY"));
+  TextView title=headline(feature==null?"Your screen.\nYour world.":feature.name,
+     TvLayout.clamp(dim.headingSize()+3,29,44),Color.WHITE);
+  title.setMaxLines(2);title.setEllipsize(TextUtils.TruncateAt.END);
+  front.addView(title);
+  TextView sub=text(feature==null?
+    "Every channel, movie and series. One seamless home.":
+    "Discover something worth watching  •  "+feature.category,
+    TvLayout.clamp(dim.bodySize(),14,19));
+  sub.setTextColor(0xffcee0e8);sub.setMaxLines(2);
+  sub.setEllipsize(TextUtils.TruncateAt.END);front.addView(sub);
+  LinearLayout buttons=new LinearLayout(this);buttons.setGravity(Gravity.CENTER_VERTICAL);
+  LinearLayout.LayoutParams gap=new LinearLayout.LayoutParams(-1,dp(48));
+  gap.topMargin=dp(12);front.addView(buttons,gap);
+  Button primary=button(feature==null?"▶  WATCH LIVE TV":"▶  FEATURED MOVIE",()->{
+   if(feature!=null)showMediaDetails(feature);
+   else{section="live";category="All";page=0;favOnly=false;editing=false;hiddenOnly=false;browse();}
+  });
+  primary.setBackground(rounded(0xff2fd5bc,11,ACCENT));
+  primary.setTextColor(0xff06191b);
+  buttons.addView(primary,new LinearLayout.LayoutParams(0,-1,1));
+  Button secondary=button("EXPLORE MOVIES  →",()->{
+   section="movie";category="All";query="";page=0;favOnly=false;hiddenOnly=false;editing=false;browse();
+  });
+  LinearLayout.LayoutParams second=new LinearLayout.LayoutParams(0,-1,1);
+  second.leftMargin=dp(10);buttons.addView(secondary,second);
+  return hero;
+ }
+ void quickCategories(LinearLayout feed){
+  TvLayout metrics=tv();
+  LinearLayout row=new LinearLayout(this);
+  row.setGravity(Gravity.CENTER_VERTICAL);
+  LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(TvLayout.clamp(metrics.heightDp/11,48,64)));
+  p.topMargin=dp(12);feed.addView(row,p);
+  String[][] categories={
+   {"◉   LIVE CHANNELS","live"},
+   {"◆   ALL MOVIES","movie"},
+   {"▥   TV SERIES","series"}
+  };
+  for(String[] shortcut:categories){
+   Button tile=button(shortcut[0],()->{
+    section=shortcut[1];category="All";page=0;query="";
+    favOnly=false;hiddenOnly=false;editing=false;browse();
+   });
+   tile.setGravity(Gravity.CENTER);
+   tile.setTextSize(TvLayout.clamp(tv().bodySize(),14,18));
+   tile.setBackground(rounded(0xff102636,12,0xff285163));
+   LinearLayout.LayoutParams width=new LinearLayout.LayoutParams(0,-1,1);
+   width.setMargins(dp(3),0,dp(3),0);row.addView(tile,width);
+  }
+ }
  void homeShelf(LinearLayout feed,String title,String type,List<LibraryCore.Item> rows){
-  LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
-  LinearLayout.LayoutParams margin=new LinearLayout.LayoutParams(-1,-2);margin.topMargin=dp(15);feed.addView(top,margin);
-  TextView heading=headline(title,21,Color.WHITE);top.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
-  TextView more=text("EXPLORE  →",14);more.setTextColor(ACCENT);top.addView(more);
-  HorizontalScrollView scroller=new HorizontalScrollView(this);scroller.setHorizontalScrollBarEnabled(false);feed.addView(scroller);
-  LinearLayout cards=new LinearLayout(this);cards.setOrientation(LinearLayout.HORIZONTAL);scroller.addView(cards);
-  if(rows.isEmpty()){cards.addView(text("No visible titles. Try changing your library filters.",15));return;}
+  TvLayout dim=tv();
+  LinearLayout header=new LinearLayout(this);
+  header.setGravity(Gravity.CENTER_VERTICAL);
+  LinearLayout.LayoutParams spacing=new LinearLayout.LayoutParams(-1,dp(51));
+  spacing.topMargin=dp(17);feed.addView(header,spacing);
+  LinearLayout lhs=column();
+  header.addView(lhs,new LinearLayout.LayoutParams(0,-1,1));
+  lhs.addView(headline(title,TvLayout.clamp(dim.headingSize()-8,18,27),Color.WHITE));
+  TextView detail=text(type.equals("live")?"Your channels, at your fingertips":
+    type.equals("movie")?"Discover cinema from your collection":
+    "Your next binge starts here",12);
+  detail.setTextColor(MUTED);lhs.addView(detail);
+  Button seeAll=button("VIEW ALL  →",()->{
+   section=type;page=0;category="All";query="";
+   favOnly=false;hiddenOnly=false;editing=false;browse();
+  });
+  seeAll.setTextSize(13);
+  header.addView(seeAll,new LinearLayout.LayoutParams(dp(128),dp(41)));
+  HorizontalScrollView gallery=new HorizontalScrollView(this);
+  gallery.setHorizontalScrollBarEnabled(false);
+  gallery.setClipToPadding(false);gallery.setClipChildren(false);
+  feed.addView(gallery,new LinearLayout.LayoutParams(-1,dp(
+     type.equals("live")?dim.liveCardHeight+18:dim.posterCardHeight+18)));
+  LinearLayout cards=new LinearLayout(this);
+  cards.setClipChildren(false);cards.setGravity(Gravity.TOP);
+  gallery.addView(cards,new ViewGroup.LayoutParams(-2,-2));
+  if(rows.isEmpty()){
+   TextView empty=text("No visible titles in this section. Try editing your filters.",16);
+   empty.setTextColor(MUTED);cards.addView(empty);
+   return;
+  }
   for(LibraryCore.Item item:rows)cards.addView(mediaCard(item,type));
-  cards.addView(button("VIEW ALL  →",()->{section=type;page=0;category="All";query="";favOnly=false;hiddenOnly=false;browse();}),
-    new LinearLayout.LayoutParams(dp(160),dp(type.equals("live")?174:250)));
  }
  View mediaCard(LibraryCore.Item item,String type){
+  TvLayout dim=tv();
+  boolean live="live".equals(type);
+  int cardWidth=live?dim.liveCardWidth:dim.posterWidth;
+  int artHeight=live?dim.liveCardHeight-53:dim.posterHeight;
+  int totalHeight=live?dim.liveCardHeight:dim.posterCardHeight;
   LinearLayout card=column();card.setPadding(dp(5),dp(5),dp(5),dp(5));
-  LinearLayout.LayoutParams outer=new LinearLayout.LayoutParams(dp(170),dp(type.equals("live")?191:273));outer.rightMargin=dp(12);card.setLayoutParams(outer);
-  int start=type.equals("live")?0xff117168:type.equals("movie")?0xff5b3c79:0xff255f83;
-  FrameLayout artwork=new FrameLayout(this);artwork.setBackground(gradient(start,PANEL,14));
-  card.addView(artwork,new LinearLayout.LayoutParams(-1,dp(type.equals("live")?123:205)));
-  TextView badge=headline(type.equals("live")?"● LIVE":type.equals("movie")?"◆ MOVIE":"▣ SERIES",12,0xffd5fff6);
-  FrameLayout.LayoutParams badgeParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.LEFT);
-  badgeParams.setMargins(dp(10),dp(8),0,0);artwork.addView(badge,badgeParams);
-  TextView letter=headline(item.name.isEmpty()?"A":item.name.substring(0,1).toUpperCase(Locale.ROOT),52,0x66ffffff);
-  FrameLayout.LayoutParams initial=new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER);artwork.addView(letter,initial);
-  displayArtwork(artwork,item.artwork);
-  badge.bringToFront();
-  TextView title=text(item.name,15);title.setMaxLines(2);title.setEllipsize(TextUtils.TruncateAt.END);
-  card.addView(title);
-  card.setOnClickListener(v->{if(type.equals("live"))open(item);else showMediaDetails(item);});
-  card.setFocusable(true);card.setBackground(shape(PANEL));
-  card.setOnFocusChangeListener((v,focused)->card.setBackground(shape(focused?0xff1d746f:PANEL)));
+  LinearLayout.LayoutParams outer=new LinearLayout.LayoutParams(dp(cardWidth),dp(totalHeight));
+  outer.rightMargin=dp(dim.columnGap);card.setLayoutParams(outer);
+  card.setBackground(rounded(PANEL,14,0xff20384a));
+  FrameLayout art=new FrameLayout(this);
+  art.setBackground(gradient(live?0xff105c69:type.equals("movie")?0xff3b385f:0xff26466b,
+     0xff111e34,13));
+  art.setClipToOutline(true);
+  card.addView(art,new LinearLayout.LayoutParams(-1,dp(artHeight)));
+  TextView initial=headline(item.name.isEmpty()?"A":item.name.substring(0,1).toUpperCase(Locale.ROOT),
+    46,0xff567287);
+  art.addView(initial,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
+  displayArtwork(art,item.artwork);
+  TextView badge=kicker(live?"●  LIVE":type.equals("movie")?"◆  MOVIE":"▥  SERIES");
+  badge.setBackground(rounded(0xee0b2732,8,0xff315761));
+  badge.setTextSize(10);badge.setPadding(dp(8),dp(5),dp(8),dp(5));
+  FrameLayout.LayoutParams badgeLp=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.LEFT);
+  badgeLp.setMargins(dp(8),dp(8),0,0);art.addView(badge,badgeLp);
+  TextView text=text(item.name,TvLayout.clamp(dim.bodySize()-1,14,18));
+  text.setMaxLines(2);text.setEllipsize(TextUtils.TruncateAt.END);
+  text.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+  LinearLayout.LayoutParams titleBounds=new LinearLayout.LayoutParams(-1,-2);
+  titleBounds.topMargin=dp(5);card.addView(text,titleBounds);
+  card.setFocusable(true);card.setClickable(true);
+  card.setOnClickListener(v->{
+   if(live)open(item);else showMediaDetails(item);
+  });
+  card.setOnFocusChangeListener((v,focus)->{
+   card.setBackground(rounded(focus?0xff1b484f:PANEL,14,focus?ACCENT:0xff20384a));
+   card.animate().scaleX(focus?1.035f:1f).scaleY(focus?1.035f:1f)
+     .setDuration(140).start();
+  });
   return card;
  }
+
  void displayArtwork(FrameLayout frame,String url){
   ImageView image=new ImageView(this);
   image.setScaleType(ImageView.ScaleType.CENTER_CROP);
