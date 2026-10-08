@@ -790,6 +790,8 @@ public class MainActivity extends Activity {
   }catch(Exception e){toast("Unable to save guide source");}
  }
  void scheduleGuideSync(boolean force,boolean includeProvider){
+  // Video playback takes priority on Fire TV's limited memory/CPU budget.
+  if("player".equals(screen)||playbackScreen!=null)return;
   // One long-running source refresh at a time, separate from fast catalog queries.
   epgRefreshIO.execute(()->{
    boolean newData=false;
@@ -819,6 +821,11 @@ public class MainActivity extends Activity {
        .putInt("guide.count."+source,records).remove("guide.error."+source).apply();
      newData=true;
     }catch(Exception e){
+     if(Thread.currentThread().isInterrupted()){
+      // Playback interrupted an EPG import intentionally: allow a later retry.
+      prefs.edit().remove("guide.attempt."+source).apply();
+      break;
+     }
      // Deliberately never display exception text: provider URLs can include credentials.
      String reason="Guide source is unavailable or returned invalid XMLTV";
      String message=e.getMessage()==null?"":e.getMessage();
