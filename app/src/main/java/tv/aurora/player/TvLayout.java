@@ -23,7 +23,7 @@ public final class TvLayout {
         posterCardHeight=posterHeight+66;
         liveCardWidth=clamp((int)Math.round(usable*.27),166,264);
         liveCardHeight=(int)Math.round(liveCardWidth*.68)+56;
-        heroHeight=clamp((int)Math.round(h*.355),164,314);
+        heroHeight=clamp((int)Math.round(h*.44),205,365);
         guideChannel=clamp((int)Math.round(usable*.235),145,900);
         guideNow=clamp((int)Math.round(usable*.34),190,1200);
         guideNext=clamp((int)Math.round(usable*.305),190,1100);
