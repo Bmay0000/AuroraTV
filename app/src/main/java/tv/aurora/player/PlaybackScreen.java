@@ -292,6 +292,7 @@ public final class PlaybackScreen {
     }
 
     public void showControls() { setControlsVisible(true); }
+    public void hideControls() { setControlsVisible(false); }
     public boolean controlsVisible() { return overlayVisible; }
 
     public boolean handleKey(KeyEvent event) {
