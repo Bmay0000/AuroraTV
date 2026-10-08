@@ -1,6 +1,58 @@
 import tv.aurora.player.LibraryCore;
 import java.util.*;
+
 public class CoreTest {
- static int count=0;static void check(boolean b){count++;if(!b)throw new AssertionError("Case "+count);}
- public static void main(String[] args){String playlist="#EXTM3U\n#EXTINF:-1 tvg-id=\"bbc\" group-title=\"UK | News\",BBC\n# comment\nhttps://example.com/live/a.m3u8\n#EXTINF:-1 group-title=\"FR | News\" tvg-language=\"French\",FR News\nhttps://example.com/b\n#EXTINF:-1 group-title=\"Movies, Drama\" media-type=\"movie\",A film\nhttps://example.com/movie/test.mp4\n";var items=LibraryCore.m3u(playlist,"provider");check(items.size()==3);check(items.get(2).category.equals("Movies, Drama"));check(items.get(2).type.equals("movie"));check(LibraryCore.language(items.get(0)).equals("en"));check(LibraryCore.language(items.get(1)).equals("fr"));Set<String> empty=new HashSet<>(),en=Set.of("en");check(!LibraryCore.visible(items.get(1),empty,empty,empty,en,false));check(LibraryCore.visible(items.get(1),empty,empty,Set.of(items.get(1).id),en,false));check(!LibraryCore.visible(items.get(1),Set.of(items.get(1).id),empty,Set.of(items.get(1).id),en,false));var ca=new LibraryCore.Item("ca","Canadian News","CA","x","live","","");check(LibraryCore.language(ca).equals("unknown"));check(LibraryCore.visible(ca,empty,empty,empty,en,false));check(!LibraryCore.visible(ca,empty,empty,empty,en,true));check(LibraryCore.visible(items.get(2),empty,empty,empty,en,true));check(LibraryCore.m3u(playlist.replace("https://example.com/b","https://example.com/new"),"provider").get(1).id.equals(items.get(1).id));var explicit=new LibraryCore.Item("x","UK French","UK","x","live","","fr");check(LibraryCore.language(explicit).equals("fr"));check(!LibraryCore.visible(items.get(0),empty,Set.of("live|UK | News"),empty,en,false));var variants=LibraryCore.m3u("#EXTM3U\n#EXTINF:-1 tvg-id=\"bbc\",BBC HD\nhttps://example.com/hd\n#EXTINF:-1 tvg-id=\"bbc\",BBC SD\nhttps://example.com/sd","provider");check(!variants.get(0).id.equals(variants.get(1).id));System.out.println(count+" tests passed");}
+ static int cases=0;
+ static void check(boolean ok,String message){
+  cases++;if(!ok)throw new AssertionError("Test "+cases+": "+message);
+ }
+ static LibraryCore.Item item(String id,String name,String category,String language){
+  return new LibraryCore.Item(id,name,category,"https://example.com/"+id,"live","",language);
+ }
+ public static void main(String[] args){
+  String playlist="#EXTM3U\n"+
+   "#EXTINF:-1 tvg-id=\"bbc\" group-title=\"UK | News\",BBC News HD\nhttps://example.com/live/a.m3u8\n"+
+   "#EXTINF:-1 group-title=\"FR | News\" tvg-language=\"French\",France 24\nhttps://example.com/live/b\n"+
+   "#EXTINF:-1 group-title=\"Movies, Drama\" media-type=\"movie\",A film\nhttps://example.com/movie/test.mp4\n";
+  List<LibraryCore.Item> entries=LibraryCore.m3u(playlist,"provider");
+  check(entries.size()==3,"parse M3U");
+  check(entries.get(2).category.equals("Movies, Drama"),"comma in group");
+  check(entries.get(2).type.equals("movie"),"movie metadata");
+  check(LibraryCore.language(entries.get(0)).equals("en"),"UK metadata English");
+  check(LibraryCore.language(entries.get(1)).equals("fr"),"explicit French");
+  check(LibraryCore.language(item("x","ITV","UK | TV","")).equals("en"),"UK category English");
+  check(LibraryCore.language(item("x","News","Germany | Channels","")).equals("de"),"Germany category");
+  check(LibraryCore.language(item("x","News","Italy | Sports","")).equals("it"),"Italian filter");
+  check(LibraryCore.language(item("x","News","Portugal","")).equals("pt"),"Portuguese filter");
+  check(LibraryCore.language(item("x","News","Poland","")).equals("other"),"recognized foreign group");
+  check(LibraryCore.language(item("x","News","Russia","")).equals("ru"),"Russian group");
+  check(LibraryCore.language(item("x","News","Spain","")).equals("es"),"Spanish group");
+  check(LibraryCore.language(item("x","News","Argentina","es")).equals("es"),"explicit language");
+  check(LibraryCore.language(item("x","UK French","UK","fr")).equals("fr"),"explicit overrides inferred");
+  check(LibraryCore.language(item("x","Classical Music","Uncategorized","")).equals("unknown"),"don't match US in music");
+  check(LibraryCore.language(item("x","International Cinema","International","")).equals("unknown"),"don't match IN in International");
+  check(LibraryCore.language(item("x","Global TV","Uncategorized","")).equals("unknown"),"unrecognized title");
+  Set<String> none=Collections.emptySet(),english=Set.of("en");
+  check(LibraryCore.visible(entries.get(0),none,none,none,english,true),"English shown");
+  check(!LibraryCore.visible(entries.get(1),none,none,none,english,true),"French hidden by English");
+  check(!LibraryCore.visible(item("x","Global TV","Uncategorized",""),none,none,none,english,true),"unknown hidden in strict");
+  check(LibraryCore.visible(item("x","Global TV","Uncategorized",""),none,none,none,english,false),"unknown shown with relaxed setting");
+  check(LibraryCore.visible(entries.get(1),none,none,Set.of(entries.get(1).id),english,true),"favorites protected");
+  check(!LibraryCore.visible(entries.get(1),Set.of(entries.get(1).id),none,Set.of(entries.get(1).id),english,true),"explicit hide defeats favorite");
+  check(!LibraryCore.visible(entries.get(0),none,Set.of("live|UK | News"),none,english,true),"hidden category");
+  check(LibraryCore.visible(entries.get(0),none,Set.of("live|UK | News"),none,english,true,
+      Set.of(entries.get(0).id),none),"manual item visibility defeats hidden category");
+  check(LibraryCore.visible(entries.get(1),none,none,none,english,true,
+      Set.of(entries.get(1).id),none),"manual restore defeats French filter");
+  check(!LibraryCore.visible(entries.get(1),Set.of(entries.get(1).id),none,none,english,true,
+      Set.of(entries.get(1).id),none),"explicit title hide always wins");
+  check(LibraryCore.visible(entries.get(1),none,Set.of("live|FR | News"),none,english,true,
+      none,Set.of("live|FR | News")),"manual category restore defeats both filters");
+  check(LibraryCore.visible(entries.get(1),none,none,none,none,true),"no language choice disables automatic filter");
+  check(!LibraryCore.visible(entries.get(1),none,Set.of("live|FR | News"),none,none,true),"manual hidden category applies even without filter");
+  check(LibraryCore.visible(entries.get(2),none,none,none,english,true),"movies unaffected by live filter");
+  check(LibraryCore.m3u(playlist.replace("https://example.com/live/b","https://example.com/changed"),
+     "provider").get(1).id.equals(entries.get(1).id),"stable ids");
+  System.out.println(cases+" AuroraTV core tests passed");
+ }
 }
