@@ -423,17 +423,18 @@ public class MainActivity extends Activity {
   front.addView(kicker(feature==null?"WELCOME TO AURORATV":"FEATURED FROM YOUR LIBRARY"));
   TextView title=headline(feature==null?"Your screen.\nYour world.":feature.name,
      TvLayout.clamp(dim.headingSize()+3,29,44),Color.WHITE);
-  title.setMaxLines(2);title.setEllipsize(TextUtils.TruncateAt.END);
+  title.setMaxLines(dim.heightDp<480?1:2);
+  title.setEllipsize(TextUtils.TruncateAt.END);
   front.addView(title);
   TextView sub=text(feature==null?
     "Every channel, movie and series. One seamless home.":
     "Discover something worth watching  •  "+feature.category,
     TvLayout.clamp(dim.bodySize(),14,19));
-  sub.setTextColor(0xffcee0e8);sub.setMaxLines(2);
+  sub.setTextColor(0xffcee0e8);sub.setMaxLines(dim.heightDp<480?1:2);
   sub.setEllipsize(TextUtils.TruncateAt.END);front.addView(sub);
   LinearLayout buttons=new LinearLayout(this);buttons.setGravity(Gravity.CENTER_VERTICAL);
   LinearLayout.LayoutParams gap=new LinearLayout.LayoutParams(-1,dp(48));
-  gap.topMargin=dp(12);front.addView(buttons,gap);
+  gap.topMargin=dp(dim.heightDp<480?5:12);front.addView(buttons,gap);
   Button primary=button(feature==null?"▶  WATCH LIVE TV":"▶  FEATURED MOVIE",()->{
    if(feature!=null)showMediaDetails(feature);
    else{section="live";category="All";page=0;favOnly=false;editing=false;hiddenOnly=false;browse();}
@@ -475,8 +476,8 @@ public class MainActivity extends Activity {
   TvLayout dim=tv();
   LinearLayout header=new LinearLayout(this);
   header.setGravity(Gravity.CENTER_VERTICAL);
-  LinearLayout.LayoutParams spacing=new LinearLayout.LayoutParams(-1,dp(51));
-  spacing.topMargin=dp(17);feed.addView(header,spacing);
+  LinearLayout.LayoutParams spacing=new LinearLayout.LayoutParams(-1,dp(62));
+  spacing.topMargin=dp(15);feed.addView(header,spacing);
   LinearLayout lhs=column();
   header.addView(lhs,new LinearLayout.LayoutParams(0,-1,1));
   lhs.addView(headline(title,TvLayout.clamp(dim.headingSize()-8,18,27),Color.WHITE));
