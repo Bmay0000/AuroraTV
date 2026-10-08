@@ -281,6 +281,7 @@ public final class PlaybackScreen {
                 }
                 @Override public void onPositionDiscontinuity(
                         Player.PositionInfo oldPosition,Player.PositionInfo newPosition,int reason){
+                    if(player==null || closed)return;
                     long delta=newPosition.positionMs-oldPosition.positionMs;
                     if(Math.abs(delta)>=500 &&
                        reason!=Player.DISCONTINUITY_REASON_SEEK){
@@ -414,8 +415,9 @@ public final class PlaybackScreen {
           .setSingleChoiceItems(labels,selection,(dialog,index)->{
               String selected=values[index];
               String testUrl=PlaybackTuning.resolveUrl(media.url,type,selected);
-              if(!selected.equals("original") && testUrl.equals(media.url) &&
-                      !PlaybackTuning.isHls(media.url)){
+              boolean canSwitch=!PlaybackTuning.resolveUrl(media.url,type,"hls").equals(media.url)
+                      || !PlaybackTuning.resolveUrl(media.url,type,"ts").equals(media.url);
+              if(!selected.equals("original") && !canSwitch){
                   Toast.makeText(activity,
                     "This playlist uses a custom URL. Format cannot be switched safely.",
                     Toast.LENGTH_LONG).show();
