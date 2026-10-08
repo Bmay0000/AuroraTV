@@ -79,22 +79,89 @@ public final class LibraryCore {
   }
   return found==null?"unknown":found;
  }
+
+ // IPTV providers frequently put language identifiers in the title even when
+ // the category is a broad "UK" or "4K" bucket. Title tags override category
+ // country cues, but plain language-like words in movie names do not.
+ private static final Pattern TITLE_TAG=Pattern.compile(
+   "(?i)(?:^\\s*[|\\[(]\\s*([A-Z]{2,3})\\s*[|\\])]\\s*|" +
+   "^\\s*([A-Z]{2,3})\\s*[:|\\-]\\s*|" +
+   "\\s*[|\\[(]\\s*([A-Z]{2,3})\\s*[|\\])]\\s*$|" +
+   "\\s*\\(([A-Z]{2,3})\\)\\s*$)");
+ private static final Map<String,String> CODES=new HashMap<>();
+ static{
+  String[][] shortCodes={
+   {"en","EN","ENG","UK","GB","US","USA","CA","CAN","NZ","AU","AUS","IE"},
+   {"fr","FR","FRA"},{"ar","AR","ARA"},{"de","DE","GER","DEU"},
+   {"es","ES","ESP"},{"pt","PT","POR","BR"},{"it","IT","ITA"},
+   {"ru","RU","RUS"},{"hi","HI","HIN"}
+  };
+  for(String[] group:shortCodes)for(int i=1;i<group.length;i++)CODES.put(group[i],group[0]);
+ }
+ private static final Pattern NON_ENGLISH_CHANNEL=Pattern.compile(
+  "(?i)^(?:(?:[|\\[(]?\\s*4K\\s*[|\\])]?)\\s*)?" +
+  "(?:TF1|M6|FRANCE\\s*[2345]|TV5\\s*MONDE|TV5MONDE|CANAL\\s*PLUS|" +
+  "AL\\s*JAZEERA\\s*ARABIC|AL\\s*ARABIYA)(?=$|[\\s:|/\\[(])");
+ private static final Pattern ENGLISH_CHANNEL=Pattern.compile(
+  "(?i)^(?:NESN|BBC(?:\\s|$)|ITV(?:\\s|$)|ESPN(?:\\s|$)|PBS(?:\\s|$)|" +
+  "NBC(?:\\s|$)|CBS(?:\\s|$)|ABC(?:\\s|$)|FOX\\s*SPORTS|" +
+  "SKY\\s*SPORTS|TVNZ(?:\\s|$))");
+ static String titleLanguageMarker(String title){
+  if(title==null)return "unknown";
+  // Check leading and trailing marked tokens, where "FR" is a tag rather than
+  // an incidental fragment of a title. Avoid guessing from e.g. "Star Wars".
+  Matcher matcher=TITLE_TAG.matcher(title.trim());
+  if(matcher.find()){
+   for(int i=1;i<=matcher.groupCount();i++){
+    String group=matcher.group(i);
+    if(group!=null){
+     String mapped=CODES.get(group.toUpperCase(Locale.ROOT));
+     if(mapped!=null)return mapped;
+    }
+   }
+  }
+  return "unknown";
+ }
+ static String channelBrand(String title){
+  if(title==null)return "unknown";
+  String cleaned=title.replaceFirst("(?i)^\\s*(?:[|\\[(]\\s*4K\\s*[|\\])]\\s*)+","").trim();
+  if(NON_ENGLISH_CHANNEL.matcher(cleaned).find()){
+   if(cleaned.matches("(?i)^(?:AL\\s*JAZEERA\\s*ARABIC|AL\\s*ARABIYA).*"))return "ar";
+   return "fr";
+  }
+  if(ENGLISH_CHANNEL.matcher(cleaned).find())return "en";
+  return "unknown";
+ }
+ private static String explicitLanguage(String input){
+  String explicit=input==null?"":input.toLowerCase(Locale.ROOT).trim();
+  if(explicit.isEmpty())return "unknown";
+  if(explicit.matches("en|eng|english|en[-_].*"))return "en";
+  if(explicit.matches("fr|fra|french|français|francais|fr[-_].*"))return "fr";
+  if(explicit.matches("de|ger|deu|german|deutsch|de[-_].*"))return "de";
+  if(explicit.matches("es|spa|spanish|español|espanol|es[-_].*"))return "es";
+  if(explicit.matches("ar|ara|arabic|ar[-_].*"))return "ar";
+  if(explicit.matches("pt|por|portuguese|português|pt[-_].*"))return "pt";
+  if(explicit.matches("it|ita|italian|it[-_].*"))return "it";
+  if(explicit.matches("ru|rus|russian|ru[-_].*"))return "ru";
+  if(explicit.matches("hi|hin|hindi|hi[-_].*"))return "hi";
+  return "other";
+ }
  public static String language(Item item){
-  String explicit=item.language==null?"":item.language.toLowerCase(Locale.ROOT).trim();
-  if(!explicit.isEmpty()){
-   if(explicit.matches("en|eng|english|en[-_].*"))return "en";
-   if(explicit.matches("fr|fra|french|français|francais|fr[-_].*"))return "fr";
-   if(explicit.matches("de|ger|deu|german|deutsch|de[-_].*"))return "de";
-   if(explicit.matches("es|spa|spanish|español|espanol|es[-_].*"))return "es";
-   if(explicit.matches("ar|ara|arabic|ar[-_].*"))return "ar";
-   if(explicit.matches("pt|por|portuguese|português|pt[-_].*"))return "pt";
-   if(explicit.matches("it|ita|italian|it[-_].*"))return "it";
-   if(explicit.matches("ru|rus|russian|ru[-_].*"))return "ru";
-   if(explicit.matches("hi|hin|hindi|hi[-_].*"))return "hi";
-   return "other";
+  String tagged=titleLanguageMarker(item.name);
+  if(!tagged.equals("unknown"))return tagged;
+  String explicit=explicitLanguage(item.language);
+  if(!explicit.equals("unknown"))return explicit;
+  // Recognize a few unmistakably branded LIVE stations; this is not used for
+  // films (e.g. the film "France" is not automatically a French-language film).
+  if("live".equals(item.type)){
+   String brand=channelBrand(item.name);
+   if(!brand.equals("unknown"))return brand;
   }
   String category=infer(item.category);
-  return category.equals("unknown")?infer(item.name):category;
+  if(!category.equals("unknown"))return category;
+  // Ordinary film titles often contain country names; don't assume those are
+  // spoken languages. Channels can still have language hints in their names.
+  return "live".equals(item.type)?infer(item.name):"unknown";
  }
  // Existing callers (including standalone CoreTest) use no explicit overrides.
  public static boolean visible(Item i,Set<String> hidden,Set<String> categories,Set<String> favorites,
