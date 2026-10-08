@@ -139,7 +139,7 @@ public final class PlaybackScreen {
         this.resumeAt = Math.max(0, resumeAt);
         this.settings = activity.getSharedPreferences("playback_options",Context.MODE_PRIVATE);
         ActivityManager manager=(ActivityManager)activity.getSystemService(Context.ACTIVITY_SERVICE);
-        this.lowRam=manager!=null&&manager.isLowRamDevice();
+        this.lowRam=manager!=null&&(manager.isLowRamDevice()||manager.getMemoryClass()<=160);
 
         activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         activity.getWindow().getDecorView().setSystemUiVisibility(
@@ -238,7 +238,6 @@ public final class PlaybackScreen {
                     .setBackBuffer(0,false)
                     .build();
             DefaultHttpDataSource.Factory http=new DefaultHttpDataSource.Factory()
-                    .setUserAgent("AuroraTV/0.3")
                     .setConnectTimeoutMs(15000)
                     .setReadTimeoutMs(20000)
                     .setAllowCrossProtocolRedirects(true);
