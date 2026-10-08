@@ -73,6 +73,25 @@ public class CoreTest {
       "language filtering off displays movies");
   check(LibraryCore.m3u(playlist.replace("https://example.com/live/b","https://example.com/changed"),
      "provider").get(1).id.equals(entries.get(1).id),"stable ids");
+  // Real-world provider labels: strong title markers beat broad "UK/4K"
+  // category metadata, while English US stations remain visible.
+  LibraryCore.Item frenchTag=item("fr-tag","[FR] TF1 UHD","UK | UHD 4K","");
+  check(LibraryCore.language(frenchTag).equals("fr"),"bracketed FR overrides English category");
+  check(!LibraryCore.visible(frenchTag,none,none,none,english,true),"FR bracket removed from English library");
+  check(LibraryCore.language(item("fr-pipe","|FR| TF1 HDR","UK | Sports","")).equals("fr"),"pipe FR prefix");
+  check(LibraryCore.language(item("fr-end","TF1 UHD [FR]","UK | Channels","")).equals("fr"),"FR suffix");
+  check(LibraryCore.language(item("arabic","[AR] Sports 1","UK | News","")).equals("ar"),"AR bracket detected");
+  check(LibraryCore.language(item("arabic2","|AR| Arabic News","4K | All","")).equals("ar"),"AR pipe detected");
+  check(LibraryCore.language(item("fr-tf1","|4K| TF1 HDR/UHD/4K","4K | All","")).equals("fr"),"TF1 recognized");
+  check(LibraryCore.language(item("fr-m6","|4K| M6 UHD/4K","UK | Channels","")).equals("fr"),"M6 recognized despite UK category");
+  check(LibraryCore.language(item("us-nesn","|4K| NESN UHD/4K+","4K | All","")).equals("en"),"NESN retained");
+  check(LibraryCore.language(item("us-bbc","BBC One HD","International","")).equals("en"),"BBC kept");
+  check(LibraryCore.language(item("title-star","Star Wars","All","")).equals("unknown"),"AR not part of Star");
+  LibraryCore.Item uncertainMovie=new LibraryCore.Item("drama","The French Connection","Movie Drama","url","movie","","");
+  check(LibraryCore.language(uncertainMovie).equals("unknown"),"movie title French not assumed language");
+  check(LibraryCore.visible(item("fr-override","[FR] TF1","UK","en"),none,none,Set.of("fr-override"),english,true),"favorite protection");
+  check(!LibraryCore.visible(frenchTag,none,none,none,english,false),"recognized French hidden even if unknown permitted");
+  check(LibraryCore.visible(frenchTag,none,none,none,english,true,Set.of(frenchTag.id),none),"manual FR restoration");
   System.out.println(cases+" AuroraTV core tests passed");
  }
 }
