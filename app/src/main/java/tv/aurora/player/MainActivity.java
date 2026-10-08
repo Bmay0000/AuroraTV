@@ -23,8 +23,8 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff080f1d,PANEL=0xff142238,ACCENT=0xff54e0c5;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;boolean focusSearchNext=false;
- @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;boolean focusSearchNext=false;
+ @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV3",false)){
     // Prior versions auto-enabled strict mode for English-only libraries,
     // unintentionally hiding unclassified English stations. Reset once.
@@ -1276,13 +1276,68 @@ public class MainActivity extends Activity {
   });
  }
 
- void play(LibraryCore.Item i){screenBeforePlayer=screen;screen="player";release();playing=i;LinearLayout layout=column();layout.setBackgroundColor(BG);playerView=new PlayerView(this);layout.addView(playerView,new LinearLayout.LayoutParams(-1,0,1));LinearLayout controls=new LinearLayout(this);layout.addView(controls);Button pause=button("Play / Pause",()->{if(player.isPlaying())player.pause();else player.play();});controls.addView(pause,new LinearLayout.LayoutParams(0,dp(60),1));if(i.type.equals("live")){Button live=button("Go to live",()->{if(player.isCurrentMediaItemLive()){player.seekToDefaultPosition();player.play();}else toast("This stream does not expose a live timeline");});controls.addView(live,new LinearLayout.LayoutParams(0,dp(60),1));}else{Button rewind=button("−30 seconds",()->player.seekTo(Math.max(0,player.getCurrentPosition()-30000)));controls.addView(rewind,new LinearLayout.LayoutParams(0,dp(60),1));}controls.addView(button("Back to library",()->{release();shell();if(screenBeforePlayer.equals("home"))home();else if(screenBeforePlayer.equals("guide"))tvGuide();else browse();}),new LinearLayout.LayoutParams(0,dp(60),1));setContentView(layout);player=new ExoPlayer.Builder(this).build();playerView.setPlayer(player);player.setMediaItem(MediaItem.fromUri(i.url));player.addListener(new Player.Listener(){@Override public void onPlayerError(PlaybackException error){toast("Playback failed. Try another channel or check your source.");}});player.prepare();if(!i.type.equals("live"))player.seekTo(prefs.getLong("resume."+i.id,0));player.play();pause.requestFocus();}
- void release(){if(player!=null){if(playing!=null&&!playing.type.equals("live"))prefs.edit().putLong("resume."+playing.id,player.getCurrentPosition()).apply();player.release();player=null;playerView=null;playing=null;}}
- @Override public boolean onKeyDown(int key,KeyEvent e){if(key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE&&player!=null){if(player.isPlaying())player.pause();else player.play();return true;}if(key==KeyEvent.KEYCODE_MENU&&player==null){manage();return true;}return super.onKeyDown(key,e);}
+
+ /**
+  * Stop memory-heavy EPG/short-guide downloads while decoding video.
+  * Interrupted XMLTV imports roll back their DB transaction and retry later.
+  */
+ void pauseBackgroundGuidesForPlayback(){
+  epgRefreshIO.shutdownNow();
+  shortEpgIO.shutdownNow();
+  epgRefreshIO=Executors.newSingleThreadExecutor();
+  shortEpgIO=Executors.newSingleThreadExecutor();
+  posters.clearMemory();
+ }
+ void play(LibraryCore.Item media){
+  if(media==null||media.url==null||media.url.isEmpty()){
+   toast("No playable stream URL is available");return;
+  }
+  if(playbackScreen!=null)release();
+  screenBeforePlayer=screen;
+  screen="player";
+  playing=media;
+  pauseBackgroundGuidesForPlayback();
+  try{
+   long resume=media.type.equals("live")?0:prefs.getLong("resume."+media.id,0);
+   playbackScreen=new PlaybackScreen(this,media,resume,
+     playbackDiagnostics,this::backToLibraryFromPlayer);
+  }catch(Exception ex){
+   playbackDiagnostics.event("Player creation failed: "+ex.getClass().getSimpleName());
+   toast("Could not start video. See playback diagnostics.");
+   release();backToLibraryFromPlayer();
+  }
+ }
+ void backToLibraryFromPlayer(){
+  String previous=screenBeforePlayer;
+  release();
+  shell();
+  if(previous.equals("guide"))tvGuide();
+  else if(previous.equals("home"))home();
+  else browse();
+ }
+ void release(){
+  if(playbackScreen!=null){
+   PlaybackScreen active=playbackScreen;
+   playbackScreen=null;
+   long position=active.close();
+   if(playing!=null&&!playing.type.equals("live"))
+    prefs.edit().putLong("resume."+playing.id,position).apply();
+  }
+  playing=null;
+ }
+ @Override public boolean dispatchKeyEvent(KeyEvent event){
+  if(playbackScreen!=null&&playbackScreen.handleKey(event))return true;
+  return super.dispatchKeyEvent(event);
+ }
+ @Override public boolean onKeyDown(int key,KeyEvent event){
+  if(key==KeyEvent.KEYCODE_MENU&&playbackScreen==null){manage();return true;}
+  return super.onKeyDown(key,event);
+ }
 
  @Override public void onBackPressed(){
-  if(player!=null){
-   release();shell();if(screenBeforePlayer.equals("home"))home();else browse();
+  if(playbackScreen!=null){
+   if(playbackScreen.controlsVisible())playbackScreen.hideControls();
+   else backToLibraryFromPlayer();
   }else if(screen.equals("browse")||screen.equals("guide")){
    if(editing||hiddenOnly||favOnly||!query.isEmpty()){
     editing=false;hiddenOnly=false;favOnly=false;query="";page=0;
@@ -1291,8 +1346,31 @@ public class MainActivity extends Activity {
   }else if(!loading)super.onBackPressed();
  }
  @Override protected void onStop(){
+  // Never keep a hardware video decoder or wake lock running in background.
+  if(playbackScreen!=null){
+   release();
+   restoreLibraryOnResume=true;
+  }
   super.onStop();
-  if(player!=null){release();shell();home();}
+ }
+ @Override protected void onResume(){
+  super.onResume();
+  if(restoreLibraryOnResume){
+   restoreLibraryOnResume=false;
+   shell();home();
+  }
+ }
+ @Override public void onTrimMemory(int level){
+  super.onTrimMemory(level);
+  if(level>=TRIM_MEMORY_RUNNING_LOW){
+   posters.clearMemory();
+   if(playbackDiagnostics!=null)playbackDiagnostics.event("Memory pressure level="+level);
+  }
+ }
+ @Override public void onLowMemory(){
+  super.onLowMemory();
+  posters.clearMemory();
+  if(playbackDiagnostics!=null)playbackDiagnostics.event("Android low-memory callback");
  }
  @Override protected void onDestroy(){
   generation++;browseToken++;
