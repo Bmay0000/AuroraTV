@@ -1162,10 +1162,11 @@ public class MainActivity extends Activity {
 
  void connect(){
   new AlertDialog.Builder(this).setTitle("MANAGE YOUR CONNECTION")
-   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Smart EPG settings","Disconnect and clear this device"},(d,n)->{
+   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Smart EPG settings","Playback diagnostics","Disconnect and clear this device"},(d,n)->{
     if(n==0){loginScreen(false);return;}
     if(n==1){refresh();return;}
     if(n==2){guideSettings();return;}
+    if(n==3){showPlaybackDiagnostics();return;}
     new AlertDialog.Builder(this).setTitle("Remove connected provider?")
      .setMessage("This deletes the imported library, saved login and filters from this device.")
      .setPositiveButton("Disconnect",(a,b)->{
@@ -1176,6 +1177,31 @@ public class MainActivity extends Activity {
       page=0;category="All";query="";loginScreen(false);
      }).setNegativeButton("Cancel",null).show();
    }).show();
+ }
+
+ void showPlaybackDiagnostics(){
+  String report=playbackDiagnostics.report();
+  LinearLayout column=column();
+  column.setPadding(dp(20),dp(6),dp(20),dp(6));
+  TextView note=text("Safe to share for debugging. No IPTV credentials or streaming URLs are included.",13);
+  note.setTextColor(0xff8fb4be);
+  column.addView(note);
+  ScrollView scrolling=new ScrollView(this);
+  TextView details=text(report,15);
+  details.setTextIsSelectable(true);
+  details.setTypeface(Typeface.MONOSPACE);
+  scrolling.addView(details);
+  column.addView(scrolling,new LinearLayout.LayoutParams(-1,dp(340)));
+  new AlertDialog.Builder(this).setTitle("AURORA / PLAYBACK HEALTH")
+   .setView(column)
+   .setPositiveButton("COPY REPORT",(d,n)->{
+    android.content.ClipboardManager clipboard=
+      (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+    if(clipboard!=null)clipboard.setPrimaryClip(
+      ClipData.newPlainText("AuroraTV playback diagnostics",report));
+    toast("Playback report copied to clipboard");
+   })
+   .setNegativeButton("CLOSE",null).show();
  }
  void refresh(){
   String mode=prefs.getString("mode","");
