@@ -37,7 +37,7 @@ public final class GuideEngine extends SQLiteOpenHelper {
     private final Context app;
     private static final Pattern STREAM_ID=Pattern.compile("/live/[^/]+/[^/]+/(\\d+)(?:\\.[^/]*)?$");
 
-    public GuideEngine(Context c){super(c,"aurora_epg.db",null,1);app=c.getApplicationContext();}
+    public GuideEngine(Context c){super(c,"aurora_epg.db",null,1);app=c.getApplicationContext();setWriteAheadLoggingEnabled(true);}
 
     @Override public void onCreate(SQLiteDatabase db){
         db.execSQL("CREATE TABLE programs(source TEXT NOT NULL,channel TEXT NOT NULL,start INTEGER NOT NULL,"+
@@ -115,7 +115,7 @@ public final class GuideEngine extends SQLiteOpenHelper {
                 InputStream decoded=gz?new GZIPInputStream(sniff,32768):sniff;
                 try(InputStream limited=new MaxInputStream(decoded,MAX_XML_BYTES)){
                     XmlPullParser xml=Xml.newPullParser();
-                    xml.setInput(limited,"UTF-8");
+                    xml.setInput(limited,null); // Respect XML declaration (UTF-8 or UTF-16)
                     SQLiteDatabase db=getWritableDatabase();
                     db.beginTransaction();
                     try{
