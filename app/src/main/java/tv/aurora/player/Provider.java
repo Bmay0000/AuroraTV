@@ -90,6 +90,51 @@ public final class Provider {
   }
   return total;
  }
+
+ /** Read M3U incrementally instead of creating a huge String and List. */
+ public static int m3uStream(String address,LibraryStore.Writer writer,ImportProgress progress)throws Exception{
+  URL url=new URL(address);
+  if(!url.getProtocol().matches("https?"))throw new IOException("Use an HTTP or HTTPS playlist URL");
+  HttpURLConnection connection=(HttpURLConnection)url.openConnection();
+  connection.setConnectTimeout(15000);
+  connection.setReadTimeout(45000);
+  connection.setRequestProperty("User-Agent","AuroraTV/0.2");
+  int count=0;
+  try{
+   if(connection.getResponseCode()!=200)
+    throw new IOException("Playlist request returned HTTP "+connection.getResponseCode());
+   try(BufferedReader reader=new BufferedReader(new InputStreamReader(connection.getInputStream(),"UTF-8"),32768)){
+    String line,meta=null;
+    while((line=reader.readLine())!=null){
+     String entry=line.trim();
+     if(entry.startsWith("#EXTINF:")){meta=entry;continue;}
+     if(entry.isEmpty()||entry.startsWith("#")||meta==null)continue;
+     boolean quoted=false;int comma=-1;
+     for(int x=0;x<meta.length();x++){
+      if(meta.charAt(x)=='"')quoted=!quoted;
+      else if(meta.charAt(x)==','&&!quoted){comma=x;break;}
+     }
+     String name=comma<0?"Untitled":meta.substring(comma+1).trim();
+     String group=LibraryCore.attr(meta,"group-title");
+     String type=LibraryCore.attr(meta,"media-type");
+     if(!type.equals("movie")&&!type.equals("series"))
+      type=entry.matches("(?i).*/movie/.*")?"movie":
+           entry.matches("(?i).*/series/.*")?"series":"live";
+     String epg=LibraryCore.attr(meta,"tvg-id");
+     LibraryCore.Item item=new LibraryCore.Item(
+       LibraryCore.key(address+"|"+type+"|"+epg+"|"+name+"|"+group),
+       name,group.isEmpty()?"Uncategorized":group,entry,type,epg,
+       LibraryCore.attr(meta,"tvg-language"));
+     item.artwork=LibraryCore.attr(meta,"tvg-logo");
+     writer.add(item);
+     if(++count%3000==0)progress.update("m3u",count);
+     meta=null;
+    }
+   }
+  }finally{connection.disconnect();}
+  progress.update("m3u",count);
+  return count;
+ }
  public static List<LibraryCore.Item> episodes(LibraryCore.Item series)throws Exception{JSONObject root=new JSONObject(get(series.url));JSONObject seasons=root.getJSONObject("episodes");List<LibraryCore.Item> out=new ArrayList<>();List<String> keys=new ArrayList<>();seasons.keys().forEachRemaining(keys::add);Collections.sort(keys,(a,b)->{try{return Integer.compare(Integer.parseInt(a),Integer.parseInt(b));}catch(NumberFormatException ex){return a.compareTo(b);}});URL u=new URL(series.url);Map<String,String> args=new HashMap<>();for(String q:u.getQuery().split("&")){String[] p=q.split("=",2);if(p.length==2)args.put(p[0],URLDecoder.decode(p[1],"UTF-8"));}String host=series.url.substring(0,series.url.indexOf("/player_api.php"));for(String key:keys){JSONArray eps=seasons.getJSONArray(key);for(int i=0;i<eps.length();i++){JSONObject e=eps.getJSONObject(i);String id=e.optString("id");out.add(new LibraryCore.Item(series.id+"|"+id,"S"+key+" · E"+e.optString("episode_num")+"  "+e.optString("title"),series.category,host+"/series/"+segment(args.get("username"))+"/"+segment(args.get("password"))+"/"+id+"."+e.optString("container_extension","mp4"),"episode","",""));}}return out;}
  public static class Program { public String channel,title;public long start,end; }
  public static List<Program> epg(String url)throws Exception{String xml=get(base(url));XmlPullParser p=Xml.newPullParser();p.setInput(new StringReader(xml));List<Program> out=new ArrayList<>();Program current=null;for(int event=p.getEventType();event!=XmlPullParser.END_DOCUMENT;event=p.next()){if(event==XmlPullParser.START_TAG&&p.getName().equals("programme")){current=new Program();current.channel=p.getAttributeValue(null,"channel");current.start=date(p.getAttributeValue(null,"start"));current.end=date(p.getAttributeValue(null,"stop"));}else if(event==XmlPullParser.START_TAG&&p.getName().equals("title")&&current!=null)current.title=p.nextText();else if(event==XmlPullParser.END_TAG&&p.getName().equals("programme")&&current!=null){out.add(current);current=null;}}return out;}
