@@ -33,7 +33,7 @@ public final class GuideEngine extends SQLiteOpenHelper {
     public static final long REFRESH_INTERVAL=12*60*60*1000L;
     private static final int MAX_PROGRAMMES=350000;
     private static final int MAX_XML_BYTES=160*1024*1024;
-    private static final String[] SOURCES={"provider","external1","external2","short"};
+    private static final String[] SOURCES={"provider","external1","external2","external3","external4","short"};
     private final Context app;
     private static final Pattern STREAM_ID=Pattern.compile("/live/[^/]+/[^/]+/(\\d+)(?:\\.[^/]*)?$");
 
@@ -77,7 +77,7 @@ public final class GuideEngine extends SQLiteOpenHelper {
     /** Resolve exact XMLTV identifiers before conservative name matching. */
     static String normalized(String name){return GuideName.normalized(name);}
     private static boolean supportedSource(String s){
-        return "provider".equals(s)||"external1".equals(s)||"external2".equals(s);
+        return "provider".equals(s)||"external1".equals(s)||"external2".equals(s)||"external3".equals(s)||"external4".equals(s);
     }
     private static boolean validUrl(String raw){
         try{
@@ -387,8 +387,9 @@ public final class GuideEngine extends SQLiteOpenHelper {
                     for(int n=0;n<Math.min(entries.length(),20);n++){
                         JSONObject p=entries.optJSONObject(n);
                         if(p==null)continue;
-                        long start=p.optLong("start_timestamp",0)*1000L;
-                        long end=p.optLong("stop_timestamp",0)*1000L;
+                        long start=listingTimestamp(p,"start_timestamp","start");
+                        long end=listingTimestamp(p,"stop_timestamp","end");
+                        if(end<=0)end=listingTimestamp(p,"end_timestamp","stop");
                         if(start<=0||end<=start||end<now-60*60*1000L)continue;
                         String title=maybeBase64(p.optString("title",""));
                         if(title.isEmpty())continue;
@@ -404,6 +405,55 @@ public final class GuideEngine extends SQLiteOpenHelper {
             }finally{db.endTransaction();}
             return added>0;
         }catch(Exception ignored){return false;}
+    }
+    /**
+     * Common Xtream servers return Unix seconds, Unix milliseconds or
+     * YYYY-MM-DD HH:mm:ss strings. Prefer timestamps, which are unambiguous.
+     */
+    static long listingTimestamp(JSONObject listing,String epochKey,String textualKey){
+        Object value=listing.opt(epochKey);
+        long numeric=numericEpoch(value);
+        if(numeric>0)return numeric;
+        return numericEpoch(listing.opt(textualKey));
+    }
+    static long numericEpoch(Object value){
+        if(value==null||value==JSONObject.NULL)return 0;
+        String input=String.valueOf(value).trim();
+        if(input.isEmpty())return 0;
+        try{
+            long number=Long.parseLong(input);
+            if(number>1_000_000_000_000L)return number;
+            if(number>1_000_000_000L)return number*1000L;
+        }catch(NumberFormatException ignored){}
+        for(String pattern:new String[]{"yyyy-MM-dd HH:mm:ss","yyyy-MM-dd'T'HH:mm:ss","yyyyMMddHHmmss Z","yyyyMMddHHmmss"}){
+            try{
+                SimpleDateFormat f=new SimpleDateFormat(pattern,Locale.US);
+                f.setLenient(false);
+                f.setTimeZone(TimeZone.getTimeZone("UTC"));
+                Date date=f.parse(input);
+                if(date!=null)return date.getTime();
+            }catch(Exception ignored){}
+        }
+        return 0;
+    }
+    public static final class SourceStats {
+        public final long futurePrograms;
+        public final long channelsWithPrograms;
+        SourceStats(long futurePrograms,long channelsWithPrograms){
+            this.futurePrograms=futurePrograms;
+            this.channelsWithPrograms=channelsWithPrograms;
+        }
+    }
+    /** Only count current and future real data, never outdated cached rows. */
+    public SourceStats sourceStats(String source){
+        try(Cursor c=getReadableDatabase().rawQuery(
+            "SELECT COUNT(*),COUNT(DISTINCT channel) FROM programs "+
+            "WHERE source=? AND end>? AND start<?",
+            new String[]{source,String.valueOf(System.currentTimeMillis()),
+                String.valueOf(System.currentTimeMillis()+7*DAY)})){
+            if(c.moveToFirst())return new SourceStats(c.getLong(0),c.getLong(1));
+        }
+        return new SourceStats(0,0);
     }
     private static String maybeBase64(String input){
         if(input==null)return "";
