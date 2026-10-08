@@ -351,12 +351,12 @@ public class MainActivity extends Activity {
      searchField.setHintTextColor(0xffa6bbc9);
      searchField.setSingleLine(true);
      searchField.setText(search);
-     if(focusSearchNext){focusSearchNext=false;searchField.requestFocus();}
      searchField.setHint(type.equals("live")?"Search channel":type.equals("movie")?"Search movie titles":"Search TV series");
      searchField.setTextSize(15);
      searchField.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
      LinearLayout.LayoutParams searchSize=new LinearLayout.LayoutParams(0,dp(52),2);
      searchSize.leftMargin=dp(10);controls.addView(searchField,searchSize);
+     if(focusSearchNext){focusSearchNext=false;searchField.requestFocus();}
      Runnable applySearch=()->{query=searchField.getText().toString().trim();page=0;browse();};
      searchField.setOnEditorActionListener((v,action,event)->{
       if(action==android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH||
@@ -1007,48 +1007,71 @@ public class MainActivity extends Activity {
    "English · UK, US, Canada, NZ, Australia",
    "French","German","Spanish","Arabic","Portuguese","Italian","Russian","Hindi",
    "Other recognized languages",
-   "Strict filtering · hide unknown / ambiguous channels"
+   "Strict mode · also hide movies/series without language metadata"
   };
   boolean[] checks=new boolean[labels.length];
   for(int i=0;i<codes.length;i++)checks[i]=allowed.contains(codes[i]);
-  checks[codes.length]=hideUnknown||(!allowed.isEmpty()&&!prefs.getBoolean("smartFilterV2",false));
-  new AlertDialog.Builder(this).setTitle("Smart Library · preferred languages")
-   .setMultiChoiceItems(labels,checks,(d,n,c)->checks[n]=c)
-   .setPositiveButton("Preview",(d,w)->{
+  checks[codes.length]=hideUnknown;
+  new AlertDialog.Builder(this).setTitle("Smart Library · Live TV, Movies & Series")
+   .setMultiChoiceItems(labels,checks,(d,n,checked)->checks[n]=checked)
+   .setPositiveButton("PREVIEW CHANGES",(d,w)->{
     Set<String> selectedLanguages=new HashSet<>();
     for(int i=0;i<codes.length;i++)if(checks[i])selectedLanguages.add(codes[i]);
     boolean strict=checks[codes.length];
     final Set<String> h=new HashSet<>(hidden),c=new HashSet<>(categories),fav=new HashSet<>(favorites),
       manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
+    final String previousScreen=screen;
+    AlertDialog waiting=new AlertDialog.Builder(this).setTitle("Checking all media")
+     .setMessage("Previewing the effect on Live TV, Movies and TV Shows…")
+     .setCancelable(false).create();
+    waiting.show();
     io.execute(()->{
-     int[] counts={0,0,0};
+     int[] counts={0,0,0,0,0};
      Set<String> visibleGroups=new HashSet<>(),hiddenGroups=new HashSet<>();
      try{
       store.forEach(i->{
-       if(i.type.equals("live")){
-        if(LibraryCore.language(i).equals("unknown"))counts[1]++;
-        boolean v=LibraryCore.visible(i,h,c,fav,selectedLanguages,strict,manual,manualGroups);
-        if(!v){counts[0]++;hiddenGroups.add(i.category);}
-        else visibleGroups.add(i.category);
-       }
+       int kind=i.type.equals("live")?0:i.type.equals("movie")?1:i.type.equals("series")?2:-1;
+       if(kind<0)return true;
+       if(LibraryCore.language(i).equals("unknown"))counts[3]++;
+       boolean visible=LibraryCore.visible(i,h,c,fav,selectedLanguages,strict,manual,manualGroups);
+       String key=i.type+"|"+i.category;
+       if(!visible){counts[kind]++;hiddenGroups.add(key);}
+       else visibleGroups.add(key);
        return true;
       });
-      for(String group:hiddenGroups)if(!visibleGroups.contains(group))counts[2]++;
-     }catch(Exception e){runOnUiThread(()->toast("Unable to preview filters"));return;}
+      for(String group:hiddenGroups)if(!visibleGroups.contains(group))counts[4]++;
+     }catch(Exception error){
+      runOnUiThread(()->{
+       waiting.dismiss();
+       if(!isDestroyed())toast("Unable to preview the language filter");
+      });
+      return;
+     }
      runOnUiThread(()->{
+      waiting.dismiss();
       if(isDestroyed())return;
-      new AlertDialog.Builder(this).setTitle("Filter preview")
-       .setMessage(String.format(Locale.US,"%,d live channels will be hidden.\n%,d categories will disappear completely.\n%,d channels have uncertain language.\n\nManual restorations and favorites stay available. No languages selected disables the language filter.",counts[0],counts[2],counts[1]))
-       .setPositiveButton("APPLY FILTER",(a,b)->{
-        snapshot();allowed=selectedLanguages;hideUnknown=strict;
-        prefs.edit().putBoolean("smartFilterV2",true).apply();
+      new AlertDialog.Builder(this).setTitle("LANGUAGE FILTER PREVIEW")
+       .setMessage(String.format(Locale.US,
+        "Hidden after applying:\n\n" +
+        "Live TV: %,d channels\nMovies: %,d films\nTV Shows: %,d series\n\n" +
+        "%,d categories will disappear from browsing.\n" +
+        "%,d items have unknown language.\n\n" +
+        "Favorites and manually restored items stay visible. " +
+        "Strict mode hides unclassified titles across all three sections; turn it off to keep them. " +
+        "No languages selected disables language filtering.",
+        counts[0],counts[1],counts[2],counts[4],counts[3]))
+       .setPositiveButton("APPLY TO ALL MEDIA",(confirm,button)->{
+        snapshot();
+        allowed=selectedLanguages;hideUnknown=strict;
         save();category="All";page=0;
-        if(screen.equals("guide"))tvGuide();else browse();
+        if(previousScreen.equals("guide"))tvGuide();
+        else if(previousScreen.equals("home"))home();
+        else browse();
        })
-       .setNegativeButton("Cancel",null).show();
+       .setNegativeButton("CANCEL",null).show();
      });
     });
-   }).setNegativeButton("Cancel",null).show();
+   }).setNegativeButton("CANCEL",null).show();
  }
 
  EditText field(LinearLayout form,String hint,boolean secret){EditText e=new EditText(this);e.setHint(hint);e.setTextColor(Color.WHITE);e.setHintTextColor(0xff9caebe);e.setBackgroundTintList(ColorStateList.valueOf(ACCENT));e.setSingleLine();if(secret)e.setInputType(129);form.addView(e);return e;}
