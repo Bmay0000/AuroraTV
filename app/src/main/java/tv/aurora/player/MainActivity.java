@@ -555,6 +555,7 @@ public class MainActivity extends Activity {
     setGuideUrl(source,field.getText().toString().trim()))
    .setNegativeButton("Cancel",null).show();
  }
+
  void setGuideUrl(String source,String url){
   if(!source.equals("external1")&&!source.equals("external2"))return;
   if(!url.isEmpty()&&!(url.startsWith("https://")||url.startsWith("http://"))){
@@ -563,19 +564,23 @@ public class MainActivity extends Activity {
   try{
    String old=prefs.getString("guide."+source,"");
    String previous=old.isEmpty()?"":Vault.open(old);
-   if(!previous.equals(url)){
-    epg.clearSource(source);
-    prefs.edit().remove("guide.updated."+source).remove("guide.attempt."+source).apply();
-   }
+   boolean changed=!previous.equals(url);
+   SharedPreferences.Editor edit=prefs.edit();
+   if(changed)edit.remove("guide.updated."+source).remove("guide.attempt."+source);
+   if(url.isEmpty())edit.remove("guide."+source);
+   else edit.putString("guide."+source,Vault.seal(url));
+   edit.apply();
+   if(changed){
+    // Deleting a large cached guide must NEVER block Fire TV navigation.
+    epgRefreshIO.execute(()->{
+     epg.clearSource(source);
+     if(!url.isEmpty())scheduleGuideSync(true,false);
+    });
+   }else if(!url.isEmpty())scheduleGuideSync(true,false);
    if(url.isEmpty()){
-    prefs.edit().remove("guide."+source).apply();
     toast("Removed independent guide source");
     if(screen.equals("guide"))tvGuide();
-    return;
-   }
-   prefs.edit().putString("guide."+source,Vault.seal(url)).apply();
-   scheduleGuideSync(true,false);
-   toast("Loading XMLTV in the background; channels remain usable");
+   }else toast("Refreshing XMLTV in the background; TV remains usable");
   }catch(Exception e){toast("Unable to save guide source");}
  }
  void scheduleGuideSync(boolean force,boolean includeProvider){
