@@ -17,8 +17,8 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff080f1d,PANEL=0xff142238,ACCENT=0xff54e0c5;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;
- @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");hideUnknown=prefs.getBoolean("unknown",false);try{items=readLibrary();}catch(Exception ignored){}shell();browse();try{String savedGuide=Vault.open(prefs.getString("epg",""));if(!savedGuide.isEmpty())loadGuide(savedGuide);}catch(Exception ignored){}}
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;
+ @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");hideUnknown=prefs.getBoolean("unknown",false);shell();browse();}
  Set<String> set(String k){return new HashSet<>(prefs.getStringSet(k,new HashSet<>()));}
  void save(){prefs.edit().putStringSet("hidden",hidden).putStringSet("categories",categories).putStringSet("favorites",favorites).putStringSet("allowed",allowed).putBoolean("unknown",hideUnknown).apply();}
  int dp(int v){return (int)(v*getResources().getDisplayMetrics().density);}
@@ -28,22 +28,200 @@ public class MainActivity extends Activity {
  Button button(String s,Runnable action){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setTextColor(Color.WHITE);b.setTextSize(16);b.setBackground(shape(PANEL));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(52));lp.setMargins(dp(4),dp(4),dp(4),dp(4));b.setLayoutParams(lp);b.setOnFocusChangeListener((v,f)->{b.setBackground(shape(f?ACCENT:PANEL));b.setTextColor(f?BG:Color.WHITE);});b.setOnClickListener(v->action.run());return b;}
  void shell(){root=column();root.setBackgroundColor(BG);root.setPadding(dp(30),dp(20),dp(30),dp(20));setContentView(root);TextView logo=text("A U R O R A   /   TV",25);logo.setTextColor(ACCENT);logo.setTypeface(null,Typeface.BOLD);root.addView(logo);subtitle=text("Your television. Your library.",14);root.addView(subtitle);LinearLayout row=new LinearLayout(this);root.addView(row,new LinearLayout.LayoutParams(-1,0,1));nav=column();row.addView(nav,new LinearLayout.LayoutParams(dp(190),-1));for(String[] entry:new String[][]{{"Live TV","live"},{"Movies","movie"},{"TV Shows","series"}})nav.addView(button(entry[0],()->{section=entry[1];favOnly=false;hiddenOnly=false;category="All";query="";browse();}));nav.addView(button("Favorites",()->{favOnly=!favOnly;hiddenOnly=false;browse();}));nav.addView(button("Search",this::search));nav.addView(button("Edit Library",this::manage));nav.addView(button("Connect / Refresh",this::connect));body=column();body.setPadding(dp(18),0,0,0);row.addView(body,new LinearLayout.LayoutParams(0,-1,1));}
  boolean visible(LibraryCore.Item i){return LibraryCore.visible(i,hidden,categories,favorites,allowed,hideUnknown);}
- void browse(){body.removeAllViews();body.addView(text((editing?"EDIT LIBRARY · ":"")+(hiddenOnly?"Hidden content":favOnly?"Favorites":section.equals("live")?"Live TV / Guide":section.equals("movie")?"Movies":"TV Shows"),28));if(items.isEmpty()){body.addView(text("A quieter way to watch.",32));body.addView(text("Connect your Xtream Codes account or an M3U playlist.\nThen choose what belongs in your library.",20));body.addView(button("Connect a source",this::connect));return;}body.addView(button("Category: "+category,this::chooseCategory));if(editing)body.addView(text("Select a title for visibility and favorite actions. Menu opens Edit Library.",14));ListView list=new ListView(this);list.setDividerHeight(dp(6));body.addView(list,new LinearLayout.LayoutParams(-1,0,1));List<LibraryCore.Item> rows=new ArrayList<>();for(LibraryCore.Item i:items){boolean v=visible(i);if(!i.type.equals(section)||(hiddenOnly?v:!v)||favOnly&&!favorites.contains(i.id)||!category.equals("All")&&!category.equals(i.category)||!i.name.toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT)))continue;rows.add(i);}list.setAdapter(new BaseAdapter(){public int getCount(){return rows.size();}public Object getItem(int n){return rows.get(n);}public long getItemId(int n){return n;}public View getView(int n,View reuse,android.view.ViewGroup parent){LibraryCore.Item i=rows.get(n);TextView t=reuse instanceof TextView?(TextView)reuse:text("",17);t.setText((favorites.contains(i.id)?"★  ":"")+i.name+"   ·   "+i.category+(i.type.equals("live")?nowNext(i):""));t.setPadding(dp(16),dp(16),dp(16),dp(16));t.setBackground(shape(PANEL));return t;}});list.setSelector(shape(0xff287e76));list.setOnItemClickListener((parent,v,n,id)->{selected=rows.get(n);if(editing)actions(selected);else open(selected);});list.setOnItemLongClickListener((parent,v,n,id)->{actions(rows.get(n));return true;});subtitle.setText(rows.size()+" visible titles · "+(loading?"Importing…":"Menu: library tools · Hold Select: title actions"));if(rows.isEmpty())body.addView(text("No matches. Change category, search, or visibility settings.",18));}
 
- String nowNext(LibraryCore.Item i){long now=System.currentTimeMillis();Provider.Program current=null,next=null;for(Provider.Program p:guideIndex.getOrDefault(i.epgId,Collections.emptyList())){if(p.start<=now&&p.end>now)current=p;else if(p.start>now&&(next==null||p.start<next.start))next=p;}return "\n"+(current==null?"Schedule unavailable":"Now: "+current.title)+(next==null?"":"   /   Next: "+next.title);}
- void chooseCategory(){List<String> names=new ArrayList<>();names.add("All");TreeSet<String> rest=new TreeSet<>();for(LibraryCore.Item i:items)if(i.type.equals(section)&&(hiddenOnly?!visible(i):visible(i)))rest.add(i.category);names.addAll(rest);new AlertDialog.Builder(this).setTitle("Choose category").setItems(names.toArray(new String[0]),(d,n)->{category=names.get(n);browse();}).show();}
- void search(){EditText e=new EditText(this);e.setSingleLine();e.setHint("Search "+section);e.setText(query);new AlertDialog.Builder(this).setTitle("Search your visible library").setView(e).setPositiveButton("Search",(d,w)->{query=e.getText().toString();browse();}).setNegativeButton("Cancel",null).show();}
+ void browse(){
+  final int token=++browseToken;
+  final String wantedSection=section,wantedCategory=category,wantedQuery=query.toLowerCase(Locale.ROOT);
+  final boolean onlyHidden=hiddenOnly,onlyFavorites=favOnly,isEditing=editing;
+  final int requestedPage=page;
+  body.removeAllViews();
+  body.addView(text((isEditing?"EDIT LIBRARY · ":"")+(onlyHidden?"Hidden content":onlyFavorites?"Favorites":wantedSection.equals("live")?"Live TV / Guide":wantedSection.equals("movie")?"Movies":"TV Shows"),28));
+  if(!store.hasLibrary()){
+   body.addView(text("A quieter way to watch.",32));
+   body.addView(text("Connect your Xtream Codes account or an M3U playlist.\nThen choose what belongs in your library.",20));
+   body.addView(button("Connect a source",this::connect));
+   return;
+  }
+  body.addView(text("Loading library page…",19));
+  io.execute(()->{
+   final List<LibraryCore.Item> rows=new ArrayList<>();
+   final int[] matching={0};
+   try{
+    store.forEach(i->{
+     boolean v=visible(i);
+     if(!i.type.equals(wantedSection)||(onlyHidden?v:!v)||
+       (onlyFavorites&&!favorites.contains(i.id))||
+       (!wantedCategory.equals("All")&&!wantedCategory.equals(i.category))||
+       !i.name.toLowerCase(Locale.ROOT).contains(wantedQuery))return true;
+     if(matching[0]>=requestedPage*PAGE_SIZE&&rows.size()<PAGE_SIZE)rows.add(i);
+     matching[0]++;
+     return true;
+    });
+    runOnUiThread(()->{
+     if(token!=browseToken||isDestroyed())return;
+     items=rows;
+     body.removeAllViews();
+     body.addView(text((isEditing?"EDIT LIBRARY · ":"")+(onlyHidden?"Hidden content":onlyFavorites?"Favorites":wantedSection.equals("live")?"Live TV / Guide":wantedSection.equals("movie")?"Movies":"TV Shows"),28));
+     body.addView(button("Category: "+wantedCategory,this::chooseCategory));
+     if(isEditing)body.addView(text("Select a title for visibility and favorite actions.",14));
+     if(matching[0]==0){body.addView(text("No matching titles. Change category, search, or filter.",18));return;}
+     if(rows.isEmpty()&&page>0){page=0;browse();return;}
+     body.addView(text("Showing "+(requestedPage*PAGE_SIZE+1)+"–"+(requestedPage*PAGE_SIZE+rows.size())+" of "+matching[0],16));
+     ListView list=new ListView(this);list.setDividerHeight(dp(6));
+     body.addView(list,new LinearLayout.LayoutParams(-1,0,1));
+     list.setAdapter(new BaseAdapter(){
+      public int getCount(){return rows.size();}
+      public Object getItem(int n){return rows.get(n);}
+      public long getItemId(int n){return n;}
+      public View getView(int n,View reuse,ViewGroup parent){
+       LibraryCore.Item i=rows.get(n);
+       TextView t=reuse instanceof TextView?(TextView)reuse:text("",17);
+       t.setText((favorites.contains(i.id)?"★  ":"")+i.name+"   ·   "+i.category+(i.type.equals("live")?nowNext(i):""));
+       t.setPadding(dp(16),dp(16),dp(16),dp(16));t.setBackground(shape(PANEL));
+       return t;
+      }
+     });
+     list.setSelector(shape(0xff287e76));
+     list.setOnItemClickListener((parent,v,n,id)->{selected=rows.get(n);if(editing)actions(selected);else open(selected);});
+     list.setOnItemLongClickListener((parent,v,n,id)->{actions(rows.get(n));return true;});
+     LinearLayout buttons=new LinearLayout(this);
+     if(requestedPage>0)buttons.addView(button("◀ Previous",()->{page--;browse();}),new LinearLayout.LayoutParams(0,dp(55),1));
+     if(matching[0]>(requestedPage+1)*PAGE_SIZE)buttons.addView(button("Next ▶",()->{page++;browse();}),new LinearLayout.LayoutParams(0,dp(55),1));
+     body.addView(buttons);
+     subtitle.setText(matching[0]+" matching titles · page "+(requestedPage+1));
+    });
+   }catch(Exception error){
+    runOnUiThread(()->{
+     if(token!=browseToken||isDestroyed())return;
+     body.removeAllViews();
+     body.addView(text("Library could not be opened. Please refresh the source.",19));
+     toast("Library read failed: "+error.getClass().getSimpleName());
+    });
+   }
+  });
+ }
+
+  String nowNext(LibraryCore.Item i){long now=System.currentTimeMillis();Provider.Program current=null,next=null;for(Provider.Program p:guideIndex.getOrDefault(i.epgId,Collections.emptyList())){if(p.start<=now&&p.end>now)current=p;else if(p.start>now&&(next==null||p.start<next.start))next=p;}return "\n"+(current==null?"Schedule unavailable":"Now: "+current.title)+(next==null?"":"   /   Next: "+next.title);}
+
+ void chooseCategory(){
+  final String filterSection=section;
+  final boolean onlyHidden=hiddenOnly;
+  io.execute(()->{
+   TreeSet<String> groups=new TreeSet<>();
+   try{store.forEach(i->{if(i.type.equals(filterSection)&&(onlyHidden?!visible(i):visible(i)))groups.add(i.category);return true;});}
+   catch(Exception e){runOnUiThread(()->toast("Could not read library categories"));return;}
+   runOnUiThread(()->{
+    if(isDestroyed())return;
+    List<String> names=new ArrayList<>();names.add("All");names.addAll(groups);
+    new AlertDialog.Builder(this).setTitle("Choose category").setItems(names.toArray(new String[0]),(d,n)->{category=names.get(n);page=0;browse();}).show();
+   });
+  });
+ }
+
+  void search(){EditText e=new EditText(this);e.setSingleLine();e.setHint("Search "+section);e.setText(query);new AlertDialog.Builder(this).setTitle("Search your visible library").setView(e).setPositiveButton("Search",(d,w)->{query=e.getText().toString();browse();}).setNegativeButton("Cancel",null).show();}
  void actions(LibraryCore.Item i){String[] labels={favorites.contains(i.id)?"Remove favorite":"Add favorite",hidden.contains(i.id)?"Restore title":"Hide title","Play / Open"};new AlertDialog.Builder(this).setTitle(i.name).setItems(labels,(d,n)->{if(n==0){if(!favorites.add(i.id))favorites.remove(i.id);}else if(n==1){if(!hidden.add(i.id))hidden.remove(i.id);}else{open(i);return;}save();browse();}).show();}
  void manage(){new AlertDialog.Builder(this).setTitle("Edit Library").setItems(new String[]{editing?"Finish editing":"Edit individual titles","Manage categories","Smart language filter · Live TV","Hidden content / restore","Undo last bulk action","Return to visible library"},(d,n)->{if(n==0)editing=!editing;if(n==1){manageCategories();return;}if(n==2){smart();return;}if(n==3){hiddenOnly=true;editing=true;favOnly=false;category="All";}if(n==4)undo();if(n==5){hiddenOnly=false;editing=false;}browse();}).show();}
  void snapshot(){prefs.edit().putStringSet("undoHidden",new HashSet<>(hidden)).putStringSet("undoCategories",new HashSet<>(categories)).putStringSet("undoAllowed",new HashSet<>(allowed)).putBoolean("undoUnknown",hideUnknown).putBoolean("undo",true).apply();}
  void undo(){if(!prefs.getBoolean("undo",false)){toast("No bulk action to undo");return;}hidden=set("undoHidden");categories=set("undoCategories");allowed=set("undoAllowed");hideUnknown=prefs.getBoolean("undoUnknown",false);prefs.edit().putBoolean("undo",false).apply();save();}
- void manageCategories(){TreeSet<String> groups=new TreeSet<>();for(LibraryCore.Item i:items)if(i.type.equals(section))groups.add(i.category);String[] names=groups.toArray(new String[0]);boolean[] checks=new boolean[names.length];for(int i=0;i<names.length;i++)checks[i]=categories.contains(section+"|"+names[i]);new AlertDialog.Builder(this).setTitle("Select categories to hide · "+section).setMultiChoiceItems(names,checks,(d,n,c)->checks[n]=c).setPositiveButton("Apply",(d,w)->{snapshot();for(int i=0;i<names.length;i++){String k=section+"|"+names[i];if(checks[i])categories.add(k);else categories.remove(k);}save();category="All";browse();}).setNegativeButton("Cancel",null).show();}
- void smart(){String[] codes={"en","fr","de","es","ar"};String[] labels={"English · UK, US, AU, NZ, NA clues","French","German","Spanish","Arabic","Hide unrecognized / ambiguous channels"};boolean[] checks=new boolean[6];for(int i=0;i<5;i++)checks[i]=allowed.contains(codes[i]);checks[5]=hideUnknown;new AlertDialog.Builder(this).setTitle("Smart Library · preferred languages").setMultiChoiceItems(labels,checks,(d,n,c)->checks[n]=c).setPositiveButton("Preview",(d,w)->{Set<String> proposal=new HashSet<>();for(int i=0;i<5;i++)if(checks[i])proposal.add(codes[i]);int hide=0,unknown=0;for(LibraryCore.Item i:items)if(i.type.equals("live")){if(LibraryCore.language(i).equals("unknown"))unknown++;if(!LibraryCore.visible(i,hidden,categories,favorites,proposal,checks[5]))hide++;}new AlertDialog.Builder(this).setTitle("Filter preview").setMessage(hide+" live channels hidden in total.\n"+unknown+" have uncertain language.\nFavorites are protected. No languages selected disables automatic filtering. Rules apply to new channels after refresh.").setPositiveButton("Apply",(a,b)->{snapshot();allowed=proposal;hideUnknown=checks[5];save();browse();}).setNegativeButton("Cancel",null).show();}).setNegativeButton("Cancel",null).show();}
- EditText field(LinearLayout form,String hint,boolean secret){EditText e=new EditText(this);e.setHint(hint);e.setSingleLine();if(secret)e.setInputType(129);form.addView(e);return e;}
- void connect(){new AlertDialog.Builder(this).setTitle("One source · your library").setItems(new String[]{"Xtream Codes login","M3U playlist URL","Add / refresh XMLTV guide","Refresh current source","Disconnect and clear library"},(d,n)->{if(n==3){refresh();return;}if(n==4){new AlertDialog.Builder(this).setTitle("Clear source and library?").setMessage("Removes the account, imported titles, favorites and visibility rules from this device.").setPositiveButton("Clear",(a,b)->{generation++;prefs.edit().clear().apply();getFileStreamPath("library.enc").delete();items.clear();guide.clear();guideIndex.clear();hidden.clear();categories.clear();favorites.clear();allowed.clear();hideUnknown=false;loading=false;category="All";browse();}).setNegativeButton("Cancel",null).show();return;}LinearLayout form=column();EditText url=field(form,n==0?"Server URL (https://…)":n==1?"M3U URL":"XMLTV URL",false);EditText user=n==0?field(form,"Username",false):null;EditText pass=n==0?field(form,"Password",true):null;new AlertDialog.Builder(this).setTitle(n==0?"Xtream Codes":n==1?"M3U playlist":"Program guide").setView(form).setPositiveButton("Import",(a,b)->{String u=url.getText().toString().trim();if(n==2){loadGuide(u);return;}importSource(n==0?"xtream":"m3u",u,user==null?"":user.getText().toString(),pass==null?"":pass.getText().toString());}).setNegativeButton("Cancel",null).show();}).show();}
+
+ void manageCategories(){
+  final String filterSection=section;
+  io.execute(()->{
+   TreeSet<String> groups=new TreeSet<>();
+   try{store.forEach(i->{if(i.type.equals(filterSection))groups.add(i.category);return true;});}
+   catch(Exception e){runOnUiThread(()->toast("Could not read categories"));return;}
+   runOnUiThread(()->{
+    if(isDestroyed())return;
+    String[] names=groups.toArray(new String[0]);boolean[] checks=new boolean[names.length];
+    for(int i=0;i<names.length;i++)checks[i]=categories.contains(filterSection+"|"+names[i]);
+    new AlertDialog.Builder(this).setTitle("Select categories to hide · "+filterSection)
+     .setMultiChoiceItems(names,checks,(d,n,c)->checks[n]=c)
+     .setPositiveButton("Apply",(d,w)->{
+      snapshot();for(int i=0;i<names.length;i++){String k=filterSection+"|"+names[i];if(checks[i])categories.add(k);else categories.remove(k);}
+      save();category="All";page=0;browse();
+     }).setNegativeButton("Cancel",null).show();
+   });
+  });
+ }
+
+ 
+ void smart(){
+  String[] codes={"en","fr","de","es","ar"};
+  String[] labels={"English · UK, US, AU, NZ, NA clues","French","German","Spanish","Arabic","Hide unrecognized / ambiguous channels"};
+  boolean[] checks=new boolean[6];
+  for(int i=0;i<5;i++)checks[i]=allowed.contains(codes[i]);
+  checks[5]=hideUnknown;
+  new AlertDialog.Builder(this).setTitle("Smart Library · preferred languages")
+   .setMultiChoiceItems(labels,checks,(d,n,c)->checks[n]=c)
+   .setPositiveButton("Preview",(d,w)->{
+    Set<String> proposal=new HashSet<>();
+    for(int i=0;i<5;i++)if(checks[i])proposal.add(codes[i]);
+    io.execute(()->{
+     int[] counts={0,0};
+     try{store.forEach(i->{
+      if(i.type.equals("live")){
+       if(LibraryCore.language(i).equals("unknown"))counts[1]++;
+       if(!LibraryCore.visible(i,hidden,categories,favorites,proposal,checks[5]))counts[0]++;
+      }
+      return true;
+     });}catch(Exception e){runOnUiThread(()->toast("Unable to preview filters"));return;}
+     runOnUiThread(()->{
+      if(isDestroyed())return;
+      new AlertDialog.Builder(this).setTitle("Filter preview")
+       .setMessage(counts[0]+" live channels hidden in total.\n"+counts[1]+" have uncertain language.\nFavorites are protected. No languages selected disables automatic filtering.")
+       .setPositiveButton("Apply",(a,b)->{snapshot();allowed=proposal;hideUnknown=checks[5];save();page=0;browse();})
+       .setNegativeButton("Cancel",null).show();
+     });
+    });
+   }).setNegativeButton("Cancel",null).show();
+ }
+
+  EditText field(LinearLayout form,String hint,boolean secret){EditText e=new EditText(this);e.setHint(hint);e.setSingleLine();if(secret)e.setInputType(129);form.addView(e);return e;}
+ void connect(){new AlertDialog.Builder(this).setTitle("One source · your library").setItems(new String[]{"Xtream Codes login","M3U playlist URL","Add / refresh XMLTV guide","Refresh current source","Disconnect and clear library"},(d,n)->{if(n==3){refresh();return;}if(n==4){new AlertDialog.Builder(this).setTitle("Clear source and library?").setMessage("Removes the account, imported titles, favorites and visibility rules from this device.").setPositiveButton("Clear",(a,b)->{generation++;prefs.edit().clear().apply();store.clear();items.clear();page=0;guide.clear();guideIndex.clear();hidden.clear();categories.clear();favorites.clear();allowed.clear();hideUnknown=false;loading=false;category="All";browse();}).setNegativeButton("Cancel",null).show();return;}LinearLayout form=column();EditText url=field(form,n==0?"Server URL (https://…)":n==1?"M3U URL":"XMLTV URL",false);EditText user=n==0?field(form,"Username",false):null;EditText pass=n==0?field(form,"Password",true):null;new AlertDialog.Builder(this).setTitle(n==0?"Xtream Codes":n==1?"M3U playlist":"Program guide").setView(form).setPositiveButton("Import",(a,b)->{String u=url.getText().toString().trim();if(n==2){loadGuide(u);return;}importSource(n==0?"xtream":"m3u",u,user==null?"":user.getText().toString(),pass==null?"":pass.getText().toString());}).setNegativeButton("Cancel",null).show();}).show();}
  void refresh(){String mode=prefs.getString("mode","");if(mode.isEmpty()){toast("Connect a source first");return;}try{importSource(mode,Vault.open(prefs.getString("url","")),Vault.open(prefs.getString("user","")),Vault.open(prefs.getString("pass","")));}catch(Exception e){toast("Reconnect your source");}}
- void importSource(String mode,String url,String user,String pass){if(loading){toast("Import already running");return;}loading=true;int token=++generation;subtitle.setText("Importing your library…");io.execute(()->{try{List<LibraryCore.Item> result=mode.equals("xtream")?Provider.xtream(url,user,pass):LibraryCore.m3u(Provider.get(Provider.base(url)),LibraryCore.key(url));if(result.isEmpty())throw new Exception("No supported titles found");writeLibrary(result);String sealedUrl=Vault.seal(url),sealedUser=Vault.seal(user),sealedPass=Vault.seal(pass);runOnUiThread(()->{if(token!=generation||isDestroyed())return;boolean first=items.isEmpty();items=result;loading=false;prefs.edit().putString("mode",mode).putString("url",sealedUrl).putString("user",sealedUser).putString("pass",sealedPass).remove("items").apply();category="All";browse();if(first)smart();try{String epg=Vault.open(prefs.getString("epg",""));if(!epg.isEmpty())loadGuide(epg);}catch(Exception ignored){}});}catch(Exception e){runOnUiThread(()->{if(token!=generation||isDestroyed())return;loading=false;toast("Import failed: "+(e.getMessage()==null?"Unknown provider error":e.getMessage().replaceAll("(?i)(username|password)=[^&\\s]+","$1=***")));browse();});}});}
- void loadGuide(String url){int token=generation;subtitle.setText("Loading guide…");io.execute(()->{try{List<Provider.Program> result=Provider.epg(url);String sealedGuide=Vault.seal(url);runOnUiThread(()->{if(token!=generation||isDestroyed())return;guide=result;guideIndex.clear();for(Provider.Program p:result)guideIndex.computeIfAbsent(p.channel,k->new ArrayList<>()).add(p);prefs.edit().putString("epg",sealedGuide).apply();browse();});}catch(Exception e){runOnUiThread(()->toast("Could not read XMLTV guide. Use an uncompressed XMLTV URL."));}});}
+
+ void importSource(String mode,String url,String user,String pass){
+  if(loading){toast("Import already running");return;}
+  loading=true;
+  final int token=++generation;
+  subtitle.setText("Importing your library…");
+  io.execute(()->{
+   try{
+    int count;
+    try(LibraryStore.Writer writer=store.writer()){
+     if(mode.equals("xtream"))count=Provider.xtreamStream(url,user,pass,writer);
+     else{
+      List<LibraryCore.Item> playlist=LibraryCore.m3u(Provider.get(Provider.base(url)),LibraryCore.key(url));
+      for(LibraryCore.Item i:playlist)writer.add(i);
+      count=writer.count();
+     }
+     if(count==0)throw new IOException("No supported titles found");
+     writer.commit();
+    }
+    String sealedUrl=Vault.seal(url),sealedUser=Vault.seal(user),sealedPass=Vault.seal(pass);
+    runOnUiThread(()->{
+     if(token!=generation||isDestroyed())return;
+     loading=false;items.clear();page=0;category="All";
+     prefs.edit().putString("mode",mode).putString("url",sealedUrl)
+      .putString("user",sealedUser).putString("pass",sealedPass).remove("items").apply();
+     subtitle.setText("Imported "+count+" titles.");
+     browse();
+     // EPG is intentionally not downloaded as part of catalog import.
+     // The guide can be loaded separately from Connect / Refresh.
+    });
+   }catch(Exception e){
+    runOnUiThread(()->{
+     if(token!=generation||isDestroyed())return;
+     loading=false;
+     toast("Import failed: "+(e.getMessage()==null?e.getClass().getSimpleName():
+       e.getMessage().replaceAll("(?i)(username|password)=[^&\\s]+","$1=***")));
+     browse();
+    });
+   }
+  });
+ }
+
+  void loadGuide(String url){int token=generation;subtitle.setText("Loading guide…");io.execute(()->{try{List<Provider.Program> result=Provider.epg(url);String sealedGuide=Vault.seal(url);runOnUiThread(()->{if(token!=generation||isDestroyed())return;guide=result;guideIndex.clear();for(Provider.Program p:result)guideIndex.computeIfAbsent(p.channel,k->new ArrayList<>()).add(p);prefs.edit().putString("epg",sealedGuide).apply();browse();});}catch(Exception e){runOnUiThread(()->toast("Could not read XMLTV guide. Use an uncompressed XMLTV URL."));}});}
  void open(LibraryCore.Item i){if(i.type.equals("series")){subtitle.setText("Loading episodes…");io.execute(()->{try{List<LibraryCore.Item> eps=Provider.episodes(i);runOnUiThread(()->{if(isDestroyed())return;String[] titles=new String[eps.size()];for(int n=0;n<eps.size();n++)titles[n]=eps.get(n).name;new AlertDialog.Builder(this).setTitle(i.name).setItems(titles,(d,n)->play(eps.get(n))).show();});}catch(Exception e){runOnUiThread(()->toast("Episodes unavailable for this source"));}});return;}play(i);}
  void play(LibraryCore.Item i){release();playing=i;LinearLayout layout=column();layout.setBackgroundColor(BG);playerView=new PlayerView(this);layout.addView(playerView,new LinearLayout.LayoutParams(-1,0,1));LinearLayout controls=new LinearLayout(this);layout.addView(controls);Button pause=button("Play / Pause",()->{if(player.isPlaying())player.pause();else player.play();});controls.addView(pause,new LinearLayout.LayoutParams(0,dp(60),1));if(i.type.equals("live")){Button live=button("Go to live",()->{if(player.isCurrentMediaItemLive()){player.seekToDefaultPosition();player.play();}else toast("This stream does not expose a live timeline");});controls.addView(live,new LinearLayout.LayoutParams(0,dp(60),1));}else{Button rewind=button("−30 seconds",()->player.seekTo(Math.max(0,player.getCurrentPosition()-30000)));controls.addView(rewind,new LinearLayout.LayoutParams(0,dp(60),1));}controls.addView(button("Back to library",()->{release();shell();browse();}),new LinearLayout.LayoutParams(0,dp(60),1));setContentView(layout);player=new ExoPlayer.Builder(this).build();playerView.setPlayer(player);player.setMediaItem(MediaItem.fromUri(i.url));player.addListener(new Player.Listener(){@Override public void onPlayerError(PlaybackException error){toast("Playback failed. Try another channel or check your source.");}});player.prepare();if(!i.type.equals("live"))player.seekTo(prefs.getLong("resume."+i.id,0));player.play();pause.requestFocus();}
  void release(){if(player!=null){if(playing!=null&&!playing.type.equals("live"))prefs.edit().putLong("resume."+playing.id,player.getCurrentPosition()).apply();player.release();player=null;playerView=null;playing=null;}}
