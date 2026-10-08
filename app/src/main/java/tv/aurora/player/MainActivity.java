@@ -252,7 +252,7 @@ public class MainActivity extends Activity {
          manual,manualGroups,requested*PAGE_SIZE,PAGE_SIZE);
     final Map<String,String> brief=new HashMap<>();
     if(type.equals("live")&&!showHidden){
-     for(int x=0;x<Math.min(65,result.rows.size());x++){
+     for(int x=0;x<Math.min(18,result.rows.size());x++){
       LibraryCore.Item channel=result.rows.get(x);
       GuideEngine.Slot entry=epg.nowNext(channel);
       if(entry.hasData()){
