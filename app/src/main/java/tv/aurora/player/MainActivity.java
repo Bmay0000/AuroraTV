@@ -23,7 +23,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff080f1d,PANEL=0xff142238,ACCENT=0xff54e0c5;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;String screen="login";TextView loadingStatus;ExecutorService artworkIO=Executors.newFixedThreadPool(3);LruCache<String,Bitmap> artworkCache=new LruCache<String,Bitmap>(8192){@Override protected int sizeOf(String key,Bitmap bitmap){return bitmap.getByteCount()/1024;}};
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;String screen="login",screenBeforePlayer="home";TextView loadingStatus;ExecutorService artworkIO=Executors.newFixedThreadPool(3);LruCache<String,Bitmap> artworkCache=new LruCache<String,Bitmap>(8192){@Override protected int sizeOf(String key,Bitmap bitmap){return bitmap.getByteCount()/1024;}};
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");hideUnknown=prefs.getBoolean("unknown",false);start();}
  Set<String> set(String k){return new HashSet<>(prefs.getStringSet(k,new HashSet<>()));}
  void save(){prefs.edit().putStringSet("hidden",hidden).putStringSet("categories",categories).putStringSet("favorites",favorites).putStringSet("allowed",allowed).putBoolean("unknown",hideUnknown).apply();}
@@ -384,58 +384,136 @@ public class MainActivity extends Activity {
  }
 
   EditText field(LinearLayout form,String hint,boolean secret){EditText e=new EditText(this);e.setHint(hint);e.setSingleLine();if(secret)e.setInputType(129);form.addView(e);return e;}
- void connect(){new AlertDialog.Builder(this).setTitle("One source · your library").setItems(new String[]{"Xtream Codes login","M3U playlist URL","Add / refresh XMLTV guide","Refresh current source","Disconnect and clear library"},(d,n)->{if(n==3){refresh();return;}if(n==4){new AlertDialog.Builder(this).setTitle("Clear source and library?").setMessage("Removes the account, imported titles, favorites and visibility rules from this device.").setPositiveButton("Clear",(a,b)->{generation++;prefs.edit().clear().apply();store.clear();items.clear();page=0;guide.clear();guideIndex.clear();hidden.clear();categories.clear();favorites.clear();allowed.clear();hideUnknown=false;loading=false;category="All";browse();}).setNegativeButton("Cancel",null).show();return;}LinearLayout form=column();EditText url=field(form,n==0?"Server URL (https://…)":n==1?"M3U URL":"XMLTV URL",false);EditText user=n==0?field(form,"Username",false):null;EditText pass=n==0?field(form,"Password",true):null;new AlertDialog.Builder(this).setTitle(n==0?"Xtream Codes":n==1?"M3U playlist":"Program guide").setView(form).setPositiveButton("Import",(a,b)->{String u=url.getText().toString().trim();if(n==2){loadGuide(u);return;}importSource(n==0?"xtream":"m3u",u,user==null?"":user.getText().toString(),pass==null?"":pass.getText().toString());}).setNegativeButton("Cancel",null).show();}).show();}
- void refresh(){String mode=prefs.getString("mode","");if(mode.isEmpty()){toast("Connect a source first");return;}try{importSource(mode,Vault.open(prefs.getString("url","")),Vault.open(prefs.getString("user","")),Vault.open(prefs.getString("pass","")));}catch(Exception e){toast("Reconnect your source");}}
+
+ void connect(){
+  new AlertDialog.Builder(this).setTitle("MANAGE YOUR CONNECTION")
+   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Add / refresh XMLTV program guide","Disconnect and clear this device"},(d,n)->{
+    if(n==0){loginScreen(false);return;}
+    if(n==1){refresh();return;}
+    if(n==2){
+     LinearLayout form=column();EditText guideUrl=field(form,"XMLTV guide URL",false);
+     new AlertDialog.Builder(this).setTitle("PROGRAM GUIDE").setView(form)
+      .setPositiveButton("Load guide",(a,b)->loadGuide(guideUrl.getText().toString().trim()))
+      .setNegativeButton("Cancel",null).show();
+     return;
+    }
+    new AlertDialog.Builder(this).setTitle("Remove connected provider?")
+     .setMessage("This deletes the imported library, saved login and filters from this device.")
+     .setPositiveButton("Disconnect",(a,b)->{
+      generation++;browseToken++;loading=false;
+      prefs.edit().clear().apply();
+      store.clear();items.clear();guide.clear();guideIndex.clear();
+      hidden.clear();categories.clear();favorites.clear();allowed.clear();hideUnknown=false;
+      page=0;category="All";query="";loginScreen(false);
+     }).setNegativeButton("Cancel",null).show();
+   }).show();
+ }
+ void refresh(){
+  String mode=prefs.getString("mode","");
+  if(mode.isEmpty()){loginScreen(false);return;}
+  try{
+   importSource(mode,Vault.open(prefs.getString("url","")),
+     Vault.open(prefs.getString("user","")),Vault.open(prefs.getString("pass","")));
+  }catch(Exception e){
+   toast("Please sign into your provider again");
+   loginScreen(false);
+  }
+ }
+
 
  void importSource(String mode,String url,String user,String pass){
-  if(loading){toast("Import already running");return;}
+  if(loading){toast("An import is already running");return;}
   loading=true;
   final int token=++generation;
-  subtitle.setText("Importing your library…");
+  loadingScreen("SETTING UP YOUR LIBRARY","Connecting to your IPTV provider…");
   io.execute(()->{
    try{
     int count;
     try(LibraryStore.Writer writer=store.writer()){
-     if(mode.equals("xtream"))count=Provider.xtreamStream(url,user,pass,writer);
-     else{
-      List<LibraryCore.Item> playlist=LibraryCore.m3u(Provider.get(Provider.base(url)),LibraryCore.key(url));
-      for(LibraryCore.Item i:playlist)writer.add(i);
-      count=writer.count();
+     if(mode.equals("xtream")){
+      count=Provider.xtreamStream(url,user,pass,writer,(stage,done)->{
+       String phase=stage.equals("live")?"LIVE TELEVISION":stage.equals("vod")?"MOVIES":"TV SERIES";
+       status(phase+"  ·  "+String.format(Locale.US,"%,d titles imported",done));
+      });
+     }else{
+      status("Reading M3U playlist…");
+      count=Provider.m3uStream(url,writer,(stage,done)->
+        status(String.format(Locale.US,"%,d playlist entries imported",done)));
      }
-     if(count==0)throw new IOException("No supported titles found");
+     if(count==0)throw new IOException("No supported titles were returned by this provider.");
+     status("Finishing your library index…");
      writer.commit();
     }
-    String sealedUrl=Vault.seal(url),sealedUser=Vault.seal(user),sealedPass=Vault.seal(pass);
+    String address=Vault.seal(url),account=Vault.seal(user),secret=Vault.seal(pass);
     runOnUiThread(()->{
-     if(token!=generation||isDestroyed())return;
-     loading=false;items.clear();page=0;category="All";
-     prefs.edit().putString("mode",mode).putString("url",sealedUrl)
-      .putString("user",sealedUser).putString("pass",sealedPass).remove("items").apply();
-     subtitle.setText("Imported "+count+" titles.");
-     browse();
-     // EPG is intentionally not downloaded as part of catalog import.
-     // The guide can be loaded separately from Connect / Refresh.
+     if(isDestroyed()||token!=generation)return;
+     prefs.edit().putString("mode",mode).putString("url",address)
+       .putString("user",account).putString("pass",secret).remove("items").apply();
+     loading=false;items.clear();page=0;category="All";query="";
+     hiddenOnly=false;favOnly=false;editing=false;
+     shell();home();
+     // EPG is opt-in and never downloaded during the import.
     });
-   }catch(Exception e){
+   }catch(Exception error){
     runOnUiThread(()->{
-     if(token!=generation||isDestroyed())return;
+     if(isDestroyed()||token!=generation)return;
      loading=false;
-     toast("Import failed: "+(e.getMessage()==null?e.getClass().getSimpleName():
-       e.getMessage().replaceAll("(?i)(username|password)=[^&\\s]+","$1=***")));
-     browse();
+     String message=error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();
+     message=message.replaceAll("(?i)(username|password)=[^&\\s]+","$1=***");
+     toast("Import failed: "+message);
+     if(store.hasLibrary()){shell();home();}
+     else loginScreen(mode.equals("m3u"));
     });
    }
   });
  }
 
-  void loadGuide(String url){int token=generation;subtitle.setText("Loading guide…");io.execute(()->{try{List<Provider.Program> result=Provider.epg(url);String sealedGuide=Vault.seal(url);runOnUiThread(()->{if(token!=generation||isDestroyed())return;guide=result;guideIndex.clear();for(Provider.Program p:result)guideIndex.computeIfAbsent(p.channel,k->new ArrayList<>()).add(p);prefs.edit().putString("epg",sealedGuide).apply();browse();});}catch(Exception e){runOnUiThread(()->toast("Could not read XMLTV guide. Use an uncompressed XMLTV URL."));}});}
- void open(LibraryCore.Item i){if(i.type.equals("series")){subtitle.setText("Loading episodes…");io.execute(()->{try{List<LibraryCore.Item> eps=Provider.episodes(i);runOnUiThread(()->{if(isDestroyed())return;String[] titles=new String[eps.size()];for(int n=0;n<eps.size();n++)titles[n]=eps.get(n).name;new AlertDialog.Builder(this).setTitle(i.name).setItems(titles,(d,n)->play(eps.get(n))).show();});}catch(Exception e){runOnUiThread(()->toast("Episodes unavailable for this source"));}});return;}play(i);}
- void play(LibraryCore.Item i){release();playing=i;LinearLayout layout=column();layout.setBackgroundColor(BG);playerView=new PlayerView(this);layout.addView(playerView,new LinearLayout.LayoutParams(-1,0,1));LinearLayout controls=new LinearLayout(this);layout.addView(controls);Button pause=button("Play / Pause",()->{if(player.isPlaying())player.pause();else player.play();});controls.addView(pause,new LinearLayout.LayoutParams(0,dp(60),1));if(i.type.equals("live")){Button live=button("Go to live",()->{if(player.isCurrentMediaItemLive()){player.seekToDefaultPosition();player.play();}else toast("This stream does not expose a live timeline");});controls.addView(live,new LinearLayout.LayoutParams(0,dp(60),1));}else{Button rewind=button("−30 seconds",()->player.seekTo(Math.max(0,player.getCurrentPosition()-30000)));controls.addView(rewind,new LinearLayout.LayoutParams(0,dp(60),1));}controls.addView(button("Back to library",()->{release();shell();browse();}),new LinearLayout.LayoutParams(0,dp(60),1));setContentView(layout);player=new ExoPlayer.Builder(this).build();playerView.setPlayer(player);player.setMediaItem(MediaItem.fromUri(i.url));player.addListener(new Player.Listener(){@Override public void onPlayerError(PlaybackException error){toast("Playback failed. Try another channel or check your source.");}});player.prepare();if(!i.type.equals("live"))player.seekTo(prefs.getLong("resume."+i.id,0));player.play();pause.requestFocus();}
+ void loadGuide(String url){int token=generation;subtitle.setText("Loading guide…");io.execute(()->{try{List<Provider.Program> result=Provider.epg(url);String sealedGuide=Vault.seal(url);runOnUiThread(()->{if(token!=generation||isDestroyed())return;guide=result;guideIndex.clear();for(Provider.Program p:result)guideIndex.computeIfAbsent(p.channel,k->new ArrayList<>()).add(p);prefs.edit().putString("epg",sealedGuide).apply();browse();});}catch(Exception e){runOnUiThread(()->toast("Could not read XMLTV guide. Use an uncompressed XMLTV URL."));}});}
+
+ void open(LibraryCore.Item chosen){
+  io.execute(()->{
+   try{
+    LibraryCore.Item source=store.resolve(chosen);
+    if(source.type.equals("series")){
+     runOnUiThread(()->{if(!isDestroyed()&&subtitle!=null)subtitle.setText("Loading episodes…");});
+     List<LibraryCore.Item> eps=Provider.episodes(source);
+     runOnUiThread(()->{
+      if(isDestroyed())return;
+      String[] names=new String[eps.size()];
+      for(int n=0;n<eps.size();n++)names[n]=eps.get(n).name;
+      new AlertDialog.Builder(this).setTitle(source.name)
+       .setItems(names,(d,n)->play(eps.get(n))).show();
+     });
+    }else runOnUiThread(()->{if(!isDestroyed())play(source);});
+   }catch(Exception error){
+    runOnUiThread(()->toast("Could not open this title. Check your provider connection."));
+   }
+  });
+ }
+
+ void play(LibraryCore.Item i){screenBeforePlayer=screen;screen="player";release();playing=i;LinearLayout layout=column();layout.setBackgroundColor(BG);playerView=new PlayerView(this);layout.addView(playerView,new LinearLayout.LayoutParams(-1,0,1));LinearLayout controls=new LinearLayout(this);layout.addView(controls);Button pause=button("Play / Pause",()->{if(player.isPlaying())player.pause();else player.play();});controls.addView(pause,new LinearLayout.LayoutParams(0,dp(60),1));if(i.type.equals("live")){Button live=button("Go to live",()->{if(player.isCurrentMediaItemLive()){player.seekToDefaultPosition();player.play();}else toast("This stream does not expose a live timeline");});controls.addView(live,new LinearLayout.LayoutParams(0,dp(60),1));}else{Button rewind=button("−30 seconds",()->player.seekTo(Math.max(0,player.getCurrentPosition()-30000)));controls.addView(rewind,new LinearLayout.LayoutParams(0,dp(60),1));}controls.addView(button("Back to library",()->{release();shell();if(screenBeforePlayer.equals("home"))home();else browse();}),new LinearLayout.LayoutParams(0,dp(60),1));setContentView(layout);player=new ExoPlayer.Builder(this).build();playerView.setPlayer(player);player.setMediaItem(MediaItem.fromUri(i.url));player.addListener(new Player.Listener(){@Override public void onPlayerError(PlaybackException error){toast("Playback failed. Try another channel or check your source.");}});player.prepare();if(!i.type.equals("live"))player.seekTo(prefs.getLong("resume."+i.id,0));player.play();pause.requestFocus();}
  void release(){if(player!=null){if(playing!=null&&!playing.type.equals("live"))prefs.edit().putLong("resume."+playing.id,player.getCurrentPosition()).apply();player.release();player=null;playerView=null;playing=null;}}
  @Override public boolean onKeyDown(int key,KeyEvent e){if(key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE&&player!=null){if(player.isPlaying())player.pause();else player.play();return true;}if(key==KeyEvent.KEYCODE_MENU&&player==null){manage();return true;}return super.onKeyDown(key,e);}
- @Override public void onBackPressed(){if(player!=null){release();shell();browse();}else if(editing||hiddenOnly||!query.isEmpty()){editing=false;hiddenOnly=false;query="";browse();}else super.onBackPressed();}
- @Override protected void onStop(){super.onStop();if(player!=null){release();shell();browse();}}
- @Override protected void onDestroy(){generation++;release();io.shutdownNow();super.onDestroy();}
+
+ @Override public void onBackPressed(){
+  if(player!=null){
+   release();shell();if(screenBeforePlayer.equals("home"))home();else browse();
+  }else if(screen.equals("browse")){
+   if(editing||hiddenOnly||favOnly||!query.isEmpty()){
+    editing=false;hiddenOnly=false;favOnly=false;query="";page=0;
+   }
+   home();
+  }else if(!loading)super.onBackPressed();
+ }
+ @Override protected void onStop(){
+  super.onStop();
+  if(player!=null){release();shell();home();}
+ }
+ @Override protected void onDestroy(){
+  generation++;browseToken++;
+  release();io.shutdownNow();artworkIO.shutdownNow();store.close();
+  super.onDestroy();
+ }
  void toast(String s){if(!isDestroyed())Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
  // Keep large encrypted libraries out of SharedPreferences (which loads values into memory).
  void writeLibrary(List<LibraryCore.Item> result)throws Exception{
