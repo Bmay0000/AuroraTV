@@ -22,7 +22,7 @@ import androidx.media3.common.*;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
- final int BG=0xff080f1d,PANEL=0xff142238,ACCENT=0xff54e0c5;
+ final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
  LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;boolean focusSearchNext=false;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV3",false)){
@@ -44,10 +44,63 @@ public class MainActivity extends Activity {
  Set<String> set(String k){return new HashSet<>(prefs.getStringSet(k,new HashSet<>()));}
  void save(){prefs.edit().putStringSet("hidden",hidden).putStringSet("categories",categories).putStringSet("favorites",favorites).putStringSet("allowed",allowed).putStringSet("shown",shown).putStringSet("shownCategories",shownCategories).putBoolean("unknown",hideUnknown).putBoolean("smartFilterV2",true).apply();}
  int dp(int v){return (int)(v*getResources().getDisplayMetrics().density);}
- LinearLayout column(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);return l;}
- TextView text(String s,int size){TextView t=new TextView(this);t.setText(s);t.setTextColor(Color.WHITE);t.setTextSize(size);t.setPadding(dp(8),dp(6),dp(8),dp(6));return t;}
- GradientDrawable shape(int color){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(12));return d;}
- Button button(String s,Runnable action){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setTextColor(Color.WHITE);b.setTextSize(16);b.setBackground(shape(PANEL));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(52));lp.setMargins(dp(4),dp(4),dp(4),dp(4));b.setLayoutParams(lp);b.setOnFocusChangeListener((v,f)->{b.setBackground(shape(f?ACCENT:PANEL));b.setTextColor(f?BG:Color.WHITE);});b.setOnClickListener(v->action.run());return b;}
+ TvLayout tv(){
+   android.util.DisplayMetrics dm=getResources().getDisplayMetrics();
+   float density=Math.max(.5f,dm.density);
+   return TvLayout.of((int)(dm.widthPixels/density),(int)(dm.heightPixels/density));
+ }
+ LinearLayout column(){
+   LinearLayout l=new LinearLayout(this);
+   l.setOrientation(LinearLayout.VERTICAL);
+   l.setClipChildren(false);l.setClipToPadding(false);
+   return l;
+ }
+ TextView text(String value,int size){
+   TextView t=new TextView(this);
+   t.setText(value);t.setTextColor(Color.WHITE);t.setTextSize(size);
+   t.setLineSpacing(dp(2),1.04f);t.setIncludeFontPadding(false);
+   t.setPadding(dp(5),dp(5),dp(5),dp(5));
+   return t;
+ }
+ GradientDrawable shape(int color){
+   GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(13));return d;
+ }
+ GradientDrawable rounded(int color,int radius,int stroke){
+   GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));
+   if(stroke!=0)d.setStroke(Math.max(1,dp(1)),stroke);
+   return d;
+ }
+ TextView brand(int size){
+   android.text.SpannableString name=new android.text.SpannableString("AuroraTV");
+   name.setSpan(new android.text.style.ForegroundColorSpan(ACCENT),
+     6,8,android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+   TextView v=text("",size);v.setText(name);
+   v.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+   v.setLetterSpacing(.04f);v.setSingleLine(true);v.setPadding(0,0,0,0);
+   return v;
+ }
+ Button button(String label,Runnable action){
+   Button b=new Button(this);b.setText(label);b.setAllCaps(false);
+   b.setTextColor(Color.WHITE);b.setTextSize(tv().bodySize()-1);b.setLetterSpacing(.015f);
+   b.setMinHeight(0);b.setMinimumHeight(0);b.setMinWidth(0);b.setMinimumWidth(0);
+   b.setPadding(dp(12),0,dp(12),0);
+   b.setBackground(rounded(PANEL,12,0xff26374b));
+   LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(tv().navRow));
+   lp.setMargins(dp(3),dp(3),dp(3),dp(3));b.setLayoutParams(lp);
+   b.setFocusable(true);
+   b.setOnFocusChangeListener((view,focused)->{
+     b.animate().scaleX(focused?1.02f:1f).scaleY(focused?1.02f:1f).setDuration(110).start();
+     b.setBackground(rounded(focused?ACCENT:PANEL,12,focused?ACCENT:0xff26374b));
+     b.setTextColor(focused?BG:Color.WHITE);
+   });
+   b.setOnClickListener(v->action.run());
+   return b;
+ }
+ TextView kicker(String value){
+   TextView t=text(value.toUpperCase(Locale.ROOT),12);
+   t.setTextColor(ACCENT);t.setLetterSpacing(.13f);
+   t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;
+ }
 
  void start(){
   if(store.hasLibrary()){
