@@ -37,6 +37,8 @@ jobs:
           mkdir -p build/core-tests
           javac -d build/core-tests app/src/main/java/tv/aurora/player/LibraryCore.java tests/CoreTest.java
           java -cp build/core-tests CoreTest
+          javac -cp build/core-tests -d build/core-tests app/src/main/java/tv/aurora/player/GuideName.java tests/GuideNameTest.java
+          java -cp build/core-tests GuideNameTest
 
       - name: Build signed debug APK
         run: |
