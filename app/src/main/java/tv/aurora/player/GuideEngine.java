@@ -230,22 +230,46 @@ public final class GuideEngine extends SQLiteOpenHelper {
     }
     private String channel(SQLiteDatabase db,String source,LibraryCore.Item item){
         if("short".equals(source))return item.id;
-        if(item.epgId!=null&&!item.epgId.isEmpty()){
+        String epgId=item.epgId==null?"":item.epgId.trim();
+        // Prefer live XMLTV ids, not stale programmes retained in the cache.
+        if(!epgId.isEmpty()){
             try(Cursor c=db.rawQuery(
-                "SELECT 1 FROM programs WHERE source=? AND channel=? LIMIT 1",
-                new String[]{source,item.epgId})){
-                if(c.moveToFirst())return item.epgId;
+                "SELECT channel FROM programs WHERE source=? AND channel=? COLLATE NOCASE "+
+                "AND end>? LIMIT 1",
+                new String[]{source,epgId,
+                    String.valueOf(System.currentTimeMillis()-60*60*1000L)})){
+                if(c.moveToFirst())return c.getString(0);
             }
         }
-        // Use exact normalized-name matches only if unambiguous.
         String norm=normalized(item.name);
         if(norm.isEmpty())return null;
-        try(Cursor c=db.rawQuery("SELECT id FROM guide_channels WHERE source=? AND norm=? LIMIT 2",
+        // Require an unambiguous exact normalized display-name match.
+        try(Cursor c=db.rawQuery(
+                "SELECT id FROM guide_channels WHERE source=? AND norm=? LIMIT 2",
                 new String[]{source,norm})){
-            if(!c.moveToFirst())return null;
-            String candidate=c.getString(0);
-            return c.moveToNext()?null:candidate;
+            if(c.moveToFirst()){
+                String id=c.getString(0);
+                if(!c.moveToNext())return id;
+            }
         }
+        // Some public feeds identify BBC One as BBCOne.uk without a useful
+        // display name. Consider country-suffixed XMLTV ids conservatively.
+        if(norm.length()>=3){
+            try(Cursor c=db.rawQuery(
+                    "SELECT id FROM guide_channels WHERE source=? AND id LIKE ? LIMIT 60",
+                    new String[]{source,norm+"%"})){
+                String choice=null;
+                while(c.moveToNext()){
+                    String id=c.getString(0);
+                    if(GuideName.cleanedId(id).equals(norm)){
+                        if(choice!=null&&!choice.equals(id))return null;
+                        choice=id;
+                    }
+                }
+                if(choice!=null)return choice;
+            }
+        }
+        return null;
     }
     public Slot nowNext(LibraryCore.Item item){
         long now=System.currentTimeMillis();
