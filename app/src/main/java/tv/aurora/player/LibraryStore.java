@@ -63,7 +63,8 @@ public final class LibraryStore extends SQLiteOpenHelper {
     public void clear() {
         close();
         context.deleteDatabase(DATABASE);
-        preferences.edit().remove("catalog_ready").apply();
+        preferences.edit().remove("catalog_ready").remove("wrapped_key").apply();
+        localKey = null;
     }
 
     private synchronized SecretKey key() throws Exception {
