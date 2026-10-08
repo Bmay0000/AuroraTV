@@ -213,6 +213,93 @@ public class MainActivity extends Activity {
   posters.bind(image,url);
  }
 
+
+ static final class PosterTile {
+  ImageView image;
+  TextView title,category,badge,initial;
+ }
+ View posterGridCard(LibraryCore.Item item,View recycled){
+  LinearLayout card;
+  PosterTile holder;
+  if(recycled instanceof LinearLayout && recycled.getTag() instanceof PosterTile){
+   card=(LinearLayout)recycled;
+   holder=(PosterTile)card.getTag();
+  }else{
+   card=column();
+   card.setPadding(dp(5),dp(5),dp(5),dp(5));
+   card.setLayoutParams(new AbsListView.LayoutParams(-1,dp(292)));
+   holder=new PosterTile();
+   FrameLayout cover=new FrameLayout(this);
+   cover.setBackground(gradient(0xff234554,0xff121f36,12));
+   card.addView(cover,new LinearLayout.LayoutParams(-1,dp(222)));
+   holder.initial=headline("A",48,0xff557f97);
+   cover.addView(holder.initial,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
+   holder.image=new ImageView(this);
+   holder.image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+   cover.addView(holder.image,new FrameLayout.LayoutParams(-1,-1));
+   holder.badge=headline("MOVIE",10,0xffbcfff1);
+   holder.badge.setPadding(dp(8),dp(5),dp(8),dp(5));
+   holder.badge.setBackground(shape(0xdd113b42));
+   FrameLayout.LayoutParams badgeLocation=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.LEFT);
+   badgeLocation.leftMargin=dp(7);badgeLocation.topMargin=dp(7);
+   cover.addView(holder.badge,badgeLocation);
+   holder.title=text("",15);
+   holder.title.setTypeface(null,Typeface.BOLD);
+   holder.title.setMaxLines(2);
+   holder.title.setEllipsize(TextUtils.TruncateAt.END);
+   holder.title.setPadding(dp(6),dp(4),dp(6),0);
+   card.addView(holder.title,new LinearLayout.LayoutParams(-1,dp(43)));
+   holder.category=text("",12);
+   holder.category.setSingleLine(true);
+   holder.category.setTextColor(0xffa7bbc9);
+   holder.category.setEllipsize(TextUtils.TruncateAt.END);
+   holder.category.setPadding(dp(6),0,dp(6),0);
+   card.addView(holder.category);
+   card.setTag(holder);
+   card.setFocusable(true);
+   card.setClickable(true);
+   card.setBackground(shape(PANEL));
+   card.setOnFocusChangeListener((v,focused)->{
+    card.setBackground(shape(focused?0xff227d78:PANEL));
+    card.setScaleX(focused?1.025f:1f);card.setScaleY(focused?1.025f:1f);
+   });
+  }
+  holder.title.setText((favorites.contains(item.id)?"★  ":"")+item.name);
+  holder.category.setText(item.category);
+  holder.badge.setText(item.type.equals("movie")?"MOVIE":"TV SERIES");
+  holder.initial.setText(item.name.isEmpty()?"A":item.name.substring(0,1).toUpperCase(Locale.ROOT));
+  posters.bind(holder.image,item.artwork);
+  card.setOnClickListener(v->{if(editing)actions(item);else showMediaDetails(item);});
+  card.setOnLongClickListener(v->{actions(item);return true;});
+  return card;
+ }
+ void showMediaDetails(LibraryCore.Item item){
+  LinearLayout panel=column();
+  panel.setPadding(dp(18),dp(8),dp(18),dp(8));
+  LinearLayout horizontal=new LinearLayout(this);
+  panel.addView(horizontal);
+  FrameLayout poster=new FrameLayout(this);
+  poster.setBackground(gradient(0xff22667b,0xff142238,12));
+  horizontal.addView(poster,new LinearLayout.LayoutParams(dp(155),dp(230)));
+  TextView initial=headline(item.name.isEmpty()?"A":item.name.substring(0,1),52,0xff7b98b1);
+  poster.addView(initial,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
+  displayArtwork(poster,item.artwork);
+  LinearLayout detail=column();
+  detail.setPadding(dp(17),dp(4),0,0);
+  horizontal.addView(detail,new LinearLayout.LayoutParams(0,-2,1));
+  detail.addView(headline(item.name,24,Color.WHITE));
+  detail.addView(text(item.type.equals("movie")?"MOVIE":"TV SERIES",13));
+  TextView group=text(item.category,15);group.setTextColor(0xffa9c4d4);
+  detail.addView(group);
+  detail.addView(text(favorites.contains(item.id)?"★ In your favorites":"Add this title to favorites from Options.",13));
+  new AlertDialog.Builder(this)
+   .setTitle("AURORA  /  "+(item.type.equals("movie")?"MOVIES":"SERIES"))
+   .setView(panel)
+   .setPositiveButton(item.type.equals("movie")?"PLAY MOVIE":"VIEW EPISODES",(d,n)->open(item))
+   .setNeutralButton("OPTIONS",(d,n)->actions(item))
+   .setNegativeButton("CLOSE",null)
+   .show();
+ }
  void browse(){
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="browse";
@@ -221,9 +308,10 @@ public class MainActivity extends Activity {
   final boolean showHidden=hiddenOnly,onlyFavorites=favOnly,isEditing=editing,hide=hideUnknown;
   final int requested=page;
   final Set<String> h=new HashSet<>(hidden),hc=new HashSet<>(categories),
-     fav=new HashSet<>(favorites),lang=new HashSet<>(allowed),manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
+      fav=new HashSet<>(favorites),lang=new HashSet<>(allowed),
+      manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
   body.removeAllViews();
-  body.addView(text("Finding your "+(type.equals("live")?"channels":type.equals("movie")?"movies":"series")+"…",18));
+  body.addView(text("Finding your "+(type.equals("live")?"channels":type.equals("movie")?"movies":"TV shows")+"…",18));
   io.execute(()->{
    try{
     LibraryStore.Page result=store.page(type,cat,search,showHidden,onlyFavorites,h,hc,fav,lang,hide,
@@ -250,43 +338,101 @@ public class MainActivity extends Activity {
      heading.addView(headline(title,25,Color.WHITE),new LinearLayout.LayoutParams(0,-2,1));
      Button back=button("⌂ Home",this::home);heading.addView(back,new LinearLayout.LayoutParams(dp(135),dp(52)));
      body.addView(heading);
-     body.addView(button("CATEGORY  /  "+cat+"    ▾",this::chooseCategory));
-     if(isEditing)body.addView(text("Select a title to favorite or hide it.",14));
+
+     // Users can search within the selected media type without going back to
+     // the navigation menu. Search is performed by SQLite, not in-memory scans.
+     LinearLayout controls=new LinearLayout(this);
+     controls.setGravity(Gravity.CENTER_VERTICAL);
+     body.addView(controls);
+     Button selectCategory=button("CATEGORY  /  "+cat+"   ▾",this::chooseCategory);
+     controls.addView(selectCategory,new LinearLayout.LayoutParams(0,dp(52),2));
+     EditText searchField=new EditText(this);
+     searchField.setTextColor(Color.WHITE);
+     searchField.setHintTextColor(0xffa6bbc9);
+     searchField.setSingleLine(true);
+     searchField.setText(search);
+     searchField.setHint(type.equals("live")?"Search channel":type.equals("movie")?"Search movie titles":"Search TV series");
+     searchField.setTextSize(15);
+     searchField.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+     LinearLayout.LayoutParams searchSize=new LinearLayout.LayoutParams(0,dp(52),2);
+     searchSize.leftMargin=dp(10);controls.addView(searchField,searchSize);
+     Runnable applySearch=()->{query=searchField.getText().toString().trim();page=0;browse();};
+     searchField.setOnEditorActionListener((v,action,event)->{
+      if(action==android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH||
+          (event!=null&&event.getKeyCode()==KeyEvent.KEYCODE_ENTER&&event.getAction()==KeyEvent.ACTION_DOWN)){
+       applySearch.run();return true;
+      }
+      return false;
+     });
+     Button go=button("SEARCH",applySearch);
+     controls.addView(go,new LinearLayout.LayoutParams(dp(108),dp(52)));
+     if(!search.isEmpty()){
+      controls.addView(button("✕",()->{query="";page=0;browse();}),
+          new LinearLayout.LayoutParams(dp(55),dp(52)));
+     }
+     if(isEditing)body.addView(text("Select a title to favorite, restore or hide it.",14));
      if(result.rows.isEmpty()){
       if(requested>0){page=0;browse();return;}
-      body.addView(text("No matching titles. Try a different category or search.",18));
+      body.addView(text("No titles match these filters. Change the category, search or language rules.",18));
+      if(!search.isEmpty())body.addView(button("CLEAR SEARCH",()->{query="";page=0;browse();}));
       return;
      }
-     subtitle.setText("Browse without waiting for the entire library");
+     subtitle.setText("Your entertainment, your selection");
      body.addView(text("Showing "+(requested*PAGE_SIZE+1)+"–"+
-         (requested*PAGE_SIZE+result.rows.size())+(result.more?"+":"")+" matching titles",15));
-     ListView list=new ListView(this);
-     list.setDividerHeight(dp(5));
-     body.addView(list,new LinearLayout.LayoutParams(-1,0,1));
-     list.setAdapter(new BaseAdapter(){
-      public int getCount(){return result.rows.size();}
-      public Object getItem(int n){return result.rows.get(n);}
-      public long getItemId(int n){return n;}
-      public View getView(int n,View reuse,ViewGroup parent){
-       LibraryCore.Item i=result.rows.get(n);
-       TextView t=reuse instanceof TextView?(TextView)reuse:text("",17);
-       t.setText((favorites.contains(i.id)?"★  ":"")+i.name+"   ·   "+i.category+
-          (i.type.equals("live")?nowNext(i):""));
-       t.setMaxLines(3);
-       t.setPadding(dp(14),dp(12),dp(14),dp(12));
-       t.setBackground(shape(PANEL));
-       return t;
-      }
-     });
-     list.setSelector(shape(0xff27786c));
-     list.setOnItemClickListener((parent,v,n,id)->{
-      LibraryCore.Item picked=result.rows.get(n);
-      if(editing)actions(picked);else open(picked);
-     });
-     list.setOnItemLongClickListener((parent,v,n,id)->{actions(result.rows.get(n));return true;});
+          (requested*PAGE_SIZE+result.rows.size())+(result.more?"+":"")+" matching titles",14));
+     if(type.equals("movie")||type.equals("series")){
+      GridView grid=new GridView(this);
+      grid.setNumColumns(GridView.AUTO_FIT);
+      grid.setColumnWidth(dp(180));
+      grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
+      grid.setHorizontalSpacing(dp(12));
+      grid.setVerticalSpacing(dp(12));
+      grid.setVerticalScrollBarEnabled(false);
+      grid.setClipToPadding(false);
+      grid.setPadding(dp(5),dp(10),dp(5),dp(16));
+      grid.setItemsCanFocus(true);
+      grid.setSelector(shape(0xff257871));
+      body.addView(grid,new LinearLayout.LayoutParams(-1,0,1));
+      grid.setAdapter(new BaseAdapter(){
+       public int getCount(){return result.rows.size();}
+       public Object getItem(int n){return result.rows.get(n);}
+       public long getItemId(int n){return n;}
+       public View getView(int n,View reuse,ViewGroup parent){
+        return posterGridCard(result.rows.get(n),reuse);
+       }
+      });
+      grid.setOnItemClickListener((parent,v,n,id)->{
+       LibraryCore.Item media=result.rows.get(n);
+       if(editing)actions(media);else showMediaDetails(media);
+      });
+      grid.setOnItemLongClickListener((parent,v,n,id)->{actions(result.rows.get(n));return true;});
+     }else{
+      ListView list=new ListView(this);
+      list.setDividerHeight(dp(5));
+      body.addView(list,new LinearLayout.LayoutParams(-1,0,1));
+      list.setAdapter(new BaseAdapter(){
+       public int getCount(){return result.rows.size();}
+       public Object getItem(int n){return result.rows.get(n);}
+       public long getItemId(int n){return n;}
+       public View getView(int n,View reuse,ViewGroup parent){
+        LibraryCore.Item i=result.rows.get(n);
+        TextView t=reuse instanceof TextView?(TextView)reuse:text("",17);
+        t.setText((favorites.contains(i.id)?"★  ":"")+i.name+"   ·   "+i.category+nowNext(i));
+        t.setMaxLines(3);t.setPadding(dp(14),dp(12),dp(14),dp(12));t.setBackground(shape(PANEL));
+        return t;
+       }
+      });
+      list.setSelector(shape(0xff27786c));
+      list.setOnItemClickListener((parent,v,n,id)->{
+       LibraryCore.Item picked=result.rows.get(n);if(editing)actions(picked);else open(picked);
+      });
+      list.setOnItemLongClickListener((parent,v,n,id)->{actions(result.rows.get(n));return true;});
+     }
      LinearLayout navigation=new LinearLayout(this);
-     if(requested>0)navigation.addView(button("◀ Previous",()->{page--;browse();}),new LinearLayout.LayoutParams(0,dp(55),1));
-     if(result.more)navigation.addView(button("Next ▶",()->{page++;browse();}),new LinearLayout.LayoutParams(0,dp(55),1));
+     if(requested>0)navigation.addView(button("◀ Previous",()->{page--;browse();}),
+         new LinearLayout.LayoutParams(0,dp(55),1));
+     if(result.more)navigation.addView(button("Next ▶",()->{page++;browse();}),
+         new LinearLayout.LayoutParams(0,dp(55),1));
      body.addView(navigation);
     });
    }catch(Exception error){
