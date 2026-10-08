@@ -79,6 +79,8 @@ public class CoreTest {
   check(LibraryCore.language(frenchTag).equals("fr"),"bracketed FR overrides English category");
   check(!LibraryCore.visible(frenchTag,none,none,none,english,true),"FR bracket removed from English library");
   check(LibraryCore.language(item("fr-pipe","|FR| TF1 HDR","UK | Sports","")).equals("fr"),"pipe FR prefix");
+  check(LibraryCore.language(item("fr-4k","|4K| [FR] TF1 HDR","UK | Sports","")).equals("fr"),"4K followed by FR tag");
+  check(LibraryCore.language(item("ar-hd","[HD] |AR| Documentary","UK | Sports","")).equals("ar"),"HD followed by AR tag");
   check(LibraryCore.language(item("fr-end","TF1 UHD [FR]","UK | Channels","")).equals("fr"),"FR suffix");
   check(LibraryCore.language(item("arabic","[AR] Sports 1","UK | News","")).equals("ar"),"AR bracket detected");
   check(LibraryCore.language(item("arabic2","|AR| Arabic News","4K | All","")).equals("ar"),"AR pipe detected");
