@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 public final class LibraryCore {
  public static class Item {
-  public String id,name,category,url,type,epgId,language;
+  public String id,name,category,url,type,epgId,language,artwork="";
   public Item(String id,String name,String category,String url,String type,String epgId,String language){this.id=id;this.name=name;this.category=category;this.url=url;this.type=type;this.epgId=epgId;this.language=language;}
  }
  public static String key(String text){try{byte[] b=MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));StringBuilder s=new StringBuilder();for(byte x:b)s.append(String.format("%02x",x));return s.toString();}catch(Exception e){throw new IllegalStateException(e);}}
