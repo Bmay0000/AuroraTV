@@ -50,7 +50,27 @@ public class CoreTest {
       none,Set.of("live|FR | News")),"manual category restore defeats both filters");
   check(LibraryCore.visible(entries.get(1),none,none,none,none,true),"no language choice disables automatic filter");
   check(!LibraryCore.visible(entries.get(1),none,Set.of("live|FR | News"),none,none,true),"manual hidden category applies even without filter");
-  check(LibraryCore.visible(entries.get(2),none,none,none,english,true),"movies unaffected by live filter");
+  check(!LibraryCore.visible(entries.get(2),none,none,none,english,true),"unclassified movies hidden by strict English");
+  LibraryCore.Item ukMovie=new LibraryCore.Item("mv-en","The Film","UK | Films","https://example.com/vod","movie","","");
+  LibraryCore.Item foreignMovie=new LibraryCore.Item("mv-fr","Le Film","FR | Films","https://example.com/vod","movie","","");
+  LibraryCore.Item ukSeries=new LibraryCore.Item("tv-en","The Show","US | Series","https://example.com/series","series","","");
+  LibraryCore.Item foreignSeries=new LibraryCore.Item("tv-es","El Show","Spain | Series","https://example.com/series","series","","");
+  check(LibraryCore.visible(ukMovie,none,none,none,english,true),"English movie kept");
+  check(!LibraryCore.visible(foreignMovie,none,none,none,english,true),"French movie hidden");
+  check(LibraryCore.visible(ukSeries,none,none,none,english,true),"English series kept");
+  check(!LibraryCore.visible(foreignSeries,none,none,none,english,true),"Spanish series hidden");
+  check(LibraryCore.visible(foreignMovie,none,none,none,english,true,
+      Set.of(foreignMovie.id),none),"restore one French movie without changing whole library");
+  check(LibraryCore.visible(foreignSeries,none,none,none,english,true,
+      none,Set.of("series|Spain | Series")),"restore full foreign TV series category");
+  check(!LibraryCore.visible(ukMovie,none,Set.of("movie|UK | Films"),none,english,true),
+      "hide English movie category manually");
+  check(!LibraryCore.visible(foreignMovie,none,none,none,english,false),
+      "identified French movies stay hidden when unknown are permitted");
+  check(LibraryCore.visible(entries.get(2),none,none,none,english,false),
+      "unknown movie remains discoverable when strict mode is disabled");
+  check(LibraryCore.visible(entries.get(2),none,none,none,none,true),
+      "language filtering off displays movies");
   check(LibraryCore.m3u(playlist.replace("https://example.com/live/b","https://example.com/changed"),
      "provider").get(1).id.equals(entries.get(1).id),"stable ids");
   System.out.println(cases+" AuroraTV core tests passed");
