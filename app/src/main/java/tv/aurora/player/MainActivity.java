@@ -431,7 +431,7 @@ public class MainActivity extends Activity {
       TextView next=text("",15);next.setMaxLines(3);next.setTextColor(0xffc2d3df);
       LinearLayout.LayoutParams nextLp=new LinearLayout.LayoutParams(dp(305),dp(87));
       row.addView(next,nextLp);
-      row.addView(button("⋯  Match",()->chooseGuideMatch(channel)),
+      row.addView(button("⋯  More",()->moreGuide(channel)),
         new LinearLayout.LayoutParams(dp(104),dp(60)));
       feed.addView(row);
       updateGuideCells(slot,now,next,progress);
@@ -628,6 +628,51 @@ public class MainActivity extends Activity {
    }
   });
  }
+
+ void moreGuide(LibraryCore.Item channel){
+  new AlertDialog.Builder(this).setTitle(channel.name)
+   .setItems(new String[]{"Full programme schedule","Match this channel to an EPG source",
+     favorites.contains(channel.id)?"Remove favorite":"Add favorite","Hide channel"},
+    (d,n)->{
+     if(n==0){showChannelSchedule(channel);return;}
+     if(n==1){chooseGuideMatch(channel);return;}
+     if(n==2){
+      if(!favorites.add(channel.id))favorites.remove(channel.id);
+      save();tvGuide();return;
+     }
+     hidden.add(channel.id);shown.remove(channel.id);save();tvGuide();
+    }).show();
+ }
+ void showChannelSchedule(LibraryCore.Item channel){
+  io.execute(()->{
+   List<GuideEngine.Program> programs=epg.schedule(channel,22);
+   runOnUiThread(()->{
+    if(isDestroyed())return;
+    if(programs.isEmpty()){
+     new AlertDialog.Builder(this).setTitle(channel.name)
+      .setMessage("No reliable schedule available yet. Use Guide settings to add independent XMLTV, or manually match this channel.")
+      .setPositiveButton("Match EPG",(d,n)->chooseGuideMatch(channel))
+      .setNegativeButton("Close",null).show();
+     return;
+    }
+    String[] titles=new String[programs.size()];
+    for(int i=0;i<programs.size();i++){
+     GuideEngine.Program p=programs.get(i);
+     titles[i]=displayTime(p.start)+"–"+displayTime(p.end)+"  "+p.title;
+    }
+    new AlertDialog.Builder(this).setTitle(channel.name+"  /  PROGRAMMES")
+     .setItems(titles,(d,n)->{
+      GuideEngine.Program p=programs.get(n);
+      new AlertDialog.Builder(this).setTitle(p.title)
+       .setMessage(displayTime(p.start)+" – "+displayTime(p.end)+
+        (p.description==null||p.description.isEmpty()?"":"\n\n"+p.description))
+       .setPositiveButton("Watch channel",(a,b)->open(channel))
+       .setNegativeButton("Back",null).show();
+     }).setNegativeButton("Close",null).show();
+   });
+  });
+ }
+
  void chooseGuideMatch(LibraryCore.Item item){
   io.execute(()->{
    List<GuideEngine.Match> candidates=epg.findCandidates(item.name,20);
