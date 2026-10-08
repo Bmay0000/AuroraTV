@@ -23,7 +23,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;boolean focusSearchNext=false;
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV3",false)){
     // Prior versions auto-enabled strict mode for English-only libraries,
@@ -128,76 +128,219 @@ public class MainActivity extends Activity {
  }
  void loadingScreen(String title,String message){
   screen="loading";
-  root=column();root.setBackground(gradient(0xff07111f,0xff143a43,0));root.setGravity(Gravity.CENTER);
-  root.setPadding(dp(50),dp(26),dp(50),dp(26));setContentView(root);
-  TextView logo=headline("A U R O R A  /  T V",32,ACCENT);logo.setGravity(Gravity.CENTER);
-  root.addView(logo);
-  View stroke=new View(this);stroke.setBackgroundColor(ACCENT);
-  LinearLayout.LayoutParams line=new LinearLayout.LayoutParams(dp(130),dp(3));line.topMargin=dp(22);line.bottomMargin=dp(25);root.addView(stroke,line);
-  TextView t=headline(title,28,Color.WHITE);t.setGravity(Gravity.CENTER);root.addView(t);
-  loadingStatus=text(message,18);loadingStatus.setGravity(Gravity.CENTER);
-  loadingStatus.setTextColor(0xffb6c8d6);root.addView(loadingStatus);
-  ProgressBar progress=new ProgressBar(this);progress.setIndeterminateTintList(ColorStateList.valueOf(ACCENT));
-  LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(48),dp(48));p.topMargin=dp(32);root.addView(progress,p);
+  TvLayout metrics=tv();
+  root=column();
+  root.setGravity(Gravity.CENTER);
+  root.setPadding(dp(metrics.marginX),dp(metrics.marginY),
+                  dp(metrics.marginX),dp(metrics.marginY));
+  root.setBackground(gradient(0xff050a16,0xff123b42,0));
+  setContentView(root);
+  LinearLayout card=column();
+  card.setGravity(Gravity.CENTER);
+  card.setPadding(dp(28),dp(25),dp(28),dp(25));
+  card.setBackground(rounded(0xcc0f1c2d,24,0xff2d5360));
+  LinearLayout.LayoutParams c=new LinearLayout.LayoutParams(
+      Math.min(dp(620),metrics.widthDp>0?dp(metrics.widthDp-2*metrics.marginX):-1),-2);
+  root.addView(card,c);
+  TextView logo=brand(TvLayout.clamp(metrics.widthDp/26,33,49));
+  logo.setGravity(Gravity.CENTER);card.addView(logo);
+  TextView eyebrow=kicker("CURATED FOR YOUR SCREEN");
+  eyebrow.setGravity(Gravity.CENTER);
+  LinearLayout.LayoutParams e=new LinearLayout.LayoutParams(-1,-2);
+  e.topMargin=dp(18);card.addView(eyebrow,e);
+  TextView heading=headline(title,30,Color.WHITE);
+  heading.setGravity(Gravity.CENTER);card.addView(heading);
+  loadingStatus=text(message,16);
+  loadingStatus.setGravity(Gravity.CENTER);
+  loadingStatus.setTextColor(MUTED);
+  loadingStatus.setMaxLines(3);card.addView(loadingStatus);
+  ProgressBar spinner=new ProgressBar(this);
+  spinner.setIndeterminateTintList(ColorStateList.valueOf(ACCENT));
+  LinearLayout.LayoutParams progress=new LinearLayout.LayoutParams(dp(38),dp(38));
+  progress.gravity=Gravity.CENTER_HORIZONTAL;progress.topMargin=dp(24);
+  card.addView(spinner,progress);
+  TextView note=text("ONE LIBRARY  •  ENDLESS POSSIBILITIES",12);
+  note.setGravity(Gravity.CENTER);note.setTextColor(0xff849aab);
+  LinearLayout.LayoutParams foot=new LinearLayout.LayoutParams(-1,-2);foot.topMargin=dp(20);
+  card.addView(note,foot);
  }
  void status(String message){
-  runOnUiThread(()->{if(!isDestroyed()&&screen.equals("loading")&&loadingStatus!=null)loadingStatus.setText(message);});
+  runOnUiThread(()->{
+   if(!isDestroyed()&&screen.equals("loading")&&loadingStatus!=null)
+    loadingStatus.setText(message);
+  });
  }
  void loginScreen(boolean m3u){
   screen="login";
-  root=column();root.setBackground(gradient(0xff070f1f,0xff142c3c,0));
-  root.setPadding(dp(42),dp(18),dp(42),dp(18));root.setGravity(Gravity.CENTER);
+  TvLayout metrics=tv();
+  root=column();root.setBackground(gradient(0xff050a14,0xff102a36,0));
+  root.setPadding(dp(metrics.marginX),dp(metrics.marginY),
+    dp(metrics.marginX),dp(metrics.marginY));
   setContentView(root);
-  TextView label=headline("A U R O R A  /  T V",30,ACCENT);root.addView(label);
-  TextView title=headline("Your world of entertainment starts here.",26,Color.WHITE);root.addView(title);
-  TextView caption=text("Connect your IPTV provider to unlock live channels, movies and series.",17);
-  caption.setTextColor(0xffa5b6c7);root.addView(caption);
-  LinearLayout panel=column();panel.setPadding(dp(24),dp(18),dp(24),dp(18));panel.setBackground(gradient(PANEL,0xff172f45,14));
-  LinearLayout.LayoutParams pane=new LinearLayout.LayoutParams(Math.min(dp(570),getResources().getDisplayMetrics().widthPixels-dp(80)),-2);
-  pane.topMargin=dp(16);root.addView(panel,pane);
-  LinearLayout tabs=new LinearLayout(this);panel.addView(tabs);
+  ScrollView scrolling=new ScrollView(this);
+  scrolling.setFillViewport(true);scrolling.setVerticalScrollBarEnabled(false);
+  root.addView(scrolling,new LinearLayout.LayoutParams(-1,-1));
+  LinearLayout content=new LinearLayout(this);
+  boolean wide=metrics.widthDp>=950;
+  content.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
+  content.setGravity(Gravity.CENTER);
+  scrolling.addView(content,new ScrollView.LayoutParams(-1,-1));
+
+  LinearLayout intro=column();
+  intro.setPadding(dp(wide?24:8),dp(10),dp(wide?35:8),dp(15));
+  if(wide)content.addView(intro,new LinearLayout.LayoutParams(0,-2,1));
+  else content.addView(intro,new LinearLayout.LayoutParams(-1,-2));
+  intro.addView(brand(TvLayout.clamp(metrics.widthDp/30,32,48)));
+  LinearLayout.LayoutParams introSpace=new LinearLayout.LayoutParams(-1,-2);
+  introSpace.topMargin=dp(wide?31:15);
+  intro.addView(kicker("YOUR ENTERTAINMENT, REIMAGINED"),introSpace);
+  TextView title=headline("Everything you love.\nOne beautiful place.",
+    TvLayout.clamp(metrics.headingSize()+5,29,45),Color.WHITE);
+  title.setMaxLines(3);intro.addView(title);
+  TextView description=text(
+    "Watch live channels, explore thousands of movies, and enjoy your favorite shows — all from your own IPTV provider.",17);
+  description.setTextColor(MUTED);description.setMaxLines(4);
+  intro.addView(description);
+  if(wide){
+   TextView marks=kicker("LIVE CHANNELS      ◆      MOVIES      ◆      SERIES");
+   LinearLayout.LayoutParams marksSize=new LinearLayout.LayoutParams(-1,-2);
+   marksSize.topMargin=dp(30);intro.addView(marks,marksSize);
+  }
+
+  LinearLayout panel=column();
+  panel.setPadding(dp(26),dp(20),dp(26),dp(20));
+  panel.setBackground(gradient(0xff17263b,0xff0c182b,22));
+  int panelWidth=TvLayout.clamp((int)(metrics.widthDp*.44),340,565);
+  LinearLayout.LayoutParams pp=wide?
+     new LinearLayout.LayoutParams(dp(panelWidth),-2):
+     new LinearLayout.LayoutParams(-1,-2);
+  if(!wide)pp.topMargin=dp(16);
+  content.addView(panel,pp);
+  panel.addView(kicker("CONNECT A SOURCE"));
+  TextView caption=headline(m3u?"Add your M3U playlist":"Xtream Codes login",24,Color.WHITE);
+  panel.addView(caption);
+  TextView hint=text("Sign in with the details supplied by your IPTV service.",14);
+  hint.setTextColor(MUTED);panel.addView(hint);
+  LinearLayout tabs=new LinearLayout(this);tabs.setGravity(Gravity.CENTER_VERTICAL);
+  LinearLayout.LayoutParams tabSpace=new LinearLayout.LayoutParams(-1,dp(50));
+  tabSpace.topMargin=dp(12);panel.addView(tabs,tabSpace);
   Button xt=button("Xtream Codes",()->loginScreen(false));
-  Button ml=button("M3U Playlist",()->loginScreen(true));
-  tabs.addView(xt,new LinearLayout.LayoutParams(0,dp(52),1));
-  tabs.addView(ml,new LinearLayout.LayoutParams(0,dp(52),1));
-  (m3u?ml:xt).setBackground(shape(0xff157c76));
-  EditText url=field(panel,m3u?"Playlist URL (https://...)":"Server URL (http://... or https://...)",false);
-  EditText user=m3u?null:field(panel,"Username",false);
-  EditText pass=m3u?null:field(panel,"Password",true);
-  String storedUrl="";
-  try{storedUrl=Vault.open(prefs.getString("url",""));}catch(Exception ignored){}
-  if(!storedUrl.isEmpty())url.setText(storedUrl);
-  panel.addView(button("CONNECT & IMPORT  →",()->{
-   String address=url.getText().toString().trim();
-   String u=user==null?"":user.getText().toString().trim();
-   String p=pass==null?"":pass.getText().toString();
-   if(address.isEmpty()||(!m3u&&(u.isEmpty()||p.isEmpty()))){toast("Enter your provider login details");return;}
-   importSource(m3u?"m3u":"xtream",address,u,p);
-  }));
-  TextView note=text("Credentials are stored privately on this device. Use only services you are authorized to access.",12);
-  note.setTextColor(0xff98adbd);root.addView(note);
-  url.requestFocus();
+  Button ml=button("M3U playlist",()->loginScreen(true));
+  tabs.addView(xt,new LinearLayout.LayoutParams(0,-1,1));
+  tabs.addView(ml,new LinearLayout.LayoutParams(0,-1,1));
+  (m3u?ml:xt).setBackground(rounded(0xff1c746e,12,ACCENT));
+  EditText address=field(panel,m3u?"Playlist URL":"Server URL (http:// or https://)",false);
+  EditText account=m3u?null:field(panel,"Username",false);
+  EditText secret=m3u?null:field(panel,"Password",true);
+  try{
+   String cached=Vault.open(prefs.getString("url",""));
+   if(!cached.isEmpty())address.setText(cached);
+  }catch(Exception ignored){}
+  Button connect=button("CONNECT TO YOUR LIBRARY    →",()->{
+   String url=address.getText().toString().trim();
+   String username=account==null?"":account.getText().toString().trim();
+   String password=secret==null?"":secret.getText().toString();
+   if(url.isEmpty()||(!m3u&&(username.isEmpty()||password.isEmpty()))){
+    toast("Enter your connection details");return;
+   }
+   importSource(m3u?"m3u":"xtream",url,username,password);
+  });
+  connect.setBackground(rounded(0xff188475,12,0xff4de2c7));
+  LinearLayout.LayoutParams connectGap=new LinearLayout.LayoutParams(-1,dp(54));
+  connectGap.topMargin=dp(12);panel.addView(connect,connectGap);
+  TextView security=text("PRIVATE BY DESIGN  ·  Your login stays on this device.",12);
+  security.setTextColor(0xff91abbc);
+  panel.addView(security);
+  address.requestFocus();
+ }
+ void addNav(String key,String label,Runnable action){
+  Button b=button(label,()->{action.run();refreshSidebar();});
+  b.setTag(key);
+  b.setGravity(Gravity.LEFT|Gravity.CENTER_VERTICAL);
+  b.setTextSize(TvLayout.clamp(tv().bodySize(),14,18));
+  b.setPadding(dp(17),0,dp(5),0);
+  b.setLetterSpacing(.01f);
+  b.setOnFocusChangeListener((view,focused)->{
+   styleNav(b,focused);
+  });
+  navButtons.put(key,b);nav.addView(b);
+ }
+ void styleNav(Button b,boolean focused){
+  boolean active=isNavActive(String.valueOf(b.getTag()));
+  b.setBackground(rounded(
+   focused?ACCENT:active?0xff173c45:0x00000000,12,
+   focused?ACCENT:active?0xff2c8b80:0x00000000));
+  b.setTextColor(focused?BG:active?0xff84f8dd:0xffc0cede);
+  b.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);
+  b.animate().scaleX(focused?1.02f:1f).scaleY(focused?1.02f:1f).setDuration(110).start();
+ }
+ boolean isNavActive(String key){
+  if(key.equals("home"))return screen.equals("home");
+  if(key.equals("guide"))return screen.equals("guide");
+  if(key.equals("favorites"))return screen.equals("browse")&&favOnly;
+  if(key.equals("library"))return screen.equals("browse")&&editing;
+  return screen.equals("browse")&&!favOnly&&!editing&&key.equals(section);
+ }
+ void refreshSidebar(){
+  for(Button b:navButtons.values())styleNav(b,b.isFocused());
  }
  void shell(){
   screen="home";
-  root=column();root.setBackgroundColor(BG);root.setPadding(dp(24),dp(15),dp(24),dp(16));setContentView(root);
-  LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);root.addView(top);
-  TextView logo=headline("A U R O R A  /  T V",24,ACCENT);top.addView(logo);
-  subtitle=text("Discover more. Watch your way.",14);subtitle.setTextColor(0xff9eb2c6);
-  LinearLayout.LayoutParams meta=new LinearLayout.LayoutParams(-2,-2);meta.leftMargin=dp(25);top.addView(subtitle,meta);
-  LinearLayout row=new LinearLayout(this);LinearLayout.LayoutParams main=new LinearLayout.LayoutParams(-1,0,1);main.topMargin=dp(16);root.addView(row,main);
-  nav=column();nav.setPadding(0,dp(4),dp(12),0);row.addView(nav,new LinearLayout.LayoutParams(dp(182),-1));
-  nav.addView(button("⌂  Home",this::home));
-  for(String[] entry:new String[][]{{"Live TV","live"},{"Movies","movie"},{"TV Shows","series"}}){
-   nav.addView(button(entry[0],()->{section=entry[1];favOnly=false;hiddenOnly=false;editing=false;page=0;category="All";query="";browse();}));
-  }
-  nav.addView(button("▦  TV Guide",()->{section="live";category="All";guidePage=0;tvGuide();}));
-  nav.addView(button("★  Favorites",()->{favOnly=true;hiddenOnly=false;page=0;browse();}));
-  nav.addView(button("Search",this::search));
-  nav.addView(button("Edit Library",this::manage));
-  nav.addView(button("Connect / Refresh",this::connect));
-  body=column();body.setPadding(dp(18),0,0,0);row.addView(body,new LinearLayout.LayoutParams(0,-1,1));
+  TvLayout metrics=tv();
+  root=column();
+  root.setBackground(gradient(0xff060b16,0xff0a1322,0));
+  root.setPadding(dp(metrics.marginX),dp(metrics.marginY),
+                  dp(metrics.marginX),dp(metrics.marginY));
+  setContentView(root);
+  LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);
+  root.addView(header,new LinearLayout.LayoutParams(-1,dp(metrics.headerHeight())));
+  TextView mark=brand(TvLayout.clamp(metrics.widthDp/36,26,36));header.addView(mark);
+  TextView dot=text("  •  YOUR PERSONAL STREAMING SPACE",12);
+  dot.setTextColor(0xff8497ad);
+  if(metrics.widthDp>940)header.addView(dot);
+  LinearLayout.LayoutParams space=new LinearLayout.LayoutParams(0,1,1);
+  View spacer=new View(this);header.addView(spacer,space);
+  subtitle=text("Ready to watch",TvLayout.clamp(metrics.bodySize()-2,12,16));
+  subtitle.setTextColor(MUTED);
+  subtitle.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+  header.addView(subtitle,new LinearLayout.LayoutParams(-2,-1));
+
+  LinearLayout layout=new LinearLayout(this);
+  layout.setClipChildren(false);layout.setClipToPadding(false);
+  LinearLayout.LayoutParams area=new LinearLayout.LayoutParams(-1,0,1);
+  area.topMargin=dp(7);root.addView(layout,area);
+  LinearLayout sidebar=column();
+  sidebar.setBackground(rounded(0xff0c1726,18,0xff1c3042));
+  sidebar.setPadding(dp(7),dp(12),dp(7),dp(12));
+  layout.addView(sidebar,new LinearLayout.LayoutParams(dp(metrics.sidebar),-1));
+  TextView explore=kicker("DISCOVER");
+  explore.setPadding(dp(17),dp(8),0,dp(10));
+  sidebar.addView(explore);
+  ScrollView menuScroll=new ScrollView(this);
+  menuScroll.setFillViewport(false);
+  menuScroll.setVerticalScrollBarEnabled(false);
+  sidebar.addView(menuScroll,new LinearLayout.LayoutParams(-1,0,1));
+  nav=column();menuScroll.addView(nav);
+  navButtons.clear();
+  addNav("home","⌂   Home",this::home);
+  addNav("live","◉   Live TV",()->{section="live";favOnly=false;hiddenOnly=false;editing=false;page=0;category="All";query="";browse();});
+  addNav("guide","▦   TV Guide",()->{section="live";category="All";guidePage=0;tvGuide();});
+  addNav("movie","◆   Movies",()->{section="movie";favOnly=false;hiddenOnly=false;editing=false;page=0;category="All";query="";browse();});
+  addNav("series","▥   TV Shows",()->{section="series";favOnly=false;hiddenOnly=false;editing=false;page=0;category="All";query="";browse();});
+  addNav("favorites","★   Favorites",()->{favOnly=true;hiddenOnly=false;editing=false;page=0;browse();});
+  addNav("search","⌕   Search",this::search);
+  TextView manageLabel=kicker("YOUR LIBRARY");
+  manageLabel.setPadding(dp(17),dp(18),0,dp(7));nav.addView(manageLabel);
+  addNav("library","☷   Edit Library",this::manage);
+  addNav("sources","⚙   Sources & Settings",this::connect);
+  TextView foot=text("BUILT FOR THE BIG SCREEN",10);
+  foot.setTextColor(0xff647e8f);foot.setGravity(Gravity.CENTER);
+  sidebar.addView(foot);
+  body=column();body.setPadding(dp(metrics.columnGap),0,0,0);
+  layout.addView(body,new LinearLayout.LayoutParams(0,-1,1));
+  refreshSidebar();
  }
+
  boolean visible(LibraryCore.Item i){return LibraryCore.visible(i,hidden,categories,favorites,allowed,hideUnknown,shown,shownCategories);}
  void home(){
   if(!store.hasLibrary()){loginScreen(false);return;}
