@@ -140,6 +140,7 @@ public class MainActivity extends Activity {
  void home(){
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="home";
+  scheduleGuideSync(false,true); // never blocks browsing, at most once per 12 hours
   final int token=++browseToken;
   body.removeAllViews();
   body.addView(text("Preparing your home screen…",20));
@@ -884,6 +885,7 @@ public class MainActivity extends Activity {
   io.execute(()->{
    try{
     int count;
+    final String[] discoveredGuide={null};
     try(LibraryStore.Writer writer=store.writer()){
      if(mode.equals("xtream")){
       count=Provider.xtreamStream(url,user,pass,writer,(stage,done)->{
@@ -893,13 +895,28 @@ public class MainActivity extends Activity {
      }else{
       status("Reading M3U playlist…");
       count=Provider.m3uStream(url,writer,(stage,done)->
-        status(String.format(Locale.US,"%,d playlist entries imported",done)));
+        status(String.format(Locale.US,"%,d playlist entries imported",done)),
+        xmltv->discoveredGuide[0]=xmltv);
      }
      if(count==0)throw new IOException("No supported titles were returned by this provider.");
      status("Finishing your library index…");
      writer.commit();
     }
     String address=Vault.seal(url),account=Vault.seal(user),secret=Vault.seal(pass);
+    boolean changedSource=true;
+    try{
+     changedSource=!mode.equals(prefs.getString("mode",""))||
+       !url.equals(Vault.open(prefs.getString("url","")))||
+       !user.equals(Vault.open(prefs.getString("user","")))||
+       !pass.equals(Vault.open(prefs.getString("pass","")));
+    }catch(Exception ignored){}
+    if(changedSource){
+     epg.clearProvider(); // Previous account's programme IDs must not leak into this account.
+     prefs.edit().remove("guide.attempt.provider").remove("guide.updated.provider").apply();
+    }
+    if(discoveredGuide[0]!=null&&!prefs.contains("guide.external1")){
+     prefs.edit().putString("guide.external1",Vault.seal(discoveredGuide[0])).apply();
+    }
     runOnUiThread(()->{
      if(isDestroyed()||token!=generation)return;
      prefs.edit().putString("mode",mode).putString("url",address)
@@ -907,7 +924,7 @@ public class MainActivity extends Activity {
      loading=false;items.clear();page=0;category="All";query="";
      hiddenOnly=false;favOnly=false;editing=false;
      shell();home();
-     // EPG is opt-in and never downloaded during the import.
+     // EPG loads separately in the background after the home screen appears.
     });
    }catch(Exception error){
     runOnUiThread(()->{
@@ -946,7 +963,7 @@ public class MainActivity extends Activity {
   });
  }
 
- void play(LibraryCore.Item i){screenBeforePlayer=screen;screen="player";release();playing=i;LinearLayout layout=column();layout.setBackgroundColor(BG);playerView=new PlayerView(this);layout.addView(playerView,new LinearLayout.LayoutParams(-1,0,1));LinearLayout controls=new LinearLayout(this);layout.addView(controls);Button pause=button("Play / Pause",()->{if(player.isPlaying())player.pause();else player.play();});controls.addView(pause,new LinearLayout.LayoutParams(0,dp(60),1));if(i.type.equals("live")){Button live=button("Go to live",()->{if(player.isCurrentMediaItemLive()){player.seekToDefaultPosition();player.play();}else toast("This stream does not expose a live timeline");});controls.addView(live,new LinearLayout.LayoutParams(0,dp(60),1));}else{Button rewind=button("−30 seconds",()->player.seekTo(Math.max(0,player.getCurrentPosition()-30000)));controls.addView(rewind,new LinearLayout.LayoutParams(0,dp(60),1));}controls.addView(button("Back to library",()->{release();shell();if(screenBeforePlayer.equals("home"))home();else browse();}),new LinearLayout.LayoutParams(0,dp(60),1));setContentView(layout);player=new ExoPlayer.Builder(this).build();playerView.setPlayer(player);player.setMediaItem(MediaItem.fromUri(i.url));player.addListener(new Player.Listener(){@Override public void onPlayerError(PlaybackException error){toast("Playback failed. Try another channel or check your source.");}});player.prepare();if(!i.type.equals("live"))player.seekTo(prefs.getLong("resume."+i.id,0));player.play();pause.requestFocus();}
+ void play(LibraryCore.Item i){screenBeforePlayer=screen;screen="player";release();playing=i;LinearLayout layout=column();layout.setBackgroundColor(BG);playerView=new PlayerView(this);layout.addView(playerView,new LinearLayout.LayoutParams(-1,0,1));LinearLayout controls=new LinearLayout(this);layout.addView(controls);Button pause=button("Play / Pause",()->{if(player.isPlaying())player.pause();else player.play();});controls.addView(pause,new LinearLayout.LayoutParams(0,dp(60),1));if(i.type.equals("live")){Button live=button("Go to live",()->{if(player.isCurrentMediaItemLive()){player.seekToDefaultPosition();player.play();}else toast("This stream does not expose a live timeline");});controls.addView(live,new LinearLayout.LayoutParams(0,dp(60),1));}else{Button rewind=button("−30 seconds",()->player.seekTo(Math.max(0,player.getCurrentPosition()-30000)));controls.addView(rewind,new LinearLayout.LayoutParams(0,dp(60),1));}controls.addView(button("Back to library",()->{release();shell();if(screenBeforePlayer.equals("home"))home();else if(screenBeforePlayer.equals("guide"))tvGuide();else browse();}),new LinearLayout.LayoutParams(0,dp(60),1));setContentView(layout);player=new ExoPlayer.Builder(this).build();playerView.setPlayer(player);player.setMediaItem(MediaItem.fromUri(i.url));player.addListener(new Player.Listener(){@Override public void onPlayerError(PlaybackException error){toast("Playback failed. Try another channel or check your source.");}});player.prepare();if(!i.type.equals("live"))player.seekTo(prefs.getLong("resume."+i.id,0));player.play();pause.requestFocus();}
  void release(){if(player!=null){if(playing!=null&&!playing.type.equals("live"))prefs.edit().putLong("resume."+playing.id,player.getCurrentPosition()).apply();player.release();player=null;playerView=null;playing=null;}}
  @Override public boolean onKeyDown(int key,KeyEvent e){if(key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE&&player!=null){if(player.isPlaying())player.pause();else player.play();return true;}if(key==KeyEvent.KEYCODE_MENU&&player==null){manage();return true;}return super.onKeyDown(key,e);}
 
