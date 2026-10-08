@@ -32,6 +32,12 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Test smart language filtering and library behavior
+        run: |
+          mkdir -p build/core-tests
+          javac -d build/core-tests app/src/main/java/tv/aurora/player/LibraryCore.java tests/CoreTest.java
+          java -cp build/core-tests CoreTest
+
       - name: Build signed debug APK
         run: |
           chmod +x ./gradlew
