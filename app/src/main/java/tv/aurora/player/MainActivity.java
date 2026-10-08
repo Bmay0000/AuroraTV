@@ -23,8 +23,8 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff080f1d,PANEL=0xff142238,ACCENT=0xff54e0c5;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;String screen="login",screenBeforePlayer="home";TextView loadingStatus;ExecutorService artworkIO=Executors.newFixedThreadPool(3);LruCache<String,Bitmap> artworkCache=new LruCache<String,Bitmap>(8192){@Override protected int sizeOf(String key,Bitmap bitmap){return bitmap.getByteCount()/1024;}};
- @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;ExecutorService artworkIO=Executors.newFixedThreadPool(3);LruCache<String,Bitmap> artworkCache=new LruCache<String,Bitmap>(8192){@Override protected int sizeOf(String key,Bitmap bitmap){return bitmap.getByteCount()/1024;}};
+ @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV2",false)&&!allowed.isEmpty()){
     // An existing English-only choice previously retained unclassified groups.
     // Migrate once to strict filtering; user can turn this off in Smart Library.
@@ -129,6 +129,7 @@ public class MainActivity extends Activity {
   for(String[] entry:new String[][]{{"Live TV","live"},{"Movies","movie"},{"TV Shows","series"}}){
    nav.addView(button(entry[0],()->{section=entry[1];favOnly=false;hiddenOnly=false;editing=false;page=0;category="All";query="";browse();}));
   }
+  nav.addView(button("▦  TV Guide",()->{section="live";category="All";guidePage=0;tvGuide();}));
   nav.addView(button("★  Favorites",()->{favOnly=true;hiddenOnly=false;page=0;browse();}));
   nav.addView(button("Search",this::search));
   nav.addView(button("Edit Library",this::manage));
@@ -248,9 +249,20 @@ public class MainActivity extends Activity {
    try{
     LibraryStore.Page result=store.page(type,cat,search,showHidden,onlyFavorites,h,hc,fav,lang,hide,
          manual,manualGroups,requested*PAGE_SIZE,PAGE_SIZE);
+    final Map<String,String> brief=new HashMap<>();
+    if(type.equals("live")&&!showHidden){
+     for(int x=0;x<Math.min(65,result.rows.size());x++){
+      LibraryCore.Item channel=result.rows.get(x);
+      GuideEngine.Slot entry=epg.nowNext(channel);
+      if(entry.hasData()){
+       String now=entry.now==null?"Coming up: "+entry.next.title:"Now: "+entry.now.title;
+       brief.put(channel.id,"\n"+now);
+      }
+     }
+    }
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||!screen.equals("browse"))return;
-     items=result.rows;
+     items=result.rows;guideSummary=brief;
      body.removeAllViews();
      LinearLayout heading=new LinearLayout(this);
      heading.setGravity(Gravity.CENTER_VERTICAL);
@@ -309,11 +321,9 @@ public class MainActivity extends Activity {
   });
  }
 
- String nowNext(LibraryCore.Item i){long now=System.currentTimeMillis();Provider.Program current=null,next=null;for(Provider.Program p:guideIndex.getOrDefault(i.epgId,Collections.emptyList())){if(p.start<=now&&p.end>now)current=p;else if(p.start>now&&(next==null||p.start<next.start))next=p;}return "\n"+(current==null?"Schedule unavailable":"Now: "+current.title)+(next==null?"":"   /   Next: "+next.title);}
+ String nowNext(LibraryCore.Item i){return guideSummary.getOrDefault(i.id,"");}
 
-
-
- void chooseCategory(){
+  void chooseCategory(){
   final String requestedType=section;
   final boolean listingHidden=hiddenOnly;
   final Set<String> h=new HashSet<>(hidden), c=new HashSet<>(categories),
@@ -521,22 +531,16 @@ public class MainActivity extends Activity {
 
  void connect(){
   new AlertDialog.Builder(this).setTitle("MANAGE YOUR CONNECTION")
-   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Add / refresh XMLTV program guide","Disconnect and clear this device"},(d,n)->{
+   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Smart EPG settings","Disconnect and clear this device"},(d,n)->{
     if(n==0){loginScreen(false);return;}
     if(n==1){refresh();return;}
-    if(n==2){
-     LinearLayout form=column();EditText guideUrl=field(form,"XMLTV guide URL",false);
-     new AlertDialog.Builder(this).setTitle("PROGRAM GUIDE").setView(form)
-      .setPositiveButton("Load guide",(a,b)->loadGuide(guideUrl.getText().toString().trim()))
-      .setNegativeButton("Cancel",null).show();
-     return;
-    }
+    if(n==2){guideSettings();return;}
     new AlertDialog.Builder(this).setTitle("Remove connected provider?")
      .setMessage("This deletes the imported library, saved login and filters from this device.")
      .setPositiveButton("Disconnect",(a,b)->{
       generation++;browseToken++;loading=false;
       prefs.edit().clear().apply();
-      store.clear();items.clear();guide.clear();guideIndex.clear();
+      store.clear();epg.clearAll();items.clear();guide.clear();guideIndex.clear();
       hidden.clear();categories.clear();favorites.clear();allowed.clear();shown.clear();shownCategories.clear();hideUnknown=false;
       page=0;category="All";query="";loginScreen(false);
      }).setNegativeButton("Cancel",null).show();
@@ -602,9 +606,9 @@ public class MainActivity extends Activity {
   });
  }
 
- void loadGuide(String url){int token=generation;subtitle.setText("Loading guide…");io.execute(()->{try{List<Provider.Program> result=Provider.epg(url);String sealedGuide=Vault.seal(url);runOnUiThread(()->{if(token!=generation||isDestroyed())return;guide=result;guideIndex.clear();for(Provider.Program p:result)guideIndex.computeIfAbsent(p.channel,k->new ArrayList<>()).add(p);prefs.edit().putString("epg",sealedGuide).apply();browse();});}catch(Exception e){runOnUiThread(()->toast("Could not read XMLTV guide. Use an uncompressed XMLTV URL."));}});}
+ void loadGuide(String url){setGuideUrl("external1",url);}
 
- void open(LibraryCore.Item chosen){
+  void open(LibraryCore.Item chosen){
   io.execute(()->{
    try{
     LibraryCore.Item source=store.resolve(chosen);
@@ -632,7 +636,7 @@ public class MainActivity extends Activity {
  @Override public void onBackPressed(){
   if(player!=null){
    release();shell();if(screenBeforePlayer.equals("home"))home();else browse();
-  }else if(screen.equals("browse")){
+  }else if(screen.equals("browse")||screen.equals("guide")){
    if(editing||hiddenOnly||favOnly||!query.isEmpty()){
     editing=false;hiddenOnly=false;favOnly=false;query="";page=0;
    }
@@ -645,7 +649,7 @@ public class MainActivity extends Activity {
  }
  @Override protected void onDestroy(){
   generation++;browseToken++;
-  release();io.shutdownNow();artworkIO.shutdownNow();store.close();
+  release();io.shutdownNow();artworkIO.shutdownNow();epgRefreshIO.shutdownNow();shortEpgIO.shutdownNow();store.close();epg.close();
   super.onDestroy();
  }
  void toast(String s){if(!isDestroyed())Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
