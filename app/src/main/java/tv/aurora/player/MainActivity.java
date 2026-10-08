@@ -198,6 +198,7 @@ public class MainActivity extends Activity {
   TextView letter=headline(item.name.isEmpty()?"A":item.name.substring(0,1).toUpperCase(Locale.ROOT),52,0x66ffffff);
   FrameLayout.LayoutParams initial=new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER);artwork.addView(letter,initial);
   displayArtwork(artwork,item.artwork);
+  badge.bringToFront();
   TextView title=text(item.name,15);title.setMaxLines(2);title.setEllipsize(TextUtils.TruncateAt.END);
   card.addView(title);
   card.setOnClickListener(v->{if(type.equals("live"))open(item);else showMediaDetails(item);});
@@ -208,7 +209,7 @@ public class MainActivity extends Activity {
  void displayArtwork(FrameLayout frame,String url){
   ImageView image=new ImageView(this);
   image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-  frame.addView(image,0,new FrameLayout.LayoutParams(-1,-1));
+  frame.addView(image,new FrameLayout.LayoutParams(-1,-1));
   posters.bind(image,url);
  }
 
