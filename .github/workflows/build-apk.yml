@@ -39,6 +39,8 @@ jobs:
           java -cp build/core-tests CoreTest
           javac -cp build/core-tests -d build/core-tests app/src/main/java/tv/aurora/player/GuideName.java tests/GuideNameTest.java
           java -cp build/core-tests GuideNameTest
+          javac -cp build/core-tests -d build/core-tests app/src/main/java/tv/aurora/player/PlaybackTuning.java tests/PlaybackTuningTest.java
+          java -cp build/core-tests PlaybackTuningTest
 
       - name: Build signed debug APK
         run: |
