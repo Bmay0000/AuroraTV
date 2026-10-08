@@ -351,7 +351,7 @@ public final class PlaybackScreen {
                 "Restart this stream",
                 "Why does Live TV buffer?"
         };
-        new AlertDialog.Builder(activity).setTitle("AURORA / PLAYBACK SETTINGS")
+        new AlertDialog.Builder(activity).setTitle("AuroraTV · Playback Settings")
           .setItems(options,(dialog,index)->{
               if(index==0){chooseBuffering();return;}
               if(index==1){chooseFormat();return;}
