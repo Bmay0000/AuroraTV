@@ -25,11 +25,12 @@ public class MainActivity extends Activity {
  final int BG=0xff080f1d,PANEL=0xff142238,ACCENT=0xff54e0c5;
  LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;boolean focusSearchNext=false;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
-   if(!prefs.getBoolean("smartFilterV2",false)&&!allowed.isEmpty()){
-    // An existing English-only choice previously retained unclassified groups.
-    // Migrate once to strict filtering; user can turn this off in Smart Library.
-    hideUnknown=true;
-    prefs.edit().putBoolean("unknown",true).putBoolean("smartFilterV2",true).apply();
+   if(!prefs.getBoolean("smartFilterV3",false)){
+    // Prior versions auto-enabled strict mode for English-only libraries,
+    // unintentionally hiding unclassified English stations. Reset once.
+    if(!allowed.isEmpty())hideUnknown=false;
+    prefs.edit().putBoolean("unknown",hideUnknown)
+     .putBoolean("smartFilterV2",true).putBoolean("smartFilterV3",true).apply();
    }
    start();}
  Set<String> set(String k){return new HashSet<>(prefs.getStringSet(k,new HashSet<>()));}
@@ -570,6 +571,8 @@ public class MainActivity extends Activity {
      int scheduled=0;
      for(GuideEngine.Slot item:listings)if(item.hasData())scheduled++;
      subtitle.setText(scheduled+" of "+result.rows.size()+" channels have cached schedule data · page "+(selectedPage+1));
+     if(!result.rows.isEmpty()&&scheduled*4<result.rows.size())
+      body.addView(button("MISSING PROGRAMMES?  GUIDE HEALTH & FREE EPG SOURCES",this::guideSettings));
      queueVisibleShortEpg(result.rows,listings,cells,token);
      scheduleGuideSync(false,true);
     });
@@ -624,7 +627,7 @@ public class MainActivity extends Activity {
   // Request only the first handful of visible channels; never the full catalog.
   List<LibraryCore.Item> needs=new ArrayList<>();
   List<TextView[]> targets=new ArrayList<>();
-  for(int n=0;n<Math.min(10,channels.size());n++){
+  for(int n=0;n<Math.min(24,channels.size());n++){
    if(!snapshots.get(n).hasData()){
     needs.add(channels.get(n));targets.add(cells.get(n));
    }
@@ -782,7 +785,7 @@ public class MainActivity extends Activity {
   // One long-running source refresh at a time, separate from fast catalog queries.
   epgRefreshIO.execute(()->{
    boolean newData=false;
-   String[] options=includeProvider?new String[]{"external1","external2","external3","external4","provider"}:
+   String[] options=includeProvider?new String[]{"provider","external1","external2","external3","external4"}:
      new String[]{"external1","external2","external3","external4"};
    for(String source:options){
     if(Thread.currentThread().isInterrupted())break;
@@ -1071,7 +1074,7 @@ public class MainActivity extends Activity {
    "English · UK, US, Canada, NZ, Australia",
    "French","German","Spanish","Arabic","Portuguese","Italian","Russian","Hindi",
    "Other recognized languages",
-   "Strict mode · also hide movies/series without language metadata"
+   "Strict mode · also hide channels, movies and shows without language metadata"
   };
   boolean[] checks=new boolean[labels.length];
   for(int i=0;i<codes.length;i++)checks[i]=allowed.contains(codes[i]);
