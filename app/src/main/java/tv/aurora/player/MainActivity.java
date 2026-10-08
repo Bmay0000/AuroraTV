@@ -23,10 +23,17 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff080f1d,PANEL=0xff142238,ACCENT=0xff54e0c5;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;String screen="login",screenBeforePlayer="home";TextView loadingStatus;ExecutorService artworkIO=Executors.newFixedThreadPool(3);LruCache<String,Bitmap> artworkCache=new LruCache<String,Bitmap>(8192){@Override protected int sizeOf(String key,Bitmap bitmap){return bitmap.getByteCount()/1024;}};
- @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");hideUnknown=prefs.getBoolean("unknown",false);start();}
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;ExoPlayer player;PlayerView playerView;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;String screen="login",screenBeforePlayer="home";TextView loadingStatus;ExecutorService artworkIO=Executors.newFixedThreadPool(3);LruCache<String,Bitmap> artworkCache=new LruCache<String,Bitmap>(8192){@Override protected int sizeOf(String key,Bitmap bitmap){return bitmap.getByteCount()/1024;}};
+ @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
+   if(!prefs.getBoolean("smartFilterV2",false)&&!allowed.isEmpty()){
+    // An existing English-only choice previously retained unclassified groups.
+    // Migrate once to strict filtering; user can turn this off in Smart Library.
+    hideUnknown=true;
+    prefs.edit().putBoolean("unknown",true).putBoolean("smartFilterV2",true).apply();
+   }
+   start();}
  Set<String> set(String k){return new HashSet<>(prefs.getStringSet(k,new HashSet<>()));}
- void save(){prefs.edit().putStringSet("hidden",hidden).putStringSet("categories",categories).putStringSet("favorites",favorites).putStringSet("allowed",allowed).putBoolean("unknown",hideUnknown).apply();}
+ void save(){prefs.edit().putStringSet("hidden",hidden).putStringSet("categories",categories).putStringSet("favorites",favorites).putStringSet("allowed",allowed).putStringSet("shown",shown).putStringSet("shownCategories",shownCategories).putBoolean("unknown",hideUnknown).putBoolean("smartFilterV2",true).apply();}
  int dp(int v){return (int)(v*getResources().getDisplayMetrics().density);}
  LinearLayout column(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);return l;}
  TextView text(String s,int size){TextView t=new TextView(this);t.setText(s);t.setTextColor(Color.WHITE);t.setTextSize(size);t.setPadding(dp(8),dp(6),dp(8),dp(6));return t;}
@@ -128,7 +135,7 @@ public class MainActivity extends Activity {
   nav.addView(button("Connect / Refresh",this::connect));
   body=column();body.setPadding(dp(18),0,0,0);row.addView(body,new LinearLayout.LayoutParams(0,-1,1));
  }
- boolean visible(LibraryCore.Item i){return LibraryCore.visible(i,hidden,categories,favorites,allowed,hideUnknown);}
+ boolean visible(LibraryCore.Item i){return LibraryCore.visible(i,hidden,categories,favorites,allowed,hideUnknown,shown,shownCategories);}
  void home(){
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="home";
@@ -136,13 +143,13 @@ public class MainActivity extends Activity {
   body.removeAllViews();
   body.addView(text("Preparing your home screen…",20));
   final Set<String> h=new HashSet<>(hidden),c=new HashSet<>(categories),
-      fav=new HashSet<>(favorites),langs=new HashSet<>(allowed);
+      fav=new HashSet<>(favorites),langs=new HashSet<>(allowed),manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
   final boolean unknown=hideUnknown;
   io.execute(()->{
    try{
-    LibraryStore.Page live=store.page("live","All","",false,false,h,c,fav,langs,unknown,0,10);
-    LibraryStore.Page movies=store.page("movie","All","",false,false,h,c,fav,langs,unknown,0,10);
-    LibraryStore.Page series=store.page("series","All","",false,false,h,c,fav,langs,unknown,0,10);
+    LibraryStore.Page live=store.page("live","All","",false,false,h,c,fav,langs,unknown,manual,manualGroups,0,10);
+    LibraryStore.Page movies=store.page("movie","All","",false,false,h,c,fav,langs,unknown,manual,manualGroups,0,10);
+    LibraryStore.Page series=store.page("series","All","",false,false,h,c,fav,langs,unknown,manual,manualGroups,0,10);
     int l=store.count("live"),m=store.count("movie"),t=store.count("series");
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||!screen.equals("home"))return;
@@ -234,13 +241,13 @@ public class MainActivity extends Activity {
   final boolean showHidden=hiddenOnly,onlyFavorites=favOnly,isEditing=editing,hide=hideUnknown;
   final int requested=page;
   final Set<String> h=new HashSet<>(hidden),hc=new HashSet<>(categories),
-     fav=new HashSet<>(favorites),lang=new HashSet<>(allowed);
+     fav=new HashSet<>(favorites),lang=new HashSet<>(allowed),manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
   body.removeAllViews();
   body.addView(text("Finding your "+(type.equals("live")?"channels":type.equals("movie")?"movies":"series")+"…",18));
   io.execute(()->{
    try{
     LibraryStore.Page result=store.page(type,cat,search,showHidden,onlyFavorites,h,hc,fav,lang,hide,
-         requested*PAGE_SIZE,PAGE_SIZE);
+         manual,manualGroups,requested*PAGE_SIZE,PAGE_SIZE);
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||!screen.equals("browse"))return;
      items=result.rows;
@@ -305,28 +312,135 @@ public class MainActivity extends Activity {
  String nowNext(LibraryCore.Item i){long now=System.currentTimeMillis();Provider.Program current=null,next=null;for(Provider.Program p:guideIndex.getOrDefault(i.epgId,Collections.emptyList())){if(p.start<=now&&p.end>now)current=p;else if(p.start>now&&(next==null||p.start<next.start))next=p;}return "\n"+(current==null?"Schedule unavailable":"Now: "+current.title)+(next==null?"":"   /   Next: "+next.title);}
 
 
+
  void chooseCategory(){
   final String requestedType=section;
+  final boolean listingHidden=hiddenOnly;
+  final Set<String> h=new HashSet<>(hidden), c=new HashSet<>(categories),
+     fav=new HashSet<>(favorites), langs=new HashSet<>(allowed),
+     manual=new HashSet<>(shown), visibleGroups=new HashSet<>(shownCategories);
+  final boolean strict=hideUnknown;
   io.execute(()->{
    try{
-    String[] groups=store.categories(requestedType);
+    String[] groups=store.visibleCategoryNames(requestedType,listingHidden,h,c,fav,langs,strict,manual,visibleGroups);
     runOnUiThread(()->{
-     if(isDestroyed()||!requestedType.equals(section))return;
+     if(isDestroyed()||!requestedType.equals(section)||listingHidden!=hiddenOnly)return;
      String[] names=new String[groups.length+1];names[0]="All";
      System.arraycopy(groups,0,names,1,groups.length);
-     new AlertDialog.Builder(this).setTitle("Choose a category")
+     new AlertDialog.Builder(this)
+       .setTitle(listingHidden?"Hidden categories · restore from here":"Only visible categories")
        .setItems(names,(d,n)->{category=names[n];page=0;browse();}).show();
     });
-   }catch(Exception error){runOnUiThread(()->toast("Could not list categories"));}
+   }catch(Exception error){runOnUiThread(()->toast("Could not list visible categories"));}
   });
  }
 
- void search(){EditText e=new EditText(this);e.setSingleLine();e.setHint("Search "+section);e.setText(query);new AlertDialog.Builder(this).setTitle("Search your visible library").setView(e).setPositiveButton("Search",(d,w)->{query=e.getText().toString();browse();}).setNegativeButton("Cancel",null).show();}
- void actions(LibraryCore.Item i){String[] labels={favorites.contains(i.id)?"Remove favorite":"Add favorite",hidden.contains(i.id)?"Restore title":"Hide title","Play / Open"};new AlertDialog.Builder(this).setTitle(i.name).setItems(labels,(d,n)->{if(n==0){if(!favorites.add(i.id))favorites.remove(i.id);}else if(n==1){if(!hidden.add(i.id))hidden.remove(i.id);}else{open(i);return;}save();browse();}).show();}
- void manage(){new AlertDialog.Builder(this).setTitle("Edit Library").setItems(new String[]{editing?"Finish editing":"Edit individual titles","Manage categories","Smart language filter · Live TV","Hidden content / restore","Undo last bulk action","Return to visible library"},(d,n)->{if(n==0)editing=!editing;if(n==1){manageCategories();return;}if(n==2){smart();return;}if(n==3){hiddenOnly=true;editing=true;favOnly=false;category="All";}if(n==4)undo();if(n==5){hiddenOnly=false;editing=false;}browse();}).show();}
- void snapshot(){prefs.edit().putStringSet("undoHidden",new HashSet<>(hidden)).putStringSet("undoCategories",new HashSet<>(categories)).putStringSet("undoAllowed",new HashSet<>(allowed)).putBoolean("undoUnknown",hideUnknown).putBoolean("undo",true).apply();}
- void undo(){if(!prefs.getBoolean("undo",false)){toast("No bulk action to undo");return;}hidden=set("undoHidden");categories=set("undoCategories");allowed=set("undoAllowed");hideUnknown=prefs.getBoolean("undoUnknown",false);prefs.edit().putBoolean("undo",false).apply();save();}
 
+ void search(){
+  new AlertDialog.Builder(this).setTitle("SEARCH YOUR LIBRARY")
+   .setItems(new String[]{"Live TV","Movies","TV Shows"},(d,index)->{
+    section=index==0?"live":index==1?"movie":"series";
+    EditText entry=new EditText(this);entry.setTextColor(Color.WHITE);entry.setHintTextColor(0xffbbbbbb);
+    entry.setSingleLine();entry.setHint("Search "+(index==0?"channels":index==1?"movies":"series"));
+    new AlertDialog.Builder(this).setTitle("Search "+(index==0?"Live TV":index==1?"Movies":"TV Shows"))
+     .setView(entry).setPositiveButton("Search",(a,b)->{
+       query=entry.getText().toString().trim();category="All";page=0;
+       hiddenOnly=false;favOnly=false;editing=false;browse();
+     }).setNegativeButton("Cancel",null).show();
+   }).show();
+ }
+ void actions(LibraryCore.Item i){
+  boolean isHidden=!visible(i);
+  String[] options={"★  "+(favorites.contains(i.id)?"Remove favorite":"Add favorite"),
+     isHidden?"RESTORE  ·  Show even if filtered":"HIDE  ·  Remove from browsing",
+     i.type.equals("live")?"Match programme guide":"Play / Open",
+     i.type.equals("live")?"Play channel":"Show title details"};
+  new AlertDialog.Builder(this).setTitle(i.name).setItems(options,(d,n)->{
+   if(n==0){
+    if(!favorites.add(i.id))favorites.remove(i.id);
+    save();browse();return;
+   }
+   if(n==1){
+    if(isHidden){
+     hidden.remove(i.id);
+     shown.add(i.id);
+     categories.remove(i.type+"|"+i.category); // manual re-enable wins filter
+    }else{
+     hidden.add(i.id);shown.remove(i.id);
+    }
+    save();browse();return;
+   }
+   if(n==2&&i.type.equals("live")){chooseGuideMatch(i);return;}
+   if(n==2){open(i);return;}
+   if(n==3&&i.type.equals("live")){open(i);return;}
+   new AlertDialog.Builder(this).setTitle(i.name).setMessage(i.category).setPositiveButton("OK",null).show();
+  }).show();
+ }
+ void manage(){
+  new AlertDialog.Builder(this).setTitle("EDIT LIBRARY")
+   .setItems(new String[]{
+     editing?"Finish editing":"Edit individual titles",
+     "Manage categories · hide by group",
+     "Smart language filter · Live TV",
+     "Hidden channels · restore anything filtered",
+     "Restore an entire filtered category",
+     "Manage manually restored categories",
+     "Undo previous bulk filter change",
+     "Return to visible library"
+   },(d,n)->{
+    if(n==0)editing=!editing;
+    if(n==1){manageCategories();return;}
+    if(n==2){smart();return;}
+    if(n==3){hiddenOnly=true;editing=true;favOnly=false;section="live";page=0;category="All";query="";}
+    if(n==4){restoreCategory();return;}
+    if(n==5){manageRestoredCategories();return;}
+    if(n==6)undo();
+    if(n==7){hiddenOnly=false;editing=false;category="All";page=0;}
+    browse();
+   }).show();
+ }
+ void restoreCategory(){
+  final Set<String> h=new HashSet<>(hidden),c=new HashSet<>(categories),fav=new HashSet<>(favorites),
+    lang=new HashSet<>(allowed),manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
+  io.execute(()->{
+   try{
+    String[] groups=store.visibleCategoryNames("live",true,h,c,fav,lang,hideUnknown,manual,manualGroups);
+    runOnUiThread(()->{
+     if(isDestroyed())return;
+     if(groups.length==0){toast("No hidden categories");return;}
+     new AlertDialog.Builder(this).setTitle("Restore a hidden category")
+      .setItems(groups,(d,n)->{
+       snapshot();String key="live|"+groups[n];
+       shownCategories.add(key);categories.remove(key);
+       save();section="live";category=groups[n];hiddenOnly=false;editing=false;page=0;browse();
+      }).show();
+    });
+   }catch(Exception error){runOnUiThread(()->toast("Could not list hidden categories"));}
+  });
+ }
+ void manageRestoredCategories(){
+  String[] groups=shownCategories.toArray(new String[0]);
+  Arrays.sort(groups);
+  if(groups.length==0){toast("No categories manually restored");return;}
+  new AlertDialog.Builder(this).setTitle("Restore automatic filtering")
+   .setItems(groups,(d,n)->{snapshot();shownCategories.remove(groups[n]);save();category="All";page=0;browse();})
+   .show();
+ }
+ void snapshot(){
+  prefs.edit().putStringSet("undoHidden",new HashSet<>(hidden))
+   .putStringSet("undoCategories",new HashSet<>(categories))
+   .putStringSet("undoAllowed",new HashSet<>(allowed))
+   .putStringSet("undoShown",new HashSet<>(shown))
+   .putStringSet("undoShownCategories",new HashSet<>(shownCategories))
+   .putBoolean("undoUnknown",hideUnknown).putBoolean("undo",true).apply();
+ }
+ void undo(){
+  if(!prefs.getBoolean("undo",false)){toast("No bulk change to undo");return;}
+  hidden=set("undoHidden");categories=set("undoCategories");allowed=set("undoAllowed");
+  shown=set("undoShown");shownCategories=set("undoShownCategories");
+  hideUnknown=prefs.getBoolean("undoUnknown",false);
+  prefs.edit().putBoolean("undo",false).apply();save();category="All";page=0;
+ }
 
  void manageCategories(){
   final String requestedType=section;
@@ -352,38 +466,58 @@ public class MainActivity extends Activity {
   });
  }
 
+
  void smart(){
-  String[] codes={"en","fr","de","es","ar"};
-  String[] labels={"English · UK, US, AU, NZ, NA clues","French","German","Spanish","Arabic","Hide unrecognized / ambiguous channels"};
-  boolean[] checks=new boolean[6];
-  for(int i=0;i<5;i++)checks[i]=allowed.contains(codes[i]);
-  checks[5]=hideUnknown;
+  String[] codes={"en","fr","de","es","ar","pt","it","ru","hi","other"};
+  String[] labels={
+   "English · UK, US, Canada, NZ, Australia",
+   "French","German","Spanish","Arabic","Portuguese","Italian","Russian","Hindi",
+   "Other recognized languages",
+   "Strict filtering · hide unknown / ambiguous channels"
+  };
+  boolean[] checks=new boolean[labels.length];
+  for(int i=0;i<codes.length;i++)checks[i]=allowed.contains(codes[i]);
+  checks[codes.length]=hideUnknown||(!allowed.isEmpty()&&!prefs.getBoolean("smartFilterV2",false));
   new AlertDialog.Builder(this).setTitle("Smart Library · preferred languages")
    .setMultiChoiceItems(labels,checks,(d,n,c)->checks[n]=c)
    .setPositiveButton("Preview",(d,w)->{
-    Set<String> proposal=new HashSet<>();
-    for(int i=0;i<5;i++)if(checks[i])proposal.add(codes[i]);
+    Set<String> selectedLanguages=new HashSet<>();
+    for(int i=0;i<codes.length;i++)if(checks[i])selectedLanguages.add(codes[i]);
+    boolean strict=checks[codes.length];
+    final Set<String> h=new HashSet<>(hidden),c=new HashSet<>(categories),fav=new HashSet<>(favorites),
+      manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
     io.execute(()->{
-     int[] counts={0,0};
-     try{store.forEach(i->{
-      if(i.type.equals("live")){
-       if(LibraryCore.language(i).equals("unknown"))counts[1]++;
-       if(!LibraryCore.visible(i,hidden,categories,favorites,proposal,checks[5]))counts[0]++;
-      }
-      return true;
-     });}catch(Exception e){runOnUiThread(()->toast("Unable to preview filters"));return;}
+     int[] counts={0,0,0};
+     Set<String> visibleGroups=new HashSet<>(),hiddenGroups=new HashSet<>();
+     try{
+      store.forEach(i->{
+       if(i.type.equals("live")){
+        if(LibraryCore.language(i).equals("unknown"))counts[1]++;
+        boolean v=LibraryCore.visible(i,h,c,fav,selectedLanguages,strict,manual,manualGroups);
+        if(!v){counts[0]++;hiddenGroups.add(i.category);}
+        else visibleGroups.add(i.category);
+       }
+       return true;
+      });
+      for(String group:hiddenGroups)if(!visibleGroups.contains(group))counts[2]++;
+     }catch(Exception e){runOnUiThread(()->toast("Unable to preview filters"));return;}
      runOnUiThread(()->{
       if(isDestroyed())return;
       new AlertDialog.Builder(this).setTitle("Filter preview")
-       .setMessage(counts[0]+" live channels hidden in total.\n"+counts[1]+" have uncertain language.\nFavorites are protected. No languages selected disables automatic filtering.")
-       .setPositiveButton("Apply",(a,b)->{snapshot();allowed=proposal;hideUnknown=checks[5];save();page=0;browse();})
+       .setMessage(String.format(Locale.US,"%,d live channels will be hidden.\n%,d categories will disappear completely.\n%,d channels have uncertain language.\n\nManual restorations and favorites stay available. No languages selected disables the language filter.",counts[0],counts[2],counts[1]))
+       .setPositiveButton("APPLY FILTER",(a,b)->{
+        snapshot();allowed=selectedLanguages;hideUnknown=strict;
+        prefs.edit().putBoolean("smartFilterV2",true).apply();
+        save();category="All";page=0;
+        if(screen.equals("guide"))tvGuide();else browse();
+       })
        .setNegativeButton("Cancel",null).show();
      });
     });
    }).setNegativeButton("Cancel",null).show();
  }
 
-  EditText field(LinearLayout form,String hint,boolean secret){EditText e=new EditText(this);e.setHint(hint);e.setTextColor(Color.WHITE);e.setHintTextColor(0xff9caebe);e.setBackgroundTintList(ColorStateList.valueOf(ACCENT));e.setSingleLine();if(secret)e.setInputType(129);form.addView(e);return e;}
+ EditText field(LinearLayout form,String hint,boolean secret){EditText e=new EditText(this);e.setHint(hint);e.setTextColor(Color.WHITE);e.setHintTextColor(0xff9caebe);e.setBackgroundTintList(ColorStateList.valueOf(ACCENT));e.setSingleLine();if(secret)e.setInputType(129);form.addView(e);return e;}
 
  void connect(){
   new AlertDialog.Builder(this).setTitle("MANAGE YOUR CONNECTION")
@@ -403,7 +537,7 @@ public class MainActivity extends Activity {
       generation++;browseToken++;loading=false;
       prefs.edit().clear().apply();
       store.clear();items.clear();guide.clear();guideIndex.clear();
-      hidden.clear();categories.clear();favorites.clear();allowed.clear();hideUnknown=false;
+      hidden.clear();categories.clear();favorites.clear();allowed.clear();shown.clear();shownCategories.clear();hideUnknown=false;
       page=0;category="All";query="";loginScreen(false);
      }).setNegativeButton("Cancel",null).show();
    }).show();
