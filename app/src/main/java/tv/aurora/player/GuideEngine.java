@@ -34,9 +34,10 @@ public final class GuideEngine extends SQLiteOpenHelper {
     private static final int MAX_PROGRAMMES=350000;
     private static final int MAX_XML_BYTES=160*1024*1024;
     private static final String[] SOURCES={"provider","external1","external2","short"};
+    private final Context app;
     private static final Pattern STREAM_ID=Pattern.compile("/live/[^/]+/[^/]+/(\\d+)(?:\\.[^/]*)?$");
 
-    public GuideEngine(Context c){super(c,"aurora_epg.db",null,1);}
+    public GuideEngine(Context c){super(c,"aurora_epg.db",null,1);app=c.getApplicationContext();}
 
     @Override public void onCreate(SQLiteDatabase db){
         db.execSQL("CREATE TABLE programs(source TEXT NOT NULL,channel TEXT NOT NULL,start INTEGER NOT NULL,"+
@@ -394,6 +395,6 @@ public final class GuideEngine extends SQLiteOpenHelper {
     }
     public void clearAll(){
         close();
-        // Use contextual app database removal on disconnect when supported.
+        app.deleteDatabase("aurora_epg.db");
     }
 }
