@@ -1580,8 +1580,8 @@ public class MainActivity extends Activity {
      if(isDestroyed()||!screen.equals("guide"))return;
      String[] list=new String[names.length+1];list[0]="All";
      System.arraycopy(names,0,list,1,names.length);
-     new AlertDialog.Builder(this).setTitle("Visible TV categories")
-      .setItems(list,(d,n)->{category=list[n];guidePage=0;tvGuide();}).show();
+     new AlertDialog.Builder(this).setTitle("Provider TV categories")
+      .setItems(list,(d,n)->{guideFilter=list[n];guidePage=0;guideQuery="";tvGuide();}).show();
     });
    }catch(Exception error){runOnUiThread(()->toast("Could not load guide categories"));}
   });
