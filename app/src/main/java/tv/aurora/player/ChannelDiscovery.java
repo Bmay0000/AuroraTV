@@ -52,7 +52,7 @@ public final class ChannelDiscovery {
         LINEUP.put(record[1],Integer.parseInt(record[0]));}
 
     private static final Pattern QUALITY=Pattern.compile(
-        "(?i)\\b(?:4K\\+?|8K|UHD|FHD|HD|SD|HDR|HEVC|H265|60FPS|1080P|720P|LIVE|TV)\\b");
+        "(?i)\\b(?:4K\\+?|8K|UHD|FHD|HD|SD|HDR|HEVC|H265|60FPS|1080P|720P|LIVE)\\b");
     private static final Pattern LEADING=Pattern.compile(
         "^(?:USA?|CAN|CANADA|CA|NA|NORTH AMERICA|UK|GB|EN|ENG|4K|8K)\\s+",Pattern.CASE_INSENSITIVE);
     private static final Pattern NONLATIN=Pattern.compile("[\\p{IsArabic}\\p{IsCyrillic}\\p{IsHan}\\p{IsHangul}]");
@@ -81,12 +81,15 @@ public final class ChannelDiscovery {
         if(c.isEmpty())return 0;
         // Explicit distinctive aliases only. Avoid collapsing FS1 into FOX,
         // CNN International into CNN, ESPN 2 into ESPN, etc.
+        if(c.equals("A AND E"))c="A&E";
         if(c.equals("FOX NEWS CHANNEL"))c="FOX NEWS";
         if(c.equals("FOX BUSINESS NETWORK"))c="FOX BUSINESS";
         if(c.equals("NATIONAL GEOGRAPHIC CHANNEL"))c="NATIONAL GEOGRAPHIC";
         if(c.equals("SCIENCE"))c="SCIENCE CHANNEL";
         if(c.equals("FX MOVIE CHANNEL"))c="FXM";
         if(c.equals("MSNBC"))c="MS NOW";
+        if(c.equals("NICK JR."))c="NICK JR";
+        if(c.equals("ION TELEVISION"))c="ION";
         if(c.equals("PARAMOUNT PLUS WITH SHOWTIME"))c="SHOWTIME";
         Integer number=LINEUP.get(c);
         return number==null?0:number;
