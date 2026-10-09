@@ -369,71 +369,52 @@ public class MainActivity extends Activity {
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="home";refreshSidebar();
   final int token=++browseToken;
-  final Set<String> hiddenSnapshot=new HashSet<>(hidden),
-      categorySnapshot=new HashSet<>(categories),
-      favoriteSnapshot=new HashSet<>(favorites),
-      languageSnapshot=new HashSet<>(allowed),
-      restored=new HashSet<>(shown),restoredCategories=new HashSet<>(shownCategories);
+  final Set<String> h=new HashSet<>(hidden),hc=new HashSet<>(categories),
+      fav=new HashSet<>(favorites),lang=new HashSet<>(allowed),
+      manual=new HashSet<>(shown),groups=new HashSet<>(shownCategories);
   final boolean strict=hideUnknown;
   body.removeAllViews();
-  subtitle.setText("DISCOVER SOMETHING GREAT");
   ScrollView scroll=new ScrollView(this);
   scroll.setVerticalScrollBarEnabled(false);
-  scroll.setFillViewport(false);
   scroll.setClipChildren(true);scroll.setClipToPadding(true);
   body.addView(scroll,new LinearLayout.LayoutParams(-1,-1));
   LinearLayout feed=column();
   feed.setClipChildren(true);feed.setClipToPadding(true);
-  feed.setPadding(dp(3),0,dp(5),dp(14));
+  feed.setPadding(dp(3),dp(1),dp(4),dp(12));
   scroll.addView(feed,new ScrollView.LayoutParams(-1,-2));
 
-  FrameLayout heroHolder=new FrameLayout(this);
-  if(tv().heightDp>=470){
-   feed.addView(heroHolder,new LinearLayout.LayoutParams(-1,dp(tv().heroHeight)));
-   heroHolder.addView(homeHero(null),new FrameLayout.LayoutParams(-1,-1));
-  }
-  quickCategories(feed);
+  // Everything above the international divider has positive English or
+  // North American evidence; unknown-language titles never become the hero.
+  LinearLayout latest=column(),continueRow=column(),englishMovies=column(),
+    americanTV=column(),englishSeries=column(),genres=column(),
+    myList=column(),unknown=column(),foreign=column();
+  feed.addView(latest);
+  feed.addView(continueRow);
+  feed.addView(englishMovies);
+  feed.addView(americanTV);
+  feed.addView(englishSeries);
+  feed.addView(genres);
+  feed.addView(myList);
+  feed.addView(unknown);
+  feed.addView(foreign);
 
-  LinearLayout newlyReleased=column(),genreArea=column(),personal=column(),
-      seriesArea=column(),liveArea=column(),movieArea=column(),saved=column();
-  feed.addView(newlyReleased);
-  feed.addView(genreArea);
-  feed.addView(personal);
-  feed.addView(seriesArea);
-  feed.addView(liveArea);
-  feed.addView(movieArea);
-  feed.addView(saved);
-
-  showShelfPlaceholder(newlyReleased,"NEW & RECENT MOVIES");
-  fetchRecentMovies(token,newlyReleased,heroHolder,
-      hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
-      restored,restoredCategories);
-  fetchGenreShelves(token,genreArea,
-      hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
-      restored,restoredCategories);
-
+  showShelfPlaceholder(latest,"NEW & RECENT • ENGLISH MOVIES");
+  fetchRecentMovies(token,latest,unknown,foreign,h,hc,fav,lang,strict,manual,groups);
+  fetchLanguageShelf(token,"movie",englishMovies,"ENGLISH MOVIES",false,
+    h,hc,fav,lang,strict,manual,groups);
+  fetchNorthAmericanShelf(token,americanTV,h,hc,fav,lang,strict,manual,groups);
+  fetchLanguageShelf(token,"series",englishSeries,"ENGLISH TV SHOWS",false,
+    h,hc,fav,lang,strict,manual,groups);
+  fetchGenreShelves(token,genres,h,hc,fav,lang,strict,manual,groups);
   List<String> history=Arrays.asList(prefs.getString("recent.items","").split(","));
   if(!history.isEmpty()&&!history.get(0).isEmpty())
-   fetchPersonalShelf(token,"CONTINUE WATCHING",personal,history,
-     hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
-     restored,restoredCategories);
-  if(!favoriteSnapshot.isEmpty())
-   fetchPersonalShelf(token,"MY LIST",saved,new ArrayList<>(favoriteSnapshot),
-     hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
-     restored,restoredCategories);
-
-  showShelfPlaceholder(seriesArea,"EXPLORE TV SERIES");
-  showShelfPlaceholder(liveArea,"LIVE CHANNELS");
-  showShelfPlaceholder(movieArea,"EXPLORE ALL MOVIES");
-  fetchHomeShelf(token,"series","EXPLORE TV SERIES",seriesArea,
-     hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
-     restored,restoredCategories,null);
-  fetchHomeShelf(token,"live","LIVE CHANNELS",liveArea,
-     hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
-     restored,restoredCategories,null);
-  fetchHomeShelf(token,"movie","EXPLORE ALL MOVIES",movieArea,
-     hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
-     restored,restoredCategories,null);
+   fetchPersonalShelf(token,"CONTINUE WATCHING",continueRow,history,
+     h,hc,fav,lang,strict,manual,groups);
+  if(!fav.isEmpty())
+   fetchPersonalShelf(token,"MY LIST",myList,new ArrayList<>(fav),
+     h,hc,fav,lang,strict,manual,groups);
+  fetchLanguageShelf(token,"movie",foreign,"INTERNATIONAL MOVIES",true,
+     h,hc,fav,lang,strict,manual,groups);
 
   if(pendingGuideUpdate!=null)uiHandler.removeCallbacks(pendingGuideUpdate);
   pendingGuideUpdate=()->{
@@ -443,40 +424,66 @@ public class MainActivity extends Activity {
   uiHandler.postDelayed(pendingGuideUpdate,90000L);
  }
 
- void fetchRecentMovies(int token,LinearLayout target,FrameLayout hero,
-      Set<String> h,Set<String> hc,Set<String> fav,Set<String> langs,boolean strict,
+ void fetchRecentMovies(int token,LinearLayout recentArea,LinearLayout unknownArea,
+      LinearLayout internationalArea,Set<String> h,Set<String> hc,Set<String> fav,
+      Set<String> langs,boolean strict,Set<String> manual,Set<String> groups){
+  catalogReadIO.execute(()->{
+   try{
+    LibraryStore.RecentMovies result=store.recentMovies(h,hc,fav,langs,strict,manual,groups);
+    runOnUiThread(()->{
+     if(isDestroyed()||token!=browseToken||!"home".equals(screen))return;
+     recentArea.removeAllViews();
+     if(!result.english.isEmpty())
+      homeShelf(recentArea,"NEW & RECENT • ENGLISH MOVIES","movie",result.english);
+     // No speculative "New" label on films lacking an actual release year.
+     // Unknown and foreign films always appear AFTER English shelves.
+     if(!result.unverified.isEmpty())
+      homeShelf(unknownArea,"MORE RECENT • LANGUAGE UNVERIFIED","movie",result.unverified);
+     if(!result.international.isEmpty()){
+      homeShelf(internationalArea,"RECENT INTERNATIONAL MOVIES","movie",result.international);
+     }
+    });
+   }catch(Exception err){
+    runOnUiThread(()->{
+     if(!isDestroyed()&&token==browseToken&&"home".equals(screen))
+      recentArea.removeAllViews();
+    });
+   }
+  });
+ }
+
+ void fetchLanguageShelf(int token,String type,LinearLayout target,String label,
+       boolean international,Set<String> h,Set<String> hc,Set<String> fav,
+       Set<String> lang,boolean strict,Set<String> manual,Set<String> groups){
+  catalogReadIO.execute(()->{
+   try{
+    List<LibraryCore.Item> matches=international?
+      store.featuredInternational(type,24,h,hc,fav,lang,strict,manual,groups):
+      store.featuredEnglish(type,24,h,hc,fav,lang,strict,manual,groups);
+    runOnUiThread(()->{
+     if(isDestroyed()||token!=browseToken||!"home".equals(screen))return;
+     if(matches.isEmpty())return;
+     homeShelf(target,label,type,matches);
+    });
+   }catch(Exception ignored){}
+  });
+ }
+
+ void fetchNorthAmericanShelf(int token,LinearLayout target,Set<String> h,
+      Set<String> hc,Set<String> fav,Set<String> lang,boolean strict,
       Set<String> manual,Set<String> groups){
   catalogReadIO.execute(()->{
    try{
-    LibraryStore.RecentMovies recent=store.recentMovies(h,hc,fav,langs,strict,
-      manual,groups);
-    boolean verified=!recent.english.isEmpty();
-    List<LibraryCore.Item> picks=verified?recent.english:recent.unverified;
+    List<LibraryCore.Item> channels=store.channelDirectory("North America","",
+       h,hc,fav,lang,strict,manual,groups);
+    if(channels.size()>28)channels=new ArrayList<>(channels.subList(0,28));
+    final List<LibraryCore.Item> result=channels;
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||!"home".equals(screen))return;
-     target.removeAllViews();
-     if(!picks.isEmpty()){
-      String title=verified?"NEW & RECENT · ENGLISH MOVIES":
-       "RECENT MOVIES · LANGUAGE UNVERIFIED";
-      homeShelf(target,title,"movie",picks);
-      LibraryCore.Item first=picks.get(0);
-      hero.removeAllViews();
-      hero.addView(homeHero(first),new FrameLayout.LayoutParams(-1,-1));
-     }else{
-      // Never market alphabetical or random titles as new releases.
-      TextView note=text("Recent-release dates aren't available for these titles. "+
-        "Explore the genres below or refresh your provider's catalog.",13);
-      note.setTextColor(MUTED);
-      target.addView(note);
-     }
+     if(!result.isEmpty())
+      homeShelf(target,"NORTH AMERICAN LIVE TV","live",result);
     });
-   }catch(Exception error){
-    runOnUiThread(()->{
-     if(isDestroyed()||token!=browseToken||!"home".equals(screen))return;
-     target.removeAllViews();
-     target.addView(text("Recent movies are temporarily unavailable.",13));
-    });
-   }
+   }catch(Exception ignored){}
   });
  }
 
@@ -487,58 +494,36 @@ public class MainActivity extends Activity {
    try{
     class Genre{
      final LibraryStore.GenreCategory category;
-     final List<LibraryCore.Item> titles;
+     final List<LibraryCore.Item> movies;
      Genre(LibraryStore.GenreCategory c,List<LibraryCore.Item> list){
-      category=c;titles=list;
+      category=c;movies=list;
      }
     }
-    List<Genre> selections=new ArrayList<>();
-    Set<String> picked=new HashSet<>();
-    List<LibraryStore.GenreCategory> available=store.movieGenres();
-    for(LibraryStore.GenreCategory candidate:available){
+    List<Genre> verified=new ArrayList<>();
+    Set<String> unique=new HashSet<>();
+    for(LibraryStore.GenreCategory candidate:store.movieGenres()){
      if(Thread.currentThread().isInterrupted()||token!=browseToken)break;
-     if(selections.size()>=4)break;
-     if(picked.contains(candidate.genre))continue;
+     if(verified.size()>=4)break;
+     if(unique.contains(candidate.genre))continue;
      LibraryStore.Page page=store.page("movie",candidate.name,"",false,false,
-       h,hc,fav,langs,strict,manual,groups,0,18);
-     if(page.rows.size()<2)continue;
-     selections.add(new Genre(candidate,page.rows));
-     picked.add(candidate.genre);
+       h,hc,fav,langs,strict,manual,groups,0,120);
+     List<LibraryCore.Item> english=new ArrayList<>();
+     for(LibraryCore.Item film:page.rows){
+      if(MediaDiscovery.confirmedEnglish(film))english.add(film);
+      if(english.size()>=24)break;
+     }
+     if(english.size()<2)continue;
+     verified.add(new Genre(candidate,english));
+     unique.add(candidate.genre);
     }
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||!"home".equals(screen))return;
      target.removeAllViews();
-     if(selections.isEmpty())return;
-     TextView header=headline("BROWSE BY GENRE",
-       TvLayout.clamp(tv().headingSize()-3,17,25),Color.WHITE);
-     LinearLayout.LayoutParams headerLoc=new LinearLayout.LayoutParams(-1,dp(34));
-     headerLoc.topMargin=dp(9);
-     target.addView(header,headerLoc);
-     HorizontalScrollView chooser=new HorizontalScrollView(this);
-     chooser.setHorizontalScrollBarEnabled(false);
-     target.addView(chooser,new LinearLayout.LayoutParams(-1,dp(42)));
-     LinearLayout chips=new LinearLayout(this);
-     chips.setGravity(Gravity.CENTER_VERTICAL);
-     chooser.addView(chips,new ViewGroup.LayoutParams(-2,-1));
-     for(Genre row:selections){
-      String actualCategory=row.category.name;
-      Button chip=button(row.category.genre,()->openMovieCategory(actualCategory));
-      chip.setTextSize(12);
-      LinearLayout.LayoutParams chipLoc=new LinearLayout.LayoutParams(dp(
-        TvLayout.clamp(row.category.genre.length()*12+35,92,160)),dp(35));
-      chipLoc.rightMargin=dp(8);
-      chips.addView(chip,chipLoc);
-     }
-     for(Genre row:selections)
-      homeShelf(target,row.category.genre+" MOVIES","movie",
-        row.titles,row.category.name);
+     for(Genre row:verified)
+      homeShelf(target,row.category.genre+" • ENGLISH MOVIES",
+         "movie",row.movies,row.category.name);
     });
-   }catch(Exception ignored){
-    runOnUiThread(()->{
-     if(!isDestroyed()&&token==browseToken&&"home".equals(screen))
-      target.removeAllViews();
-    });
-   }
+   }catch(Exception ignored){}
   });
  }
 
@@ -714,6 +699,9 @@ public class MainActivity extends Activity {
   Button more=button(type.equals("personal")?"MY LIST  →":"SEE ALL  →",()->{
    if(type.equals("personal")){
     favOnly=true;hiddenOnly=false;editing=false;page=0;browse();return;
+   }
+   if(type.equals("live")){
+    guideFilter="North America";guideQuery="";guidePage=0;tvGuide();return;
    }
    section=type;category=exactCategory==null?"All":exactCategory;
    query="";page=0;favOnly=false;hiddenOnly=false;editing=false;browse();
