@@ -82,7 +82,7 @@ public final class Provider {
      while(reader.hasNext()){
       if(Thread.currentThread().isInterrupted())throw new IOException("Import cancelled");
       if(reader.peek()!=android.util.JsonToken.BEGIN_OBJECT){reader.skipValue();continue;}
-      String id="",name="",cat="",epg="",ext="",artwork="",language="";
+      String id="",name="",cat="",epg="",ext="",artwork="",language="",releaseDate="",ratingRaw="",addedRaw="";
       reader.beginObject();
       while(reader.hasNext()){
        String key=reader.nextName();
@@ -99,6 +99,15 @@ public final class Provider {
          if(reader.peek()==android.util.JsonToken.STRING){String value=reader.nextString();if(artwork.isEmpty()&&value.startsWith("http"))artwork=value;}else reader.skipValue();break;
         case "language":case "tvg_language":
          if(reader.peek()==android.util.JsonToken.STRING)language=reader.nextString();else reader.skipValue();break;
+        case "releaseDate":case "release_date":case "releasedate":case "year":
+         if(reader.peek()==android.util.JsonToken.STRING||reader.peek()==android.util.JsonToken.NUMBER)
+          releaseDate=reader.nextString();else reader.skipValue();break;
+        case "added":case "added_at":
+         if(reader.peek()==android.util.JsonToken.STRING||reader.peek()==android.util.JsonToken.NUMBER)
+          addedRaw=reader.nextString();else reader.skipValue();break;
+        case "rating":case "rating_10":
+         if(reader.peek()==android.util.JsonToken.STRING||reader.peek()==android.util.JsonToken.NUMBER)
+          ratingRaw=reader.nextString();else reader.skipValue();break;
         case "container_extension":
          if(reader.peek()==android.util.JsonToken.STRING)ext=reader.nextString();else reader.skipValue();break;
         default:reader.skipValue();
@@ -117,6 +126,13 @@ public final class Provider {
         name.isEmpty()?"Untitled":name,names.getOrDefault(cat,"Uncategorized"),
         streamUrl,type,epg,language);
       item.artwork=artwork;
+      item.releaseYear=MediaDiscovery.releaseYear(releaseDate,MediaDiscovery.currentYear());
+      if(item.releaseYear==0)item.releaseYear=MediaDiscovery.yearFromTitle(name,MediaDiscovery.currentYear());
+      try{
+       long timestamp=Long.parseLong(addedRaw.trim());
+       item.addedAt=timestamp>1000000000L && timestamp<5000000000L?timestamp:0;
+      }catch(NumberFormatException ignored){}
+      item.rating=MediaDiscovery.parseRating(ratingRaw);
       output.add(item);
       total++;
       if(total%3000==0)progress.update(kind,total);
