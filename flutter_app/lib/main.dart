@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -54,9 +53,10 @@ class _AuroraShellState extends State<AuroraShell>{
   IptvSource? source;
   int page=0,focusRevision=0;
   final ValueNotifier<int> heroVersion=ValueNotifier<int>(0);
+  final ValueNotifier<int> guideRevision=ValueNotifier<int>(0);
   final List<FocusNode> navFocus=List.generate(7,(i)=>FocusNode(debugLabel:'Nav $i'));
   final ScrollController navScroll=ScrollController();
-  bool ready=false,loading=false,showLogin=false,trailers=false,previewOn=false;
+  bool ready=false,loading=false,showLogin=false,trailers=false,previewOn=true;
   String status='',epgUrl='';
   MediaEntry? featured;
   MovieMeta meta=const MovieMeta();
@@ -79,12 +79,13 @@ class _AuroraShellState extends State<AuroraShell>{
       final prefs=await SharedPreferences.getInstance();
       epgUrl=prefs.getString('epg.url')??'';
       trailers=prefs.getBool('trailers')??false;
-      previewOn=prefs.getBool('preview')??false;
+      previewOn=prefs.getBool('preview')??true;
       englishFirst=prefs.getBool('english.first')??true;
       await _reload();
       if(!mounted)return;
       setState((){ready=true;showLogin=source==null;});
       _getTrends();
+      if(source!=null) _refreshEpg(silent:true);
     }catch(e){if(mounted)setState((){status='Startup failed: $e';ready=true;showLogin=true;});}
   }
   Future<void> _reload() async{
@@ -141,6 +142,7 @@ class _AuroraShellState extends State<AuroraShell>{
       if(!mounted)return;
       setState((){loading=false;showLogin=false;status='Imported $count titles and channels';page=0;});
       _getTrends();
+      _refreshEpg(silent:true);
     }catch(e){if(mounted)setState((){loading=false;status=e.toString();});}
   }
   Future<void> _refresh()async{
@@ -155,13 +157,14 @@ class _AuroraShellState extends State<AuroraShell>{
       _getTrends();
     }catch(e){if(mounted)setState((){loading=false;status='Refresh failed: $e';});}
   }
-  Future<void> _refreshEpg() async{
+  Future<void> _refreshEpg({bool silent=false}) async{
     if(source==null)return;
-    setState((){loading=true;status='Importing programme information…';});
+    if(!silent)setState((){loading=true;status='Importing programme information…';});
     try{
       final count=await epg.refresh(source!,db,externalUrl:epgUrl);
-      if(mounted)setState((){loading=false;status='Updated $count real EPG programmes';});
-    }catch(e){if(mounted)setState((){loading=false;status='EPG error: $e';});}
+      if(mounted){if(!silent)setState((){loading=false;status='Updated $count real EPG programmes';});
+        guideRevision.value++;}
+    }catch(e){if(mounted&&!silent)setState((){loading=false;status='EPG error: $e';});}
   }
   void _openCatalog(MediaKind kind){
     Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>CatalogBrowseScreen(
@@ -185,9 +188,14 @@ class _AuroraShellState extends State<AuroraShell>{
     List<MediaEntry> loaded;
     if(group=='North America'){
       final all=await db.list(MediaKind.live,limit:12000);
-      loaded=ChannelLineup.curated(all);
-      if(loaded.isEmpty)loaded=all.where((e)=>e.likelyEnglish).take(160).toList();
-      if(loaded.isEmpty)loaded=all.take(160).toList();
+      final curated=ChannelLineup.curated(all);
+      // Keep the published channel-number ordering, then include other
+      // English-language provider stations rather than cutting at 32 matches.
+      final used=curated.map((e)=>e.id).toSet();
+      final extras=all.where((e)=>!used.contains(e.id)&&e.likelyEnglish).toList()
+        ..sort((a,b)=>a.cleanTitle.compareTo(b.cleanTitle));
+      loaded=[...curated,...extras];
+      if(loaded.isEmpty)loaded=all.take(350).toList();
     }else{
       loaded=await db.list(MediaKind.live,category:group=='Favorites'?'All':group,
         favorites:group=='Favorites',limit:250);
@@ -301,7 +309,7 @@ class _AuroraShellState extends State<AuroraShell>{
   }
   @override void dispose(){
     db.close();provider.dispose();tmdb.dispose();epg.dispose();
-    heroVersion.dispose();
+    heroVersion.dispose();guideRevision.dispose();
     for(final node in navFocus){node.dispose();}
     navScroll.dispose();
     super.dispose();
@@ -321,8 +329,7 @@ class _AuroraShellState extends State<AuroraShell>{
           child:isCinema&&featured!=null
           ?meta.backdrop.isNotEmpty
             ?artwork(meta.backdrop,fit:BoxFit.cover)
-            :ImageFiltered(imageFilter:ui.ImageFilter.blur(sigmaX:27,sigmaY:27),
-              child:artwork(featured!.artwork,fit:BoxFit.cover))
+            :artwork(featured!.artwork,fit:BoxFit.cover)
           :const SizedBox.shrink())))),
       if(isCinema)Positioned.fill(child:DecoratedBox(decoration:BoxDecoration(
         gradient:LinearGradient(begin:Alignment.centerLeft,end:Alignment.centerRight,
@@ -338,7 +345,7 @@ class _AuroraShellState extends State<AuroraShell>{
           _discovery(MediaKind.movie,home:true),
           GuideScreen(db:db,channels:live,groups:groups[MediaKind.live]??[],
             group:channelGroup,onGroup:_loadLive,onPlay:_open,previewOn:previewOn,
-            source:source,refreshEpg:_refreshEpg),
+            source:source,refreshEpg:()=>_refreshEpg(),revision:guideRevision),
           _discovery(MediaKind.movie),
           _discovery(MediaKind.series),
           _myList(),
@@ -388,9 +395,6 @@ class _AuroraShellState extends State<AuroraShell>{
       return ListView(padding:EdgeInsets.zero,children:[
         SizedBox(height:heroHeight,child:ValueListenableBuilder<int>(valueListenable:heroVersion,
           builder:(_,__,___)=>Stack(children:[
-          if(meta.backdrop.isEmpty && featured?.artwork.isNotEmpty==true)
-            Positioned(right:36,top:12,bottom:12,width:heroHeight*.52,
-              child:Opacity(opacity:.95,child:artwork(featured!.artwork,fit:BoxFit.contain))),
           Align(alignment:Alignment.centerLeft,
             child:Padding(padding:const EdgeInsets.fromLTRB(34,12,0,6),
               child:ConstrainedBox(
@@ -816,16 +820,17 @@ class GuideScreen extends StatefulWidget{
  final String group;final Future<void> Function({String group}) onGroup;
  final void Function(MediaEntry) onPlay;final bool previewOn;
  final IptvSource? source;final VoidCallback refreshEpg;
+ final ValueNotifier<int> revision;
  const GuideScreen({super.key,required this.db,required this.channels,required this.groups,
    required this.group,required this.onGroup,required this.onPlay,required this.previewOn,
-   required this.source,required this.refreshEpg});
+   required this.source,required this.refreshEpg,required this.revision});
  @override State<GuideScreen> createState()=>_GuideScreenState();
 }
 class _GuideScreenState extends State<GuideScreen>{
  DateTime anchor=DateTime.now();
  Map<String,List<TvProgramme>> programs={};
  MediaEntry? focused;Timer? debounce;VideoPlayerController? preview;
- @override void initState(){super.initState();_load();}
+ @override void initState(){super.initState();widget.revision.addListener(_loadForAnchor);_load();}
  @override void didUpdateWidget(covariant GuideScreen old){
    super.didUpdateWidget(old);
    if(old.channels!=widget.channels||old.group!=widget.group)_load();
@@ -852,7 +857,7 @@ class _GuideScreenState extends State<GuideScreen>{
      }catch(_){/* Optional PiP must never prevent guide navigation. */}
    });
  }
- @override void dispose(){debounce?.cancel();preview?.dispose();super.dispose();}
+ @override void dispose(){widget.revision.removeListener(_loadForAnchor);debounce?.cancel();preview?.dispose();super.dispose();}
  @override Widget build(BuildContext context){
    final channels=widget.channels;
    final selected=focused??(channels.isNotEmpty?channels.first:null);
