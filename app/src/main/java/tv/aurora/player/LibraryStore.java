@@ -42,6 +42,8 @@ public final class LibraryStore extends SQLiteOpenHelper {
         super(context, DATABASE, null, VERSION);
         this.context = context.getApplicationContext();
         preferences = this.context.getSharedPreferences("aurora_catalog", Context.MODE_PRIVATE);
+        // Permit catalog reads while another thread imports subsequent media types.
+        setWriteAheadLoggingEnabled(true);
     }
 
     @Override public void onCreate(SQLiteDatabase db) {
@@ -240,26 +242,33 @@ public final class LibraryStore extends SQLiteOpenHelper {
         }
     }
 
-    public Writer writer() throws Exception { return new Writer(); }
+    public Writer writer() throws Exception { return new Writer(false); }
+    /** Incrementally add film/series catalogues after Live TV is already usable. */
+    public Writer appendWriter() throws Exception { return new Writer(true); }
 
     public final class Writer implements AutoCloseable {
         private final SQLiteDatabase database;
         private final SQLiteStatement insert;
+        private final boolean append;
         private int count;
         private boolean committed;
         private boolean closed;
 
-        private Writer() throws Exception {
+        private Writer(boolean append) throws Exception {
+            this.append=append;
             key();
-            database = getWritableDatabase();
+            database=getWritableDatabase();
             database.beginTransaction();
             try {
-                database.execSQL("DROP TABLE IF EXISTS staging");
-                database.execSQL("CREATE TABLE staging " + COLUMNS);
-                insert = database.compileStatement(
-                        "INSERT OR REPLACE INTO staging(item_id,name,category,type,epg,language,url,artwork)" +
-                        " VALUES (?,?,?,?,?,?,?,?)");
-            } catch (Exception error) {
+                if(!append){
+                    database.execSQL("DROP TABLE IF EXISTS staging");
+                    database.execSQL("CREATE TABLE staging " + COLUMNS);
+                }
+                insert=database.compileStatement(
+                    "INSERT OR REPLACE INTO "+(append?"entries":"staging")+
+                    "(item_id,name,category,type,epg,language,url,artwork)" +
+                    " VALUES (?,?,?,?,?,?,?,?)");
+            } catch(Exception error) {
                 database.endTransaction();
                 throw error;
             }
@@ -287,10 +296,12 @@ public final class LibraryStore extends SQLiteOpenHelper {
 
         public void commit() throws Exception {
             if (count == 0) throw new IllegalStateException("No supported titles found");
-            database.execSQL("DROP TABLE entries");
-            database.execSQL("ALTER TABLE staging RENAME TO entries");
-            database.execSQL("CREATE INDEX entry_type_row ON entries(type,row_id)");
-            database.execSQL("CREATE INDEX entry_type_category ON entries(type,category,row_id)");
+            if(!append){
+                database.execSQL("DROP TABLE entries");
+                database.execSQL("ALTER TABLE staging RENAME TO entries");
+                database.execSQL("CREATE INDEX entry_type_row ON entries(type,row_id)");
+                database.execSQL("CREATE INDEX entry_type_category ON entries(type,category,row_id)");
+            }
             database.setTransactionSuccessful();
             database.endTransaction();
             committed = true;
