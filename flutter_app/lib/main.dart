@@ -664,36 +664,137 @@ class PlayerScreen extends StatefulWidget{
  @override State<PlayerScreen> createState()=>_PlayerScreenState();
 }
 class _PlayerScreenState extends State<PlayerScreen>{
- VideoPlayerController? video;String error='';bool buffering=true;
+ VideoPlayerController? video;
+ String error='';
+ bool buffering=true,controls=true;
+ Timer? hideTimer;
+ int attempt=0;
  @override void initState(){super.initState();_init();}
  Future<void> _init() async{
+  final revision=++attempt;
+  final previous=video;
+  video=null;
+  previous?.removeListener(_monitor);
+  await previous?.dispose();
+  if(!mounted||revision!=attempt)return;
+  setState((){buffering=true;error='';});
   final controller=VideoPlayerController.networkUrl(Uri.parse(widget.url));
   video=controller;
+  controller.addListener(_monitor);
   try{
-    await controller.initialize().timeout(const Duration(seconds:20));
-    if(!mounted)return;
+    await controller.initialize().timeout(const Duration(seconds:22));
+    if(!mounted||revision!=attempt){await controller.dispose();return;}
     await controller.play();
+    _showControls();
     setState(()=>buffering=false);
-  }catch(e){if(mounted)setState((){error='Unable to play stream. $e';buffering=false;});}
+  }catch(e){
+    if(mounted&&revision==attempt)setState((){
+      error='Unable to play stream. Check your provider or retry.';
+      buffering=false;
+    });
+  }
  }
- @override void dispose(){video?.dispose();super.dispose();}
- @override Widget build(BuildContext context)=>Scaffold(body:Stack(children:[
-   Positioned.fill(child:video?.value.isInitialized==true?
-     FittedBox(fit:BoxFit.contain,child:SizedBox(
-       width:video!.value.size.width,height:video!.value.size.height,
-       child:VideoPlayer(video!))):
-     const ColoredBox(color:Colors.black)),
-   Positioned(top:20,left:25,child:Row(children:[
-     IconButton(onPressed:()=>Navigator.pop(context),icon:const Icon(Icons.arrow_back)),
-     Text(widget.title,style:const TextStyle(fontSize:21,fontWeight:FontWeight.w700)),
-   ])),
-   if(buffering)const Center(child:CircularProgressIndicator()),
-   if(error.isNotEmpty)Center(child:Column(mainAxisSize:MainAxisSize.min,children:[
-     Text(error,textAlign:TextAlign.center),
-     const SizedBox(height:12),
-     AuroraButton(text:'Retry',onPressed:(){video?.dispose();setState(()=>error='');_init();}),
-   ])),
- ]));
+ void _monitor(){
+  final v=video;
+  if(!mounted||v==null)return;
+  if(v.value.hasError&&error.isEmpty){
+    setState(()=>error=v.value.errorDescription??'Playback error');
+  }
+  if(buffering!=v.value.isBuffering && v.value.isInitialized){
+    setState(()=>buffering=v.value.isBuffering);
+  }
+ }
+ void _showControls(){
+  hideTimer?.cancel();
+  if(mounted)setState(()=>controls=true);
+  hideTimer=Timer(const Duration(seconds:7),(){
+    if(mounted&&video?.value.isPlaying==true)setState(()=>controls=false);
+  });
+ }
+ void _seek(Duration delta){
+  final v=video;
+  if(v==null||!v.value.isInitialized||v.value.duration.inSeconds<=0)return;
+  final position=v.value.position+delta;
+  final bounded=position<Duration.zero?Duration.zero:
+    position>v.value.duration?v.value.duration:position;
+  v.seekTo(bounded);_showControls();
+ }
+ @override void dispose(){
+  ++attempt;hideTimer?.cancel();
+  video?.removeListener(_monitor);video?.dispose();
+  super.dispose();
+ }
+ @override Widget build(BuildContext context){
+  final v=video;
+  final initialized=v?.value.isInitialized==true;
+  final duration=initialized?v!.value.duration:Duration.zero;
+  final position=initialized?v!.value.position:Duration.zero;
+  final seekable=duration.inSeconds>0&&duration< const Duration(days:1);
+  return Scaffold(body:Focus(
+   autofocus:true,onKeyEvent:(_,event){
+     if(event is! KeyDownEvent)return KeyEventResult.ignored;
+     if(event.logicalKey==LogicalKeyboardKey.arrowLeft&&seekable){
+       _seek(const Duration(seconds:-10));return KeyEventResult.handled;
+     }
+     if(event.logicalKey==LogicalKeyboardKey.arrowRight&&seekable){
+       _seek(const Duration(seconds:10));return KeyEventResult.handled;
+     }
+     if(event.logicalKey==LogicalKeyboardKey.select ||
+       event.logicalKey==LogicalKeyboardKey.enter ||
+       event.logicalKey==LogicalKeyboardKey.space){
+       if(initialized){v!.value.isPlaying?v.pause():v.play();_showControls();}
+       return KeyEventResult.handled;
+     }
+     _showControls();return KeyEventResult.ignored;
+   },
+   child:GestureDetector(
+    behavior:HitTestBehavior.opaque,
+    onTap:_showControls,
+    child:Stack(children:[
+      Positioned.fill(child:initialized?
+       FittedBox(fit:BoxFit.contain,child:SizedBox(
+         width:v.value.size.width,height:v.value.size.height,child:VideoPlayer(v))):
+       const ColoredBox(color:Colors.black)),
+      if(controls||error.isNotEmpty)Positioned(top:0,left:0,right:0,
+        child:Container(padding:const EdgeInsets.symmetric(vertical:12,horizontal:20),
+          color:Colors.black54,child:Row(children:[
+          IconButton(onPressed:()=>Navigator.pop(context),icon:const Icon(Icons.arrow_back)),
+          Expanded(child:Text(widget.title,maxLines:1,overflow:TextOverflow.ellipsis,
+            style:const TextStyle(fontSize:19,fontWeight:FontWeight.w700))),
+          IconButton(tooltip:'Retry playback',onPressed:_init,icon:const Icon(Icons.refresh)),
+        ]))),
+      if(buffering)const Center(child:CircularProgressIndicator(color:C.aqua)),
+      if(error.isNotEmpty)Center(child:Container(
+        padding:const EdgeInsets.all(26),color:Colors.black87,
+        child:Column(mainAxisSize:MainAxisSize.min,children:[
+          Text(error,textAlign:TextAlign.center),
+          const SizedBox(height:12),
+          AuroraButton(text:'Retry',onPressed:_init),
+        ]))),
+      if(controls&&initialized&&error.isEmpty)Positioned(
+        left:28,right:28,bottom:22,child:Container(
+          padding:const EdgeInsets.all(10),color:Colors.black54,
+          child:Row(children:[
+            IconButton(onPressed:(){
+              v.value.isPlaying?v.pause():v.play();_showControls();
+            },icon:Icon(v.value.isPlaying?Icons.pause:Icons.play_arrow,size:30)),
+            if(seekable)...[
+              IconButton(onPressed:()=>_seek(const Duration(seconds:-10)),
+                icon:const Icon(Icons.replay_10)),
+              Expanded(child:Slider(
+                value:position.inMilliseconds.clamp(0,duration.inMilliseconds).toDouble(),
+                max:math.max(1,duration.inMilliseconds).toDouble(),
+                onChanged:(n){v.seekTo(Duration(milliseconds:n.round()));_showControls();})),
+              IconButton(onPressed:()=>_seek(const Duration(seconds:10)),
+                icon:const Icon(Icons.forward_10)),
+            ]else const Expanded(child:Text('LIVE',style:TextStyle(color:C.aqua,
+              fontWeight:FontWeight.w800))),
+          ]),
+        )),
+    ]),
+   ),
+  ));
+ }
 }
 
 class GuideScreen extends StatefulWidget{
