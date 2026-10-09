@@ -70,7 +70,7 @@ public final class GuidePreviewPane implements AutoCloseable {
         videoSurface.setBackground(panel(0xff192d42));
         videoSurface.setClipToOutline(true);
         int paneHeight=TvLayout.clamp((int)(metrics.heightDp*.15),65,138);
-        int height=Math.max(55,paneHeight-18);
+        int height=Math.max(40,paneHeight-18);
         int width=(int)Math.round(height*16.0/9.0);
         container.addView(videoSurface,new LinearLayout.LayoutParams(dp(width),dp(height)));
         channelArtwork=new ImageView(activity);
@@ -82,17 +82,24 @@ public final class GuidePreviewPane implements AutoCloseable {
         content.setOrientation(LinearLayout.VERTICAL);content.setGravity(Gravity.CENTER_VERTICAL);
         content.setPadding(dp(19),0,0,0);
         container.addView(content,new LinearLayout.LayoutParams(0,-1,1));
-        TextView eyebrow=text("AUTO PREVIEW  ·  MUTED",12,0xff5debd0);
-        eyebrow.setLetterSpacing(.1f);content.addView(eyebrow);
-        title=text("Highlight a channel",TvLayout.clamp(metrics.bodySize()+5,20,29),Color.WHITE);
+        boolean compact=metrics.heightDp<700;
+        TextView eyebrow=text("AUTO PREVIEW  ·  MUTED",11,0xff5debd0);
+        eyebrow.setLetterSpacing(.1f);
+        if(!compact)content.addView(eyebrow);
+        title=text("Highlight a channel",compact?16:TvLayout.clamp(metrics.bodySize()+5,20,29),Color.WHITE);
+        if(compact)title.setMaxLines(1);
         title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);content.addView(title);
-        category=text("Browse to see what's playing",13,0xff9eafc2);content.addView(category);
-        now=text("NOW  ·  No channel selected",14,Color.WHITE);
-        LinearLayout.LayoutParams n=new LinearLayout.LayoutParams(-1,-2);n.topMargin=dp(7);
+        category=text("Browse to see what's playing",13,0xff9eafc2);
+        if(!compact)content.addView(category);
+        now=text("NOW  ·  No channel selected",compact?12:14,Color.WHITE);
+        if(compact)now.setMaxLines(1);
+        LinearLayout.LayoutParams n=new LinearLayout.LayoutParams(-1,-2);n.topMargin=dp(compact?2:7);
         content.addView(now,n);
-        next=text("NEXT  ·  —",13,0xffb3c9d4);content.addView(next);
-        status=text("Preview starts when a channel is highlighted.",12,0xff6fd6c9);
-        LinearLayout.LayoutParams st=new LinearLayout.LayoutParams(-1,-2);st.topMargin=dp(8);
+        next=text("NEXT  ·  —",13,0xffb3c9d4);
+        if(!compact)content.addView(next);
+        status=text("Preview starts when highlighted.",compact?10:12,0xff6fd6c9);
+        if(compact)status.setMaxLines(1);
+        LinearLayout.LayoutParams st=new LinearLayout.LayoutParams(-1,-2);st.topMargin=dp(compact?2:8);
         content.addView(status,st);
     }
     public void highlight(LibraryCore.Item item,GuideEngine.Slot slot) {
