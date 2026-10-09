@@ -23,7 +23,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV3",false)){
     // Prior versions auto-enabled strict mode for English-only libraries,
@@ -340,6 +340,7 @@ public class MainActivity extends Activity {
 
  boolean visible(LibraryCore.Item i){return LibraryCore.visible(i,hidden,categories,favorites,allowed,hideUnknown,shown,shownCategories);}
  void home(){
+  stopGuidePreview();
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="home";refreshSidebar();
   final int token=++browseToken;
@@ -793,6 +794,7 @@ public class MainActivity extends Activity {
  }
 
  void browse(){
+  stopGuidePreview();
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="browse";refreshSidebar();
   final int token=++browseToken;
@@ -982,7 +984,11 @@ public class MainActivity extends Activity {
   String time=displayTime(p.start)+" – "+displayTime(p.end);
   return p.title+"\n"+time;
  }
+ void stopGuidePreview(){
+  if(guidePreview!=null){guidePreview.close();guidePreview=null;}
+ }
  void tvGuide(){
+  stopGuidePreview();
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="guide";section="live";refreshSidebar();
   final int token=++browseToken;
@@ -1031,7 +1037,13 @@ public class MainActivity extends Activity {
      clock.setTextColor(ACCENT);clock.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
      meta.addView(clock,new LinearLayout.LayoutParams(dp(
        TvLayout.clamp(metrics.contentWidth()/4,110,235)),dp(46)));
-     TextView helper=text("Channel schedules are shown in your local time. Select a channel to watch.",13);
+     LinearLayout previewArea=new LinearLayout(this);
+     int previewHeight=TvLayout.clamp((int)(metrics.heightDp*.255),104,220);
+     LinearLayout.LayoutParams previewPosition=new LinearLayout.LayoutParams(-1,dp(previewHeight));
+     previewPosition.topMargin=dp(6);
+     body.addView(previewArea,previewPosition);
+     guidePreview=new GuidePreviewPane(this,store,posters,previewArea,metrics);
+     TextView helper=text("Highlight a channel to preview silently · Select to watch · Long press for options",13);
      helper.setTextColor(MUTED);body.addView(helper);
 
      HorizontalScrollView horizontal=new HorizontalScrollView(this);
@@ -1066,7 +1078,17 @@ public class MainActivity extends Activity {
       row.setBackground(rounded(n%2==0?0xff111f32:0xff13253a,10,0xff20364a));
       LinearLayout.LayoutParams rowMargins=new LinearLayout.LayoutParams(-1,dp(rowHeight+7));
       rowMargins.topMargin=dp(5);feed.addView(row,rowMargins);
-      Button watch=button("▶  "+channel.name,()->showLivePreview(channel));
+      Button watch=button("▶  "+channel.name,()->open(channel));
+      final GuidePreviewPane preview=guidePreview;
+      final boolean lightRow=n%2==0;
+      watch.setOnFocusChangeListener((view,focused)->{
+       row.setBackground(rounded(focused?0xff1d4655:(lightRow?0xff111f32:0xff13253a),
+          10,focused?ACCENT:0xff20364a));
+       watch.setBackground(rounded(focused?ACCENT:PANEL,11,focused?ACCENT:0xff26374b));
+       watch.setTextColor(focused?BG:Color.WHITE);
+       watch.setScaleX(focused?1.025f:1f);watch.setScaleY(focused?1.025f:1f);
+       if(focused&&preview!=null)preview.highlight(channel,slot);
+      });
       watch.setTextSize(TvLayout.clamp(metrics.bodySize(),14,18));
       watch.setGravity(Gravity.CENTER_VERTICAL|Gravity.LEFT);
       watch.setSingleLine(false);watch.setMaxLines(2);
@@ -1114,6 +1136,18 @@ public class MainActivity extends Activity {
      }
      queueVisibleShortEpg(result.rows,listings,cells,token);
      scheduleGuideSync(false,true);
+     if(!result.rows.isEmpty()){
+      // Initial highlighted row automatically schedules its muted preview.
+      for(int i=0;i<feed.getChildCount();i++){
+       View child=feed.getChildAt(i);
+       if(child instanceof LinearLayout && ((LinearLayout)child).getChildCount()>0){
+        View first=((LinearLayout)child).getChildAt(0);
+        if(first instanceof Button && ((Button)first).getText().toString().startsWith("▶")){
+         first.requestFocus();break;
+        }
+       }
+      }
+     }
     });
    }catch(Exception error){
     runOnUiThread(()->{
@@ -1856,6 +1890,7 @@ public class MainActivity extends Activity {
   posters.clearMemory();
  }
  void play(LibraryCore.Item media){
+  stopGuidePreview();
   if(media==null||media.url==null||media.url.isEmpty()){
    toast("No playable stream URL is available");return;
   }
@@ -1913,6 +1948,7 @@ public class MainActivity extends Activity {
   }else if(!loading)super.onBackPressed();
  }
  @Override protected void onStop(){
+  stopGuidePreview();
   if(livePreview!=null){livePreview.dismiss();livePreview=null;}
   // Never keep a hardware video decoder or wake lock running in background.
   if(playbackScreen!=null){
@@ -1942,6 +1978,7 @@ public class MainActivity extends Activity {
  }
  @Override protected void onDestroy(){
   generation++;browseToken++;
+  stopGuidePreview();
   if(pendingGuideUpdate!=null)uiHandler.removeCallbacks(pendingGuideUpdate);
   if(livePreview!=null){livePreview.dismiss();livePreview=null;}
   release();io.shutdownNow();posters.close();epgRefreshIO.shutdownNow();shortEpgIO.shutdownNow();store.close();epg.close();
