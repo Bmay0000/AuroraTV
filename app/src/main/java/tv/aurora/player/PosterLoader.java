@@ -82,9 +82,9 @@ public final class PosterLoader implements AutoCloseable {
             try{artwork=getOrFetch(url);}
             catch(Exception ignored){}
             finally{
-                boolean current=inFlight.remove(url,fresh);
+                boolean stillCurrent=inFlight.remove(url,fresh);
                 java.util.concurrent.CopyOnWriteArrayList<WeakReference<ImageView>> receivers=
-                    current?fresh:null;
+                    stillCurrent?fresh:null;
                 final Bitmap result=artwork;
                 if(result!=null && receivers!=null)
                     activity.runOnUiThread(()->{
