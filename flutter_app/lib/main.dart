@@ -890,7 +890,11 @@ class _GuideScreenState extends State<GuideScreen>{
      // Start the embedded Live TV preview immediately on guide entry.
      // No separate picture-in-picture action is required.
      if(widget.channels.isNotEmpty&&focused==null){
-       _shortGuide(widget.channels.first);
+       // Load only immediately visible rows as a low-cost fallback;
+       // preserve the rest for on-demand navigation.
+       for(final station in widget.channels.take(8)){
+         _shortGuide(station);
+       }
        WidgetsBinding.instance.addPostFrameCallback((_){
          if(mounted)_focus(widget.channels.first);
        });
