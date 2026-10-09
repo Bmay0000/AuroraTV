@@ -160,7 +160,8 @@ class _AuroraShellState extends State<AuroraShell>{
     if(index==1)_loadLive();
   }
   Future<void> _loadLive({String group='All'}) async{
-    final loaded=await db.list(MediaKind.live,category:group,limit:120);
+    final loaded=await db.list(MediaKind.live,category:group=='Favorites'?'All':group,
+      favorites:group=='Favorites',limit:120);
     if(mounted)setState((){live=loaded;channelGroup=group;});
   }
   Future<void> _toggle(MediaEntry item,{bool hide=false})async{
@@ -671,7 +672,7 @@ class _GuideScreenState extends State<GuideScreen>{
        SizedBox(width:152,child:ListView.builder(itemCount:categoryGroups.length,
          itemBuilder:(ctx,i)=>AuroraButton(
            text:categoryGroups[i],selected:categoryGroups[i]==widget.group,
-           onPressed:()=>widget.onGroup(group:categoryGroups[i]=='Favorites'?'All':categoryGroups[i])))),
+           onPressed:()=>widget.onGroup(group:categoryGroups[i])))),
        const SizedBox(width:8),
        Expanded(child:Column(children:[
          Container(height:35,color:const Color(0xff20313f),
