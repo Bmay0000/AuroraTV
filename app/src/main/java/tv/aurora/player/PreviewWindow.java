@@ -221,6 +221,9 @@ public final class PreviewWindow {
         // Stop all preview media surfaces; the poster remains underneath.
         if(videoBox.getChildCount()>1)videoBox.removeViews(1,videoBox.getChildCount()-1);
     }
+    public void dismiss(){
+        if(!disposed)dialog.dismiss();
+    }
     private void closePlayer(){
         disposed=true;
         stopPreview();
