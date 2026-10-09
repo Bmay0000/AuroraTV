@@ -861,17 +861,39 @@ class _PlayerScreenState extends State<PlayerScreen>{
  }
  Future<void> _episodePicker()async{
   if(widget.episodes.isEmpty)return;
-  final selected=await showModalBottomSheet<MediaEntry>(context:context,
+  final grouped=<int,List<MediaEntry>>{};
+  for(final e in widget.episodes){
+   final match=RegExp(r'Season\s*(\d+)',caseSensitive:false).firstMatch(e.category);
+   final season=int.tryParse(match?.group(1)??'')??0;
+   grouped.putIfAbsent(season,()=>[]).add(e);
+  }
+  final sorted=grouped.keys.toList()..sort();
+  final picked=await showModalBottomSheet<MediaEntry>(context:context,
    backgroundColor:const Color(0xff101e29),isScrollControlled:true,
-   builder:(ctx)=>SafeArea(child:SizedBox(height:math.min(MediaQuery.sizeOf(ctx).height*.75,600),
-    child:Column(children:[const Padding(padding:EdgeInsets.all(16),child:Text('EPISODES',
-      style:TextStyle(fontSize:20,fontWeight:FontWeight.bold))),
-      Expanded(child:ListView.builder(itemCount:widget.episodes.length,itemBuilder:(ctx,i){
-       final ep=widget.episodes[i];
-       return ListTile(title:Text(ep.title),subtitle:Text(ep.category),
-         trailing:const Icon(Icons.play_arrow),onTap:()=>Navigator.pop(ctx,ep));
-      }))])));
-  if(selected!=null&&mounted)_selectEpisode(selected);
+   builder:(ctx){
+    var season=sorted.first;
+    return StatefulBuilder(builder:(ctx,rebuild)=>SafeArea(child:SizedBox(
+     height:math.min(MediaQuery.sizeOf(ctx).height*.78,600),
+     child:Column(children:[
+      Padding(padding:const EdgeInsets.symmetric(horizontal:20,vertical:10),
+       child:Row(children:[
+        const Expanded(child:Text('SEASONS & EPISODES',style:TextStyle(
+          fontSize:19,fontWeight:FontWeight.bold))),
+        DropdownButton<int>(value:season,dropdownColor:const Color(0xff1a2e3c),
+         items:[for(final key in sorted)DropdownMenuItem(value:key,
+           child:Text(key==0?'Specials':'Season $key'))],
+         onChanged:(value){if(value!=null)rebuild(()=>season=value);}),
+       ])),
+      Expanded(child:ListView.builder(itemCount:grouped[season]!.length,
+       itemBuilder:(ctx,i){
+        final ep=grouped[season]![i];
+        return ListTile(title:Text(ep.title,maxLines:2,overflow:TextOverflow.ellipsis),
+         subtitle:Text(ep.category),trailing:const Icon(Icons.play_arrow),
+         onTap:()=>Navigator.pop(ctx,ep));
+       })),
+     ]))));
+   });
+  if(picked!=null&&mounted)_selectEpisode(picked);
  }
  void _showControls(){
   hideTimer?.cancel();
