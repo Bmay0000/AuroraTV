@@ -51,6 +51,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
             }
         };
     private volatile int cacheRevision;
+    private long cacheHits,cacheMisses;
 
     public void invalidateBrowseCache(){
         synchronized(uiCache){cacheRevision++;uiCache.clear();}
@@ -59,7 +60,15 @@ public final class LibraryStore extends SQLiteOpenHelper {
     @SuppressWarnings("unchecked")
     private <T> T cached(String key,int revision){
         synchronized(uiCache){
-            return revision==cacheRevision?(T)uiCache.get(revision+":"+key):null;
+            Object match=revision==cacheRevision?uiCache.get(revision+":"+key):null;
+            if(match!=null)cacheHits++;else cacheMisses++;
+            return (T)match;
+        }
+    }
+    public String cacheDiagnostics(){
+        synchronized(uiCache){
+            return "Saved browse results: "+uiCache.size()+
+                "\nCache hits: "+cacheHits+" · misses: "+cacheMisses;
         }
     }
     private void cache(String key,Object value,int revision){
