@@ -30,6 +30,7 @@ jobs:
         working-directory: flutter_app
         run: |
           flutter create --platforms=android --project-name aurora_tv --org tv.aurora --no-pub .
+          rm -f test/widget_test.dart
           python3 - <<'PY'
           from pathlib import Path
           p=Path('android/app/src/main/AndroidManifest.xml')
