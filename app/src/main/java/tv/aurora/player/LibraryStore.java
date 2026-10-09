@@ -474,9 +474,9 @@ public final class LibraryStore extends SQLiteOpenHelper {
         String cleanQuery=query==null?"":query.trim().toLowerCase(java.util.Locale.ROOT);
         String tabName=tab==null?"North America":tab;
         String cacheKey="directory:"+tabName+"|"+cleanQuery;
-        boolean allowCache=cleanQuery.isEmpty() &&
-            !"All".equals(tabName)&&!"More North America".equals(tabName)&&
-            !"International".equals(tabName)&&!"Other".equals(tabName);
+        // Cache every filtered guide section, including All/International.
+        // All Streams is capped below to avoid retaining huge provider lists.
+        boolean allowCache=cleanQuery.isEmpty();
         if(allowCache){
             List<LibraryCore.Item> prior=cached(cacheKey,rev);
             if(prior!=null)return prior;
@@ -499,7 +499,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
         }
         if(Thread.currentThread().isInterrupted())return new ArrayList<>();
         List<LibraryCore.Item> selected=ChannelDiscovery.curate(matches,tabName,!cleanQuery.isEmpty());
-        if(allowCache&&selected.size()<650)cache(cacheKey,selected,rev);
+        if(allowCache&&selected.size()<4500)cache(cacheKey,selected,rev);
         return selected;
     }
 
