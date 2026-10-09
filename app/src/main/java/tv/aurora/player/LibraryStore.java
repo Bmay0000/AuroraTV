@@ -250,13 +250,16 @@ public final class LibraryStore extends SQLiteOpenHelper {
         private final SQLiteDatabase database;
         private final SQLiteStatement insert;
         private final boolean append;
+        private final Cipher writerCipher;
+        private final SecretKey writerKey;
         private int count;
         private boolean committed;
         private boolean closed;
 
         private Writer(boolean append) throws Exception {
             this.append=append;
-            key();
+            writerKey=key();
+            writerCipher=Cipher.getInstance("AES/GCM/NoPadding");
             database=getWritableDatabase();
             database.beginTransaction();
             try {
@@ -278,6 +281,17 @@ public final class LibraryStore extends SQLiteOpenHelper {
             insert.bindString(index, s == null ? "" : s);
         }
 
+        private byte[] encryptedUrl(String value) throws Exception {
+            byte[] iv=new byte[12];
+            RANDOM.nextBytes(iv);
+            writerCipher.init(Cipher.ENCRYPT_MODE,writerKey,new GCMParameterSpec(128,iv));
+            byte[] data=writerCipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
+            byte[] result=new byte[iv.length+data.length];
+            System.arraycopy(iv,0,result,0,iv.length);
+            System.arraycopy(data,0,result,iv.length,data.length);
+            return result;
+        }
+
         public void add(LibraryCore.Item item) throws Exception {
             insert.clearBindings();
             bind(1, item.id);
@@ -286,7 +300,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
             bind(4, item.type);
             bind(5, item.epgId);
             bind(6, item.language);
-            insert.bindBlob(7, encrypt(item.url == null ? "" : item.url));
+            insert.bindBlob(7, encryptedUrl(item.url == null ? "" : item.url));
             bind(8, item.artwork);
             insert.executeInsert();
             count++;
