@@ -23,7 +23,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV3",false)){
     // Prior versions auto-enabled strict mode for English-only libraries,
@@ -109,6 +109,9 @@ public class MainActivity extends Activity {
    shell();
    home();
   }else restoreAccountOrLogin();
+  if(store.hasLibrary()&&!prefs.getString("import.pending","").isEmpty()
+      &&"xtream".equals(prefs.getString("mode","")))
+   continueCatalogImport(generation);
  }
  void restoreAccountOrLogin(){
   String mode=prefs.getString("mode","");
@@ -1843,64 +1846,139 @@ public class MainActivity extends Activity {
 
 
  void importSource(String mode,String url,String user,String pass){
-  if(loading){toast("An import is already running");return;}
+  if(loading){toast("A library update is already underway");return;}
   loading=true;
+  final boolean alreadyReady=store.hasLibrary();
   final int token=++generation;
-  loadingScreen("SETTING UP YOUR LIBRARY","Connecting to your IPTV provider…");
-  io.execute(()->{
+  if(!alreadyReady)loadingScreen("CONNECTING YOUR LIBRARY",
+      "Importing Live TV first — Movies and TV Shows will follow in the background");
+  else toast("Refreshing your catalog in the background. You can keep browsing.");
+  importIO.execute(()->{
    try{
-    int count;
+    final String sealedUrl=Vault.seal(url),sealedUser=Vault.seal(user),sealedPass=Vault.seal(pass);
     final String[] discoveredGuide={null};
+    if(!alreadyReady&&mode.equals("xtream")){
+     int liveCount;
+     try(LibraryStore.Writer live=store.writer()){
+      liveCount=Provider.xtreamStreamKinds(url,user,pass,live,
+        (stage,total)->status("LIVE TV  ·  "+String.format(Locale.US,"%,d channels",total)),
+        "live");
+      if(liveCount==0)throw new IOException("Provider has no Live TV channels");
+      status("Making Live TV available…");
+      live.commit();
+     }
+     if(token!=generation||Thread.currentThread().isInterrupted())return;
+     if(!prefs.edit().putString("mode",mode).putString("url",sealedUrl)
+         .putString("user",sealedUser).putString("pass",sealedPass)
+         .putString("import.pending","vod,series").remove("items").commit())
+      throw new IOException("Could not save account settings");
+     runOnUiThread(()->{
+      if(token!=generation||isDestroyed())return;
+      page=0;category="All";query="";hiddenOnly=false;favOnly=false;editing=false;
+      shell();home();
+      subtitle.setText("Live TV ready · Adding Movies and TV Shows");
+     });
+     importRemainingKinds(token,url,user,pass);
+     return;
+    }
+    int count;
     try(LibraryStore.Writer writer=store.writer()){
      if(mode.equals("xtream")){
-      count=Provider.xtreamStream(url,user,pass,writer,(stage,done)->{
-       String phase=stage.equals("live")?"LIVE TELEVISION":stage.equals("vod")?"MOVIES":"TV SERIES";
-       status(phase+"  ·  "+String.format(Locale.US,"%,d titles imported",done));
-      });
+      count=Provider.xtreamStream(url,user,pass,writer,(stage,total)->
+        status(stage.toUpperCase(Locale.US)+"  ·  "+String.format(Locale.US,"%,d items",total)));
      }else{
       status("Reading M3U playlist…");
-      count=Provider.m3uStream(url,writer,(stage,done)->
-        status(String.format(Locale.US,"%,d playlist entries imported",done)),
+      count=Provider.m3uStream(url,writer,(stage,total)->
+        status(String.format(Locale.US,"%,d playlist entries",total)),
         xmltv->discoveredGuide[0]=xmltv);
      }
-     if(count==0)throw new IOException("No supported titles were returned by this provider.");
-     status("Finishing your library index…");
+     if(count==0)throw new IOException("No supported media was returned by this provider");
+     status("Finishing your local library…");
      writer.commit();
     }
-    String address=Vault.seal(url),account=Vault.seal(user),secret=Vault.seal(pass);
-    boolean changedSource=true;
+    boolean changed=true;
     try{
-     changedSource=!mode.equals(prefs.getString("mode",""))||
+     changed=!mode.equals(prefs.getString("mode",""))||
        !url.equals(Vault.open(prefs.getString("url","")))||
        !user.equals(Vault.open(prefs.getString("user","")))||
        !pass.equals(Vault.open(prefs.getString("pass","")));
     }catch(Exception ignored){}
-    if(changedSource){
-     epg.clearProvider(); // Previous account's programme IDs must not leak into this account.
+    if(changed){
+     epg.clearProvider();
      prefs.edit().remove("guide.attempt.provider").remove("guide.updated.provider").apply();
     }
-    if(discoveredGuide[0]!=null&&!prefs.contains("guide.external1")){
+    if(discoveredGuide[0]!=null&&!prefs.contains("guide.external1"))
      prefs.edit().putString("guide.external1",Vault.seal(discoveredGuide[0])).apply();
-    }
+    prefs.edit().putString("mode",mode).putString("url",sealedUrl)
+      .putString("user",sealedUser).putString("pass",sealedPass)
+      .remove("import.pending").remove("items").commit();
     runOnUiThread(()->{
-     if(isDestroyed()||token!=generation)return;
-     prefs.edit().putString("mode",mode).putString("url",address)
-       .putString("user",account).putString("pass",secret).remove("items").apply();
+     if(token!=generation||isDestroyed())return;
      loading=false;items.clear();page=0;category="All";query="";
      hiddenOnly=false;favOnly=false;editing=false;
-     shell();home();
-     // EPG loads separately in the background after the home screen appears.
+     if(!alreadyReady){shell();home();}
+     else if("home".equals(screen))home();
+     else if("browse".equals(screen))browse();
+     else if("guide".equals(screen))tvGuide();
+     toast("Your library has been updated");
     });
    }catch(Exception error){
     runOnUiThread(()->{
      if(isDestroyed()||token!=generation)return;
      loading=false;
-     String message=error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();
-     message=message.replaceAll("(?i)(username|password)=[^&\\s]+","$1=***");
-     toast("Import failed: "+message);
-     if(store.hasLibrary()){shell();home();}
-     else loginScreen(mode.equals("m3u"));
+     toast("Catalog update failed: "+error.getClass().getSimpleName());
+     if(!alreadyReady && store.hasLibrary()){shell();home();}
+     else if(!alreadyReady)loginScreen(mode.equals("m3u"));
     });
+   }
+  });
+ }
+ void importRemainingKinds(int token,String host,String username,String password){
+  try{
+   for(String kind:new String[]{"vod","series"}){
+    if(Thread.currentThread().isInterrupted()||token!=generation)return;
+    if(!Arrays.asList(prefs.getString("import.pending","").split(",")).contains(kind))continue;
+    try(LibraryStore.Writer writer=store.appendWriter()){
+     int count=Provider.xtreamStreamKinds(host,username,password,writer,
+        (stage,total)->runOnUiThread(()->{
+         if(token==generation&&!isDestroyed()&&"home".equals(screen))
+          subtitle.setText((kind.equals("vod")?"Movies":"TV Shows")+" · "+
+             String.format(Locale.US,"%,d items imported",total));
+        }),kind);
+     if(count>0)writer.commit();
+    }
+    prefs.edit().putString("import.pending",kind.equals("vod")?"series":"").commit();
+    runOnUiThread(()->{
+     if(token!=generation||isDestroyed())return;
+     if("home".equals(screen))home();
+    });
+   }
+   runOnUiThread(()->{
+    if(token!=generation||isDestroyed())return;
+    loading=false;
+    if("home".equals(screen))subtitle.setText("●  YOUR LIBRARY IS READY");
+   });
+  }catch(Exception error){
+   // Interrupted imports roll back. Resume the pending media type next launch.
+   runOnUiThread(()->{
+    if(token!=generation||isDestroyed())return;
+    loading=false;
+    if("home".equals(screen))subtitle.setText("Live TV ready · Finish other media from Sources");
+    toast("Some media is still importing. Live TV remains available.");
+   });
+  }
+ }
+ void continueCatalogImport(int token){
+  if(loading)return;
+  loading=true;
+  importIO.execute(()->{
+   try{
+    importRemainingKinds(token,
+      Vault.open(prefs.getString("url","")),
+      Vault.open(prefs.getString("user","")),
+      Vault.open(prefs.getString("pass","")));
+   }catch(Exception ignored){
+    runOnUiThread(()->{if(token==generation)loading=false;});
    }
   });
  }
@@ -2032,7 +2110,7 @@ public class MainActivity extends Activity {
   stopGuidePreview();
   if(pendingGuideUpdate!=null)uiHandler.removeCallbacks(pendingGuideUpdate);
   if(livePreview!=null){livePreview.dismiss();livePreview=null;}
-  release();io.shutdownNow();posters.close();epgRefreshIO.shutdownNow();shortEpgIO.shutdownNow();store.close();epg.close();
+  release();io.shutdownNow();importIO.shutdownNow();posters.close();epgRefreshIO.shutdownNow();shortEpgIO.shutdownNow();store.close();epg.close();
   super.onDestroy();
  }
  void toast(String s){if(!isDestroyed())Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
