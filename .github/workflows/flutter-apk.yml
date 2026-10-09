@@ -38,8 +38,8 @@ jobs:
           text=text.replace('<application', '<uses-permission android:name="android.permission.INTERNET" />\n    <application',1)
           text=text.replace('<application', '<application android:usesCleartextTraffic="true"',1)
           text=text.replace('android.intent.category.LAUNCHER"/>',
-            'android.intent.category.LAUNCHER"/>\\n                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>')
-          text=text.replace('<application', '<uses-feature android:name="android.software.leanback" android:required="false" />\\n    <application',1)
+            'android.intent.category.LAUNCHER"/>\n                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>')
+          text=text.replace('<application', '<uses-feature android:name="android.software.leanback" android:required="false" />\n    <application',1)
           p.write_text(text)
           # Separate app ID until migration is validated on a real Fire TV.
           import re
