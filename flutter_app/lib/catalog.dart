@@ -71,260 +71,7 @@ class EpisodeTitleMatcher {
       if(match==null)continue;
       final prefix=vodTitle.substring(0,match.start)
         .replaceAll(RegExp(r'\[[^\]]+\]'),' ')
-        .replaceAll(RegExp(r'\s+(?:1080P|720P|2160P|4K|FHD|HD|SD)\s*
-  final String channelId, title, description;
-  final DateTime start, end;
-  const TvProgramme({required this.channelId, required this.title, required this.start, required this.end, this.description = ''});
-  factory TvProgramme.fromRow(Map<String, Object?> r) => TvProgramme(
-    channelId: r['channel_id'] as String,
-    title: r['title'] as String,
-    description: r['description'] as String? ?? '',
-    start: DateTime.fromMillisecondsSinceEpoch(r['start_ms'] as int),
-    end: DateTime.fromMillisecondsSinceEpoch(r['end_ms'] as int),
-  );
-}
-
-class CatalogDatabase {
-  Database? _db;
-  Future<void> open() async {
-    _db ??= await openDatabase(path.join(await getDatabasesPath(), 'aurora_flutter_2.db'), version: 3,
-      onCreate: (db, version) async {
-        await db.execute('CREATE TABLE media (id TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL, category TEXT, artwork TEXT, extension TEXT, stream_id TEXT, direct_url TEXT, epg_id TEXT, year INTEGER DEFAULT 0, rating REAL DEFAULT 0, favorite INTEGER DEFAULT 0, hidden INTEGER DEFAULT 0)');
-        await db.execute('CREATE INDEX idx_media_kind ON media(kind, hidden, category)');
-        await db.execute('CREATE INDEX idx_media_title ON media(kind, title)');
-        await db.execute('CREATE TABLE programme (channel_id TEXT, start_ms INTEGER, end_ms INTEGER, title TEXT, description TEXT, PRIMARY KEY(channel_id,start_ms))');
-        await db.execute('CREATE INDEX idx_programme_time ON programme(channel_id,start_ms,end_ms)');
-      }, onUpgrade: (db, old, now) async {
-        if (old < 3) {
-          await db.execute('CREATE TABLE IF NOT EXISTS programme (channel_id TEXT, start_ms INTEGER, end_ms INTEGER, title TEXT, description TEXT, PRIMARY KEY(channel_id,start_ms))');
-          await db.execute('CREATE INDEX IF NOT EXISTS idx_programme_time ON programme(channel_id,start_ms,end_ms)');
-          if (old >= 2) await db.execute('ALTER TABLE media ADD COLUMN epg_id TEXT');
-        }
-      });
-  }
-
-  Future<void> replaceKind(MediaKind kind, List<MediaEntry> entries) async {
-    final db = _db!;
-    // Preserve favorites and hidden flags across provider refreshes.
-    final prefs = await db.query('media', columns: ['id','favorite','hidden'], where: 'kind=? AND (favorite=1 OR hidden=1)', whereArgs: [kind.name]);
-    final flags = {for (final p in prefs) p['id'] as String: p};
-    await db.transaction((txn) async {
-      await txn.delete('media', where: 'kind=?', whereArgs: [kind.name]);
-      for (var offset = 0; offset < entries.length; offset += 350) {
-        final batch = txn.batch();
-        for (final e in entries.skip(offset).take(350)) {
-          final row = e.toRow();
-          final f = flags[e.id];
-          if (f != null) { row['favorite'] = f['favorite']; row['hidden'] = f['hidden']; }
-          batch.insert('media', row, conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-        await batch.commit(noResult: true);
-      }
-    });
-  }
-
-  Future<int> count(MediaKind kind) async {
-    final row = await _db!.rawQuery('SELECT COUNT(*) AS n FROM media WHERE kind=? AND hidden=0', [kind.name]);
-    return row.first['n'] as int? ?? 0;
-  }
-
-  Future<List<MediaEntry>> list(MediaKind kind, {
-    String search = '', String category = '', bool english = false,
-    bool favorites = false, int limit = 40, int offset = 0,
-  }) async {
-    final clauses = <String>['kind=?', 'hidden=0'];
-    final args = <Object?>[kind.name];
-    if (search.trim().isNotEmpty) {
-      clauses.add('title LIKE ?');
-      args.add('%${search.trim().replaceAll('%', r'\%').replaceAll('_', r'\_')}%');
-    }
-    if (category.isNotEmpty && category != 'All') {
-      clauses.add('category=?'); args.add(category);
-    }
-    if (favorites) clauses.add('favorite=1');
-    final actualLimit = english ? limit * 5 : limit;
-    final rows = await _db!.query('media', where: clauses.join(' AND '), whereArgs: args,
-      orderBy: 'year DESC, title COLLATE NOCASE ASC', limit: actualLimit, offset: offset);
-    final parsed = rows.map(MediaEntry.fromRow);
-    return (english ? parsed.where((e) => e.likelyEnglish) : parsed).take(limit).toList(growable: false);
-  }
-
-  Future<List<MediaEntry>> manage(MediaKind kind, {bool hiddenOnly=false,
-      String search='',int limit=200,int offset=0}) async {
-    final clauses=<String>['kind=?'];
-    final args=<Object?>[kind.name];
-    if(hiddenOnly)clauses.add('hidden=1');
-    if(search.trim().isNotEmpty){clauses.add('title LIKE ?');args.add('%${search.trim()}%');}
-    final rows=await _db!.query('media',where:clauses.join(' AND '),
-      whereArgs:args,orderBy:'title COLLATE NOCASE',limit:limit,offset:offset);
-    return rows.map(MediaEntry.fromRow).toList(growable:false);
-  }
-
-  Future<List<String>> categories(MediaKind kind) async {
-    final rows = await _db!.rawQuery(
-      'SELECT category, COUNT(*) n FROM media WHERE kind=? AND hidden=0 AND category<>\'\' GROUP BY category ORDER BY n DESC LIMIT 160', [kind.name]);
-    return rows.map((e) => e['category'] as String).toList();
-  }
-
-  Future<List<MediaEntry>> byIds(List<String> ids) async {
-    if(ids.isEmpty)return [];
-    final limited=ids.take(80).toList();
-    final marks=List.filled(limited.length,'?').join(',');
-    final rows=await _db!.rawQuery('SELECT * FROM media WHERE id IN ($marks) AND hidden=0',limited);
-    final indexed={for(final row in rows) row['id'] as String: MediaEntry.fromRow(row)};
-    return limited.map((id)=>indexed[id]).whereType<MediaEntry>().toList();
-  }
-
-  Future<void> mark(String id, {bool? favorite, bool? hidden}) async {
-    final values = <String, Object?>{};
-    if (favorite != null) values['favorite'] = favorite ? 1 : 0;
-    if (hidden != null) values['hidden'] = hidden ? 1 : 0;
-    if (values.isNotEmpty) await _db!.update('media', values, where: 'id=?', whereArgs: [id]);
-  }
-
-  /// Match TMDB titles against the COMPLETE stored catalog, not just the
-  /// first 60 entries returned by a single title fragment search.
-  /// This uses conservative title normalization to avoid wrong playback.
-  static String matchKey(String title) {
-    var value=title.toLowerCase().trim();
-    value=value.replaceAll(RegExp(r'^(?:(?:usa?|uk|ca|au|nz|en|eng|4k|8k|uhd|fhd|hd|sd|hevc|h265|vod|movie|series)\s*[-|: ]\s*)+',caseSensitive:false),'');
-    value=value.replaceAll(RegExp(r'\s*\((?:19|20)\d{2}\)\s*$'),'');
-    value=value.replaceAll(RegExp(r'\s*[-|:]\s*(?:19|20)\d{2}\s*$'),'');
-    value=value.replaceAll(RegExp(r'\s+(?:4k|uhd|fhd|hd|sd|hevc|h265)\s*$'),'');
-    return value.replaceAll(RegExp(r'[^a-z0-9]'),'');
-  }
-  Future<Map<String,MediaEntry>> matchTitleMap(MediaKind kind,List<String> titles) async {
-    if(titles.isEmpty)return {};
-    final wanted=<String,String>{};
-    for(final title in titles){
-      final key=matchKey(title);
-      if(key.isNotEmpty)wanted[key]=title;
-    }
-    final matches=<String,MediaEntry>{};
-    const pageSize=1200;
-    for(var offset=0;;offset+=pageSize){
-      final rows=await _db!.query('media',
-        where:'kind=? AND hidden=0',whereArgs:[kind.name],
-        limit:pageSize,offset:offset,orderBy:'id');
-      for(final row in rows){
-        final item=MediaEntry.fromRow(row);
-        final key=matchKey(item.title);
-        final original=wanted[key];
-        if(original==null)continue;
-        final existing=matches[original];
-        if(existing==null || (item.artwork.isNotEmpty&&!existing.artwork.isNotEmpty) ||
-            (item.rating>existing.rating))matches[original]=item;
-      }
-      if(rows.length<pageSize||matches.length==wanted.length)break;
-    }
-    return matches;
-  }
-  /// All variants of a series title, including provider duplicates/alternate IDs.
-  /// The first matching catalog item isn't necessarily the one with episodes.
-  Future<List<MediaEntry>> seriesCandidates(String title,{int max=12}) async {
-    final key=matchKey(title);
-    if(key.isEmpty)return [];
-    final out=<MediaEntry>[];
-    const pageSize=1200;
-    for(var offset=0;;offset+=pageSize){
-      final rows=await _db!.query('media',
-        where:'kind=? AND hidden=0',whereArgs:[MediaKind.series.name],
-        limit:pageSize,offset:offset,orderBy:'id');
-      for(final row in rows){
-        final item=MediaEntry.fromRow(row);
-        if(matchKey(item.title)==key)out.add(item);
-      }
-      if(rows.length<pageSize)break;
-    }
-    // Favor familiar English and USA entries, without deleting other variants.
-    out.sort((a,b){
-      int score(MediaEntry e){
-        final text='${e.category} ${e.title}'.toUpperCase();
-        var n=0;
-        if(RegExp(r'(^|[^A-Z])(USA|US|EN|ENG|ENGLISH)([^A-Z]|$)').hasMatch(text))n+=10;
-        if(e.artwork.isNotEmpty)n+=2;
-        if(RegExp(r'(TEST|BACKUP|TRAILER)').hasMatch(text))n-=10;
-        return n;
-      }
-      return score(b).compareTo(score(a));
-    });
-    return out.take(max).toList();
-  }
-  /// Xtream providers sometimes distribute episodes as VOD files rather than
-  /// populating get_series_info. Search a constrained local catalog slice.
-  Future<List<MediaEntry>> standaloneEpisodes(String seriesTitle,{int limit=350}) async {
-    final words=seriesTitle.replaceAll(RegExp(r'[^a-zA-Z0-9 ]+'),' ')
-      .split(RegExp(r'\s+')).where((s)=>s.length>=4).toList();
-    if(words.isEmpty)return [];
-    final rows=await _db!.query('media',
-      where:"hidden=0 AND (kind='movie' OR (kind='series' AND direct_url<>'')) AND title LIKE ?",
-      whereArgs:['%${words.last}%'],limit:1800,orderBy:'title COLLATE NOCASE');
-    final result=<MediaEntry>[];
-    final seen=<String>{};
-    for(final row in rows){
-      final item=MediaEntry.fromRow(row);
-      final match=EpisodeTitleMatcher.parse(seriesTitle,item.title);
-      if(match==null||!seen.add('${match.season}:${match.episode}'))continue;
-      if(item.streamId.isEmpty&&item.directUrl.isEmpty)continue;
-      result.add(MediaEntry(id:item.id,title:item.cleanTitle,kind:item.kind,
-        category:'Season ${match.season}',artwork:item.artwork,
-        extension:item.extension,streamId:item.streamId,
-        directUrl:item.directUrl,year:item.year,rating:item.rating,
-        favorite:item.favorite,hidden:item.hidden));
-      if(result.length>=limit)break;
-    }
-    result.sort((a,b){
-      final ma=EpisodeTitleMatcher.parse(seriesTitle,a.title);
-      final mb=EpisodeTitleMatcher.parse(seriesTitle,b.title);
-      final season=(ma?.season??0).compareTo(mb?.season??0);
-      return season!=0?season:(ma?.episode??0).compareTo(mb?.episode??0);
-    });
-    return result;
-  }
-
-  Future<List<MediaEntry>> matchTitles(MediaKind kind,List<String> titles) async {
-    final indexed=await matchTitleMap(kind,titles);
-    return titles.map((title)=>indexed[title]).whereType<MediaEntry>().toList();
-  }
-
-  Future<void> writePrograms(List<TvProgramme> programs) async {
-    final db = _db!;
-    await db.transaction((tx) async {
-      await tx.delete('programme');
-      for (var i=0;i<programs.length;i+=400) {
-        final batch=tx.batch();
-        for (final e in programs.skip(i).take(400)) {
-          batch.insert('programme', {
-            'channel_id':e.channelId,'start_ms':e.start.millisecondsSinceEpoch,
-            'end_ms':e.end.millisecondsSinceEpoch,'title':e.title,
-            'description':e.description,
-          }, conflictAlgorithm:ConflictAlgorithm.replace);
-        }
-        await batch.commit(noResult:true);
-      }
-    });
-  }
-
-  Future<Map<String,List<TvProgramme>>> schedules(List<String> channelIds,DateTime start,DateTime end) async {
-    final result = <String,List<TvProgramme>>{};
-    if (channelIds.isEmpty) return result;
-    for (var i=0;i<channelIds.length;i+=300) {
-      final chunk=channelIds.skip(i).take(300).toList();
-      final placeholders=List.filled(chunk.length,'?').join(',');
-      final rows=await _db!.rawQuery(
-        'SELECT * FROM programme WHERE channel_id IN ($placeholders) AND end_ms>? AND start_ms<? ORDER BY start_ms',
-        [...chunk,start.millisecondsSinceEpoch,end.millisecondsSinceEpoch]);
-      for (final r in rows) {
-        final p=TvProgramme.fromRow(r);
-        result.putIfAbsent(p.channelId,()=>[]).add(p);
-      }
-    }
-    return result;
-  }
-
-  Future<void> close() async {await _db?.close();_db=null;}
-}
-,caseSensitive:false),'');
+        .replaceAll(RegExp(r'\s+(?:1080P|720P|2160P|4K|FHD|HD|SD)\s*$',caseSensitive:false),'');
       final seriesKey=CatalogDatabase.matchKey(seriesTitle);
       if(seriesKey.isEmpty||CatalogDatabase.matchKey(prefix)!=seriesKey)continue;
       final season=int.tryParse(match.group(1)??''),episode=int.tryParse(match.group(2)??'');
@@ -514,6 +261,38 @@ class CatalogDatabase {
     });
     return out.take(max).toList();
   }
+  /// Xtream providers sometimes distribute episodes as VOD files rather than
+  /// populating get_series_info. Search a constrained local catalog slice.
+  Future<List<MediaEntry>> standaloneEpisodes(String seriesTitle,{int limit=1400}) async {
+    final words=seriesTitle.replaceAll(RegExp(r'[^a-zA-Z0-9 ]+'),' ')
+      .split(RegExp(r'\s+')).where((s)=>s.length>=4).toList();
+    if(words.isEmpty)return [];
+    final rows=await _db!.query('media',
+      where:"hidden=0 AND (kind='movie' OR (kind='series' AND direct_url<>'')) AND title LIKE ?",
+      whereArgs:['%${words.last}%'],limit:4000,orderBy:'title COLLATE NOCASE');
+    final result=<MediaEntry>[];
+    final seen=<String>{};
+    for(final row in rows){
+      final item=MediaEntry.fromRow(row);
+      final match=EpisodeTitleMatcher.parse(seriesTitle,item.title);
+      if(match==null||!seen.add('${match.season}:${match.episode}'))continue;
+      if(item.streamId.isEmpty&&item.directUrl.isEmpty)continue;
+      result.add(MediaEntry(id:item.id,title:item.cleanTitle,kind:item.kind,
+        category:'Season ${match.season}',artwork:item.artwork,
+        extension:item.extension,streamId:item.streamId,
+        directUrl:item.directUrl,year:item.year,rating:item.rating,
+        favorite:item.favorite,hidden:item.hidden));
+      if(result.length>=limit)break;
+    }
+    result.sort((a,b){
+      final ma=EpisodeTitleMatcher.parse(seriesTitle,a.title);
+      final mb=EpisodeTitleMatcher.parse(seriesTitle,b.title);
+      final season=(ma?.season??0).compareTo(mb?.season??0);
+      return season!=0?season:(ma?.episode??0).compareTo(mb?.episode??0);
+    });
+    return result;
+  }
+
   Future<List<MediaEntry>> matchTitles(MediaKind kind,List<String> titles) async {
     final indexed=await matchTitleMap(kind,titles);
     return titles.map((title)=>indexed[title]).whereType<MediaEntry>().toList();
