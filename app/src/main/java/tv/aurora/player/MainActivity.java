@@ -22,7 +22,7 @@ import androidx.media3.common.*;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
- ImageView cinematicBackdrop,cinematicIncoming,cinematicPoster; LibraryCore.Item cinematicFocused;
+ ImageView cinematicBackdrop,cinematicIncoming,cinematicPoster; TextView cinematicOverview,cinematicMeta; LibraryCore.Item cinematicFocused;
  FrameLayout cinematicTrailerLayer; android.webkit.WebView cinematicTrailerView;
  int featurePriority=0;
  Runnable pendingTrailer; boolean trailerRunning=false;
@@ -1258,7 +1258,7 @@ public class MainActivity extends Activity {
   }
   cinematicTrailerLayer=null;featurePriority=0;
   pendingCinematic=null;cinematicBackdrop=null;cinematicIncoming=null;cinematicPoster=null;cinematicFocused=null;
-  cinematicArtwork=null;cinematicTitle=null;cinematicSubtitle=null;
+  cinematicArtwork=null;cinematicTitle=null;cinematicSubtitle=null;cinematicOverview=null;cinematicMeta=null;
  }
  /** A visible full-width cinematic discovery navigation row, not a modal menu. */
  void addDiscoveryShortcuts(LinearLayout feed){
@@ -1326,6 +1326,13 @@ public class MainActivity extends Activity {
   cinematicSubtitle.setMaxLines(2);
   cinematicSubtitle.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicSubtitle);
+  cinematicMeta=text("",12);cinematicMeta.setTextColor(0xffe7ce84);
+  cinematicMeta.setMaxLines(1);info.addView(cinematicMeta);
+  cinematicOverview=text("",TvLayout.clamp(m.bodySize(),12,16));
+  cinematicOverview.setTextColor(0xffd6e4e9);
+  cinematicOverview.setMaxLines(3);
+  cinematicOverview.setEllipsize(TextUtils.TruncateAt.END);
+  info.addView(cinematicOverview);
   LinearLayout controls=new LinearLayout(this);
   LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(40));
   actions.topMargin=dp(12);info.addView(controls,actions);
@@ -1379,6 +1386,8 @@ public class MainActivity extends Activity {
    cinematicTitle.setAlpha(.45f);
    cinematicTitle.animate().alpha(1f).setDuration(200).start();
    cinematicFocused=item;
+   if(cinematicOverview!=null)cinematicOverview.setText("");
+   if(cinematicMeta!=null)cinematicMeta.setText("");
    if(cinematicPoster!=null)posters.bind(cinematicPoster,item.artwork);
    scheduleCinematicTrailer(item,revision);
    cinematicSubtitle.setText((item.releaseYear>0?item.releaseYear+"  •  ":"")+
@@ -1389,11 +1398,13 @@ public class MainActivity extends Activity {
    final String name=item.name;final int year=item.releaseYear;
    final boolean series="series".equals(item.type);
    io.execute(()->{
-    String url=BackdropCatalog.lookup(getApplicationContext(),apiKey,name,year,series);
-    final String result=url;
+    BackdropCatalog.Info info=BackdropCatalog.info(getApplicationContext(),apiKey,name,year,series);
     runOnUiThread(()->{
      if(isDestroyed()||revision!=cinematicRevision)return;
-     showCinematicBackdrop(revision,result);
+     if(cinematicOverview!=null)cinematicOverview.setText(info.overview);
+     if(cinematicMeta!=null)cinematicMeta.setText(
+       (info.rating>0?"★ "+String.format(Locale.US,"%.1f",info.rating)+"    ":"")+info.genres);
+     showCinematicBackdrop(revision,info.backdrop);
     });
    });
   };
