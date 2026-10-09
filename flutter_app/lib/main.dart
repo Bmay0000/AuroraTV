@@ -150,6 +150,10 @@ class _AuroraShellState extends State<AuroraShell>{
       if(mounted)setState((){loading=false;status='Updated $count real EPG programmes';});
     }catch(e){if(mounted)setState((){loading=false;status='EPG error: $e';});}
   }
+  void _openCatalog(MediaKind kind){
+    Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>CatalogBrowseScreen(
+      db:db,kind:kind,onPlay:_open,onFocus:_feature)));
+  }
   void _choose(int index){
     if(page==index)return;
     setState(()=>page=index);
@@ -335,6 +339,13 @@ class _AuroraShellState extends State<AuroraShell>{
           child:Padding(padding:const EdgeInsets.fromLTRB(34,12,0,6),child:ConstrainedBox(
             constraints:BoxConstraints(maxWidth:math.min(c.maxWidth*.49,680)),
             child:_heroText())))),
+        if(!home)Padding(padding:const EdgeInsets.fromLTRB(30,0,30,12),
+          child:Row(children:[
+            Text('EXPLORE ${kind==MediaKind.movie?'MOVIES':'TV SHOWS'}',
+              style:const TextStyle(fontSize:19,fontWeight:FontWeight.w700)),
+            const Spacer(),
+            AuroraButton(text:'All Titles  →',onPressed:()=>_openCatalog(kind)),
+          ])),
         if(ranked.isNotEmpty)
           _shelf(title,ranked,mainKind,ranked:true),
         if(home && (trends[MediaKind.series]?.isNotEmpty??false))
@@ -784,4 +795,75 @@ class _LibraryContentState extends State<_LibraryContent>{
          ]));
      })),
    ]));
+}
+
+class CatalogBrowseScreen extends StatefulWidget {
+ final CatalogDatabase db;
+ final MediaKind kind;
+ final void Function(MediaEntry) onPlay, onFocus;
+ const CatalogBrowseScreen({super.key,required this.db,required this.kind,
+   required this.onPlay,required this.onFocus});
+ @override State<CatalogBrowseScreen> createState()=>_CatalogBrowseState();
+}
+class _CatalogBrowseState extends State<CatalogBrowseScreen>{
+ final search=TextEditingController(),scroll=ScrollController();
+ List<String> categories=['All'];
+ List<MediaEntry> results=[];
+ String category='All'; bool busy=false,hasMore=true;
+ int offset=0; int generation=0; Timer? debounce;
+ @override void initState(){
+   super.initState();_reload();
+   scroll.addListener((){
+     if(scroll.hasClients&&scroll.position.extentAfter<600&&!busy&&hasMore)_next();
+   });
+ }
+ Future<void> _reload()async{
+   final names=await widget.db.categories(widget.kind);
+   if(!mounted)return;
+   setState(()=>categories=['All',...names]);
+   await _next(reset:true);
+ }
+ Future<void> _next({bool reset=false})async{
+   if(busy&&!reset)return;
+   final seq=reset?++generation:generation;
+   if(reset){offset=0;hasMore=true;results=[];}
+   if(!hasMore)return;
+   setState(()=>busy=true);
+   final rows=await widget.db.list(widget.kind,search:search.text,category:category,
+       limit:48,offset:offset);
+   if(!mounted||seq!=generation)return;
+   setState((){
+     results=[...results,...rows];offset+=48;
+     hasMore=rows.length>=48;busy=false;
+   });
+ }
+ @override void dispose(){debounce?.cancel();search.dispose();scroll.dispose();super.dispose();}
+ @override Widget build(BuildContext context)=>Scaffold(
+   backgroundColor:C.canvas,
+   body:SafeArea(child:Padding(padding:const EdgeInsets.all(20),child:Column(children:[
+     Row(children:[
+       IconButton(onPressed:()=>Navigator.pop(context),
+         icon:const Icon(Icons.arrow_back,color:C.aqua)),
+       const SizedBox(width:10),
+       Expanded(child:Text(widget.kind==MediaKind.movie?'MOVIE LIBRARY':'TV SERIES LIBRARY',
+         style:const TextStyle(fontSize:24,fontWeight:FontWeight.w800))),
+       SizedBox(width:260,child:TextField(controller:search,
+         decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'Find a title'),
+         onChanged:(_){debounce?.cancel();debounce=Timer(const Duration(milliseconds:250),
+           ()=>_next(reset:true));})),
+       const SizedBox(width:16),
+       DropdownButton<String>(value:category,dropdownColor:C.surface,
+         items:categories.map((g)=>DropdownMenuItem(value:g,child:Text(g,
+           overflow:TextOverflow.ellipsis))).toList(),
+         onChanged:(g){if(g!=null){setState(()=>category=g);_next(reset:true);}}),
+     ]),
+     const SizedBox(height:14),
+     Expanded(child:GridView.builder(controller:scroll,
+       gridDelegate:const SliverGridDelegateWithMaxCrossAxisExtent(
+         maxCrossAxisExtent:285,mainAxisSpacing:10,crossAxisSpacing:8,childAspectRatio:1.62),
+       itemCount:results.length,
+       itemBuilder:(ctx,i)=>MediaCard(item:results[i],index:0,
+         onFocused:()=>widget.onFocus(results[i]),onOpen:()=>widget.onPlay(results[i])))),
+     if(busy)const LinearProgressIndicator(color:C.aqua,minHeight:2),
+   ]))));
 }
