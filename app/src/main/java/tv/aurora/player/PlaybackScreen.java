@@ -58,6 +58,12 @@ public final class PlaybackScreen {
     private int priorState=Player.STATE_IDLE;
     private long bufferStartMs;
     private int rebufferCount;
+    private final PlaybackRecoveryPolicy recovery = new PlaybackRecoveryPolicy();
+    private boolean sessionStarted;
+    private boolean recoveryExhausted;
+    private String temporaryFormat = PlaybackTuning.FORMAT_ORIGINAL;
+    private boolean manualPause;
+    private long lastPlaybackPosition;
     private final Exit exit;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
@@ -74,6 +80,20 @@ public final class PlaybackScreen {
     private long resumeAt;
 
     private final Runnable hideControls = () -> setControlsVisible(false);
+    private static final long WATCHDOG_INTERVAL_MS=2500L;
+    private final Runnable watchdog = new Runnable(){
+        @Override public void run(){
+            if(closed || player==null || recoveryExhausted)return;
+            try{
+                PlaybackRecoveryPolicy.Action action=recovery.sample(
+                    SystemClock.elapsedRealtime(),player.getPlaybackState(),
+                    player.getPlayWhenReady() && !manualPause,player.isPlaying(),
+                    player.getCurrentPosition());
+                respondToRecovery(action,"watchdog");
+            }catch(Exception ex){diagnostics.event("Watchdog: "+ex.getClass().getSimpleName());}
+            if(!closed && !recoveryExhausted)handler.postDelayed(this,WATCHDOG_INTERVAL_MS);
+        }
+    };
     private final Runnable sampleHealth = new Runnable() {
         @Override public void run() {
             if (closed || player == null) return;
@@ -224,7 +244,8 @@ public final class PlaybackScreen {
         if (closed) return;
         bufferProfile=PlaybackTuning.profile(settings.getString("buffer","stable"));
         String preferred=PlaybackTuning.format(settings.getString("live_format","original"));
-        sourceUrl=PlaybackTuning.resolveUrl(media.url,media.type,preferred);
+        sourceUrl=PlaybackTuning.resolveUrl(media.url,media.type,
+                temporaryFormat.equals(PlaybackTuning.FORMAT_ORIGINAL)?preferred:temporaryFormat);
         isHls=PlaybackTuning.isHls(sourceUrl);
         PlaybackTuning.Buffer config=PlaybackTuning.buffer(bufferProfile,
                 "live".equals(type),isHls,lowRam);
@@ -239,11 +260,11 @@ public final class PlaybackScreen {
                     .build();
             DefaultHttpDataSource.Factory http=new DefaultHttpDataSource.Factory()
                     .setConnectTimeoutMs(15000)
-                    .setReadTimeoutMs(20000)
+                    .setReadTimeoutMs(12000)
                     .setAllowCrossProtocolRedirects(true);
             DefaultDataSource.Factory data=new DefaultDataSource.Factory(activity,http);
             DefaultMediaSourceFactory factory=new DefaultMediaSourceFactory(data)
-                    .setLoadErrorHandlingPolicy(new DefaultLoadErrorHandlingPolicy(6));
+                    .setLoadErrorHandlingPolicy(new DefaultLoadErrorHandlingPolicy(2));
             DefaultRenderersFactory renderers=new DefaultRenderersFactory(activity)
                     .setEnableDecoderFallback(true);
             player=new ExoPlayer.Builder(activity,renderers)
@@ -253,13 +274,14 @@ public final class PlaybackScreen {
             player.setWakeMode(C.WAKE_MODE_NETWORK);
             player.setHandleAudioBecomingNoisy(true);
             view.setPlayer(player);
+            final ExoPlayer currentPlayer=player;
             priorState=Player.STATE_IDLE;
             bufferStartMs=0;
             rebufferCount=0;
 
             player.addListener(new Player.Listener(){
                 @Override public void onPlaybackStateChanged(int playbackState){
-                    if(closed || player==null)return;
+                    if(closed || player!=currentPlayer)return;
                     if(playbackState==Player.STATE_BUFFERING &&
                         priorState==Player.STATE_READY && player.getPlayWhenReady()){
                         rebufferCount++;
@@ -276,11 +298,11 @@ public final class PlaybackScreen {
                     updatePlaybackState();
                 }
                 @Override public void onIsPlayingChanged(boolean playing){
-                    if(!closed)updatePlaybackState();
+                    if(!closed && player==currentPlayer)updatePlaybackState();
                 }
                 @Override public void onPositionDiscontinuity(
                         Player.PositionInfo oldPosition,Player.PositionInfo newPosition,int reason){
-                    if(player==null || closed)return;
+                    if(player!=currentPlayer || closed)return;
                     long delta=newPosition.positionMs-oldPosition.positionMs;
                     if(Math.abs(delta)>=500 &&
                        reason!=Player.DISCONTINUITY_REASON_SEEK){
@@ -291,23 +313,25 @@ public final class PlaybackScreen {
                 }
                 @Override public void onPlaybackParametersChanged(
                         androidx.media3.common.PlaybackParameters parameters){
+                    if(player!=currentPlayer || closed)return;
                     if(Math.abs(parameters.speed-1f)>0.005f)
                         diagnostics.event("Playback speed adjustment="+parameters.speed);
                 }
                 @Override public void onPlayerError(PlaybackException error){
-                    if(closed)return;
+                    if(closed || player!=currentPlayer)return;
                     String cause=error.getCause()==null?"unknown":
                             error.getCause().getClass().getSimpleName();
                     diagnostics.event("Playback error: "+error.getErrorCodeName()+
                             " cause="+cause+" rebuffers="+rebufferCount);
-                    state.setText("Playback interrupted ("+error.getErrorCodeName()+
-                            "). Select Retry.");
-                    Toast.makeText(activity,"Playback stopped. Select Retry.",
-                            Toast.LENGTH_LONG).show();
-                    showControls();
+                    state.setText("Connection interrupted · recovering…");
+                    handler.post(()->{
+                        if(closed || player!=currentPlayer)return;
+                        respondToRecovery(recovery.onError(SystemClock.elapsedRealtime()),
+                            "player error");
+                    });
                 }
             });
-            diagnostics.start(type);
+            if(!sessionStarted){diagnostics.start(type);sessionStarted=true;}
             diagnostics.event("Stream="+(isHls?"HLS":"progressive")+
                     " profile="+bufferProfile+(lowRam?" lowRAM":"")+
                     " targetMinMs="+config.minMs+" maxMs="+config.maxMs+
@@ -320,6 +344,8 @@ public final class PlaybackScreen {
             player.play();
             handler.removeCallbacks(sampleHealth);
             handler.postDelayed(sampleHealth,HEALTH_INTERVAL_MS);
+            handler.removeCallbacks(watchdog);
+            handler.postDelayed(watchdog,WATCHDOG_INTERVAL_MS);
         }catch(Exception error){
             diagnostics.event("Player setup error: "+error.getClass().getSimpleName());
             Toast.makeText(activity,"Could not initialize playback; open Settings.",
@@ -339,6 +365,8 @@ public final class PlaybackScreen {
             player=null;
         }
         diagnostics.event("Player restarting after settings change");
+        recovery.resetManually();recoveryExhausted=false;
+        temporaryFormat=PlaybackTuning.FORMAT_ORIGINAL;
         state.setText("Applying playback settings…");
         startPlayer(position);
         scheduleHide();
@@ -428,6 +456,57 @@ public final class PlaybackScreen {
           }).setNegativeButton("CANCEL",null).show();
     }
 
+
+    private boolean canTryHls() {
+        if(!"live".equals(type) || PlaybackTuning.isHls(media.url))return false;
+        String candidate=PlaybackTuning.resolveUrl(media.url,"live","hls");
+        return !candidate.equals(media.url);
+    }
+
+    /** Never leaves an infinite loading spinner: reconnect, then show actions. */
+    private void respondToRecovery(PlaybackRecoveryPolicy.Action action,String reason) {
+        if(closed || action==PlaybackRecoveryPolicy.Action.WAIT)return;
+        if(action==PlaybackRecoveryPolicy.Action.GIVE_UP) {
+            recoveryExhausted=true;
+            handler.removeCallbacks(watchdog);
+            diagnostics.event("Source unavailable after "+recovery.attempts()+" recoveries");
+            if(player!=null){try{player.pause();}catch(Exception ignored){}}
+            state.setText("Stream unavailable · choose Retry or another channel");
+            showControls();
+            Toast.makeText(activity,"This channel stopped responding. Use Retry or change format.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        int attempt=recovery.attempts();
+        diagnostics.event("Auto-reconnect #"+attempt+" cause="+reason);
+        state.setText("Reconnecting  "+attempt+"/"+PlaybackRecoveryPolicy.MAX_ATTEMPTS+"…");
+        // On the second connection retry, attempt HLS only for the standard
+        // Xtream /live/ path. Never change arbitrary M3U or VOD URLs.
+        if(attempt==2 && canTryHls() &&
+                PlaybackTuning.format(settings.getString("live_format","original"))
+                        .equals(PlaybackTuning.FORMAT_ORIGINAL)){
+            temporaryFormat=PlaybackTuning.FORMAT_HLS;
+            diagnostics.event("Temporary HLS failover attempted");
+        }else if(attempt==3){
+            temporaryFormat=PlaybackTuning.FORMAT_ORIGINAL;
+        }
+        restartConnectionWithoutReset();
+    }
+
+    private void restartConnectionWithoutReset() {
+        if(closed)return;
+        long position=0;
+        if(player!=null){
+            position="live".equals(type)?0:Math.max(0,player.getCurrentPosition());
+            ExoPlayer old=player;
+            player=null;
+            view.setPlayer(null);
+            try{old.stop();old.release();}
+            catch(Exception ex){diagnostics.event("Reconnect release "+ex.getClass().getSimpleName());}
+        }
+        handler.removeCallbacks(watchdog);
+        startPlayer(position);
+    }
     private void updatePlaybackState() {
         if (player == null || closed) return;
         if (player.getPlayerError() != null) {
@@ -451,13 +530,11 @@ public final class PlaybackScreen {
     }
 
     private void retry() {
-        if (closed || player == null) return;
+        if (closed) return;
         diagnostics.event("Manual playback retry");
-        player.prepare();
-        if ("live".equals(type)) player.seekToDefaultPosition();
-        player.play();
-        updatePlaybackState();
-        scheduleHide();
+        recovery.resetManually();recoveryExhausted=false;
+        temporaryFormat=PlaybackTuning.FORMAT_ORIGINAL;
+        restartPlayer();
     }
 
     private void scheduleHide() {
@@ -528,6 +605,7 @@ public final class PlaybackScreen {
         closed=true;
         handler.removeCallbacks(hideControls);
         handler.removeCallbacks(sampleHealth);
+        handler.removeCallbacks(watchdog);
         long position = 0;
         try {
             if (player != null) {
@@ -541,7 +619,7 @@ public final class PlaybackScreen {
         } finally {
             player = null;
             activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            diagnostics.stop();
+            if(sessionStarted)diagnostics.stop();
         }
         return position;
     }
