@@ -787,8 +787,6 @@ public class MainActivity extends Activity {
   boolean ranked=heading.startsWith("TOP 20 ");
   for(int position=0;position<rows.size();position++){
    LibraryCore.Item item=rows.get(position);
-   boolean cinematicRail=("home".equals(screen)||"discover".equals(screen))&&
-      ("movie".equals(type)||"series".equals(type));
    cards.addView(cinematicRail?
       landscapeCard(item,ranked?position+1:0):
       mediaCard(item,type.equals("personal")?item.type:type,ranked?position+1:0));
