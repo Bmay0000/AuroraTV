@@ -82,8 +82,9 @@ public final class PosterLoader implements AutoCloseable {
             try{artwork=getOrFetch(url);}
             catch(Exception ignored){}
             finally{
+                boolean current=inFlight.remove(url,fresh);
                 java.util.concurrent.CopyOnWriteArrayList<WeakReference<ImageView>> receivers=
-                    inFlight.remove(url);
+                    current?fresh:null;
                 final Bitmap result=artwork;
                 if(result!=null && receivers!=null)
                     activity.runOnUiThread(()->{
@@ -185,6 +186,18 @@ public final class PosterLoader implements AutoCloseable {
             long size = file.length();
             if (file.delete()) bytes -= size;
         }
+    }
+
+    /**
+     * Prioritize posters from the new section. Old unstarted downloads are
+     * canceled instead of hogging all three image workers for many seconds
+     * after the viewer has already left that movie/grid screen.
+     */
+    public void beginSection(){
+        java.util.concurrent.ThreadPoolExecutor pool=
+            (java.util.concurrent.ThreadPoolExecutor)background;
+        pool.getQueue().clear();
+        inFlight.clear();
     }
 
     /** Clear nonessential poster bitmaps before launching a hardware decoder. */
