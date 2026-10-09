@@ -908,7 +908,7 @@ class _GuideScreenState extends State<GuideScreen>{
            final item=channels[i];
            final blocks=programs[item.epgId]??[];
            final current=focused?.id==item.id;
-           return Focus(child:Builder(builder:(ctx)=>InkWell(
+           return InkWell(
              onFocusChange:(value){if(value)_focus(item);},
              onTap:()=>widget.onPlay(item),
              child:Container(height:42,margin:const EdgeInsets.only(bottom:2),
@@ -930,20 +930,20 @@ class _GuideScreenState extends State<GuideScreen>{
                      maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:12)))),
                ]),
              ),
-           )));
+           ));
          })),
        ])),
      ])),
    ]));
  }
  Future<void> _loadForAnchor()async{
-   final data=await widget.db.schedules(widget.channels.map((e)=>e.id).toList(),
+   final data=await widget.db.schedules(widget.channels.map((e)=>e.epgId).where((id)=>id.isNotEmpty).toList(),
      anchor,anchor.add(const Duration(hours:3)));
    if(mounted)setState(()=>programs=data);
  }
  TvProgramme? _currentProgram(MediaEntry? item,DateTime clock){
    if(item==null)return null;
-   for(final p in programs[item.id]??[]){if(p.start.isBefore(clock)&&p.end.isAfter(clock))return p;}
+   for(final p in programs[item.epgId]??[]){if(p.start.isBefore(clock)&&p.end.isAfter(clock))return p;}
    return null;
  }
  String _blockTitle(List<TvProgramme> entries,DateTime time){
