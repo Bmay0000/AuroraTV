@@ -457,7 +457,7 @@ public final class PlaybackScreen {
             player=null;
         }
         diagnostics.event("Player restarting after settings change");
-        recovery.resetManually();recoveryExhausted=false;
+        recovery.resetManually();recoveryExhausted=false;manualPause=false;
         temporaryFormat=PlaybackTuning.FORMAT_ORIGINAL;
         state.setText("Applying playback settings…");
         startPlayer(position);
@@ -564,6 +564,9 @@ public final class PlaybackScreen {
             diagnostics.event("Source unavailable after "+recovery.attempts()+" recoveries");
             if(player!=null){try{player.pause();}catch(Exception ignored){}}
             state.setText("Stream unavailable · choose Retry or another channel");
+            playPause.setText("⟳  RETRY");
+            playPause.setOnClickListener(v->retry());
+            showStatus("Stream stopped responding.\nUse Retry, Options or Exit.",false);
             showControls();
             Toast.makeText(activity,"This channel stopped responding. Use Retry or change format.",
                     Toast.LENGTH_LONG).show();
@@ -572,6 +575,7 @@ public final class PlaybackScreen {
         int attempt=recovery.attempts();
         diagnostics.event("Auto-reconnect #"+attempt+" cause="+reason);
         state.setText("Reconnecting  "+attempt+"/"+PlaybackRecoveryPolicy.MAX_ATTEMPTS+"…");
+        showStatus("Reconnecting  "+attempt+"/"+PlaybackRecoveryPolicy.MAX_ATTEMPTS+"…",true);
         // On the second connection retry, attempt HLS only for the standard
         // Xtream /live/ path. Never change arbitrary M3U or VOD URLs.
         if(attempt==2 && canTryHls() &&
@@ -599,39 +603,72 @@ public final class PlaybackScreen {
         handler.removeCallbacks(watchdog);
         startPlayer(position);
     }
-    private void updatePlaybackState() {
-        if (player == null || closed) return;
-        if (player.getPlayerError() != null) {
-            playPause.setText("Retry Playback");
-            playPause.setOnClickListener(v -> retry());
-        } else {
-            playPause.setText(player.isPlaying()?"Pause":"Play");
-            playPause.setOnClickListener(v -> {
-                if (player == null) return;
-                if (player.isPlaying()) player.pause(); else player.play();
-                scheduleHide();
-            });
+    private void togglePlay(){
+        if(player==null)return;
+        if(recoveryExhausted || player.getPlayerError()!=null){
+            retry();return;
         }
-        if (player.getPlayerError() != null) return;
-        switch (player.getPlaybackState()) {
-            case Player.STATE_BUFFERING: state.setText("Buffering…"); break;
-            case Player.STATE_READY: state.setText(player.isPlaying()?"Playing":"Paused"); break;
-            case Player.STATE_ENDED: state.setText("Playback ended"); break;
-            default: state.setText("Connecting…");
+        if(player.getPlayWhenReady()){
+            manualPause=true;player.pause();showControls();
+        }else{
+            manualPause=false;player.play();scheduleHide();
+        }
+        updatePlaybackState();
+    }
+    private void showStatus(String message,boolean spinner){
+        if(centerBanner==null)return;
+        centerStatus.setText(message);
+        loadingIndicator.setVisibility(spinner?View.VISIBLE:View.GONE);
+        centerBanner.setVisibility(View.VISIBLE);
+    }
+    private void updatePlaybackState(){
+        if(player==null || closed)return;
+        if(recoveryExhausted || player.getPlayerError()!=null){
+            playPause.setText("⟳  RETRY");
+            playPause.setOnClickListener(v->retry());
+            showStatus("This stream is unavailable.\nUse Retry, Options or Exit.",false);
+            return;
+        }
+        playPause.setText(player.getPlayWhenReady()?"Ⅱ  PAUSE":"▶  PLAY");
+        playPause.setOnClickListener(v->togglePlay());
+        switch(player.getPlaybackState()){
+            case Player.STATE_BUFFERING:
+                state.setText("Buffering · AuroraTV will reconnect if needed");
+                if(player.getPlayWhenReady())
+                    showStatus(recovery.attempts()>0?
+                        "Reconnecting stream  "+recovery.attempts()+"/"+
+                            PlaybackRecoveryPolicy.MAX_ATTEMPTS+"…":
+                        "Loading stream…",true);
+                else centerBanner.setVisibility(View.GONE);
+                break;
+            case Player.STATE_READY:
+                state.setText(player.isPlaying()?"●  PLAYING":"PAUSED");
+                centerBanner.setVisibility(View.GONE);
+                break;
+            case Player.STATE_ENDED:
+                state.setText("Playback complete");
+                centerBanner.setVisibility(View.GONE);
+                showControls();
+                break;
+            default:
+                state.setText("Connecting to provider…");
+                if(player.getPlayWhenReady())
+                    showStatus("Connecting to stream…",true);
+                break;
         }
     }
 
     private void retry() {
         if (closed) return;
         diagnostics.event("Manual playback retry");
-        recovery.resetManually();recoveryExhausted=false;
+        recovery.resetManually();recoveryExhausted=false;manualPause=false;
         temporaryFormat=PlaybackTuning.FORMAT_ORIGINAL;
         restartPlayer();
     }
 
     private void scheduleHide() {
         handler.removeCallbacks(hideControls);
-        if (!closed && overlayVisible) handler.postDelayed(hideControls,CONTROLS_TIMEOUT_MS);
+        if (!closed && overlayVisible && !recoveryExhausted) handler.postDelayed(hideControls,CONTROLS_TIMEOUT_MS);
     }
 
     private void setControlsVisible(boolean shown) {
