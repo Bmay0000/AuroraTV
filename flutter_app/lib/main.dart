@@ -869,8 +869,8 @@ class _GuideScreenState extends State<GuideScreen>{
    if(!mounted||widget.source?.kind!='xtream')return;
    final channels=widget.channels;
    if(channels.isEmpty)return;
-   final start=first.clamp(0,channels.length-1);
-   final end=(start+25).clamp(0,channels.length);
+   final start=first<0?0:(first>=channels.length?channels.length-1:first);
+   final end=start+25>channels.length?channels.length:start+25;
    for(var i=start;i<end;i++){
      final item=channels[i];
      if(item.streamId.isEmpty||item.id.startsWith('lineup:')||
