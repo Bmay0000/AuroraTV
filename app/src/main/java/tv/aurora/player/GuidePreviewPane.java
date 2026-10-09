@@ -46,6 +46,7 @@ public final class GuidePreviewPane implements AutoCloseable {
     private Runnable pendingStart, pendingTimeout;
     private int token;
     private boolean closed;
+    private final boolean autoVideo;
 
     private int dp(int v){return (int)(v*activity.getResources().getDisplayMetrics().density);}
     private GradientDrawable panel(int color){
@@ -58,8 +59,9 @@ public final class GuidePreviewPane implements AutoCloseable {
         return v;
     }
     public GuidePreviewPane(Activity activity,LibraryStore catalog,PosterLoader posters,
-                            LinearLayout container,TvLayout metrics){
+                            LinearLayout container,TvLayout metrics,boolean autoVideo){
         this.activity=activity;this.catalog=catalog;this.posters=posters;
+        this.autoVideo=autoVideo;
         container.setOrientation(LinearLayout.HORIZONTAL);
         container.setGravity(Gravity.CENTER_VERTICAL);
         container.setPadding(dp(12),dp(9),dp(16),dp(9));
@@ -103,7 +105,8 @@ public final class GuidePreviewPane implements AutoCloseable {
         category.setText(item.category);
         now.setText(slot!=null&&slot.now!=null?"NOW  ·  "+slot.now.title:"NOW  ·  No guide listing");
         next.setText(slot!=null&&slot.next!=null?"NEXT  ·  "+slot.next.title:"NEXT  ·  Not available");
-        status.setText("Previewing shortly…");
+        status.setText(autoVideo?"Previewing shortly…":"Automatic video disabled in Guide settings");
+        if(!autoVideo)return;
         posters.bind(channelArtwork,item.artwork);
         pendingStart=()->{
             if(closed||selected!=token)return;
