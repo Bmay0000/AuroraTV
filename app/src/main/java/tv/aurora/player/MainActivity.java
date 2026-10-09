@@ -641,6 +641,24 @@ public class MainActivity extends Activity {
   posters.bind(holder.image,item.artwork);
   return card;
  }
+ void showLivePreview(LibraryCore.Item selectedChannel){
+  // Resolve the encrypted URL and guide entry off the UI thread. Preview
+  // networking only begins if the user explicitly selects muted playback.
+  io.execute(()->{
+   try{
+    LibraryCore.Item resolved=store.resolve(selectedChannel);
+    GuideEngine.Slot entry=epg.nowNext(selectedChannel);
+    runOnUiThread(()->{
+     if(isDestroyed() || isFinishing() || screen.equals("player"))return;
+     new PreviewWindow(this,resolved,entry,posters,()->play(resolved));
+    });
+   }catch(Exception error){
+    runOnUiThread(()->{
+     if(!isDestroyed())toast("Preview unavailable; try Watch Fullscreen");
+    });
+   }
+  });
+ }
  void showMediaDetails(LibraryCore.Item item){
   TvLayout dim=tv();
   android.app.Dialog dialog=new android.app.Dialog(this);
@@ -883,7 +901,7 @@ public class MainActivity extends Activity {
       });
       list.setSelector(rounded(0x224be0cc,13,ACCENT));
       list.setOnItemClickListener((parent,v,n,id)->{
-       LibraryCore.Item picked=result.rows.get(n);if(editing)actions(picked);else open(picked);
+       LibraryCore.Item picked=result.rows.get(n);if(editing)actions(picked);else showLivePreview(picked);
       });
       list.setOnItemLongClickListener((parent,v,n,id)->{actions(result.rows.get(n));return true;});
      }
@@ -1026,7 +1044,7 @@ public class MainActivity extends Activity {
       row.setBackground(rounded(n%2==0?0xff111f32:0xff13253a,10,0xff20364a));
       LinearLayout.LayoutParams rowMargins=new LinearLayout.LayoutParams(-1,dp(rowHeight+7));
       rowMargins.topMargin=dp(5);feed.addView(row,rowMargins);
-      Button watch=button("▶  "+channel.name,()->open(channel));
+      Button watch=button("▶  "+channel.name,()->showLivePreview(channel));
       watch.setTextSize(TvLayout.clamp(metrics.bodySize(),14,18));
       watch.setGravity(Gravity.CENTER_VERTICAL|Gravity.LEFT);
       watch.setSingleLine(false);watch.setMaxLines(2);
@@ -1339,7 +1357,7 @@ public class MainActivity extends Activity {
 
  void moreGuide(LibraryCore.Item channel){
   new AlertDialog.Builder(this).setTitle(channel.name)
-   .setItems(new String[]{"Full programme schedule","Match this channel to an EPG source",
+   .setItems(new String[]{"Preview channel","Full programme schedule","Match this channel to an EPG source",
      favorites.contains(channel.id)?"Remove favorite":"Add favorite","Hide channel"},
     (d,n)->{
      if(n==0){showChannelSchedule(channel);return;}
