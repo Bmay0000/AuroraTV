@@ -135,6 +135,17 @@ class CatalogDatabase {
     return (english ? parsed.where((e) => e.likelyEnglish) : parsed).take(limit).toList(growable: false);
   }
 
+  Future<List<MediaEntry>> manage(MediaKind kind, {bool hiddenOnly=false,
+      String search='',int limit=200,int offset=0}) async {
+    final clauses=<String>['kind=?'];
+    final args=<Object?>[kind.name];
+    if(hiddenOnly)clauses.add('hidden=1');
+    if(search.trim().isNotEmpty){clauses.add('title LIKE ?');args.add('%${search.trim()}%');}
+    final rows=await _db!.query('media',where:clauses.join(' AND '),
+      whereArgs:args,orderBy:'title COLLATE NOCASE',limit:limit,offset:offset);
+    return rows.map(MediaEntry.fromRow).toList(growable:false);
+  }
+
   Future<List<String>> categories(MediaKind kind) async {
     final rows = await _db!.rawQuery(
       'SELECT category, COUNT(*) n FROM media WHERE kind=? AND hidden=0 AND category<>\'\' GROUP BY category ORDER BY n DESC LIMIT 160', [kind.name]);
