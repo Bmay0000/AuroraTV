@@ -69,4 +69,15 @@ AuroraTV is an independently designed player; it does not include copied commerc
 
 AuroraTV can display separate **Top 20 Movies Today** and **Top 20 TV Shows Today** shelves. Open **Manage Connection → Daily Top 20 / TMDB key** and enter your own TMDB API v3 key. The key is kept in the app's local preferences and is not committed to this repository. TMDB daily rankings refresh at most once every 24 hours, with the previous cached ranking available offline. Only titles matched to the user's imported IPTV catalogue appear as playable cards; non-English and obviously mismatched title/year combinations are excluded. Without a key the trending shelves are hidden, and regular library browsing remains available.
 
-Movie and TV discovery pages now include a compact focus-sensitive cinematic artwork banner. **Autoplay video trailers are not yet implemented**; a focus-dependent image transition must not be confused with trailer playback. Attribution/data terms: [TMDB](https://www.themoviedb.org/).
+### Cinema 0.9 update
+
+- **Sticky cinematic heroes** on Home, Movies, and TV Shows remain visible while scrolling content shelves. They display a clean title/year/type, a provider poster in its own portrait frame, and **Watch Now** / **Browse Library** actions.
+- **Landscape background images** are matched by title and year from TMDB when the user enters their own TMDB v3 API key. Artwork crossfades only once the new image is available; provider portrait posters are not stretched into widescreen backdrops.
+- **Curated featured title** prefers confirmed English movies with stronger artwork, genre/rating evidence and verified TMDB trending matches, rather than blindly choosing the first provider-added title.
+- **Clean poster rails:** provider language and quality prefixes are stripped for display, year/category captions and most ornamental badges are removed, and D-pad focus retains mint highlights.
+- **Live guide redesign:** clearer rows, category chips and a bordered preview panel, with asynchronous directory loading and cancellation of superseded category scans.
+- **Optional muted trailer preview:** Enable **Manage Connection → Cinematic trailer previews** after configuring TMDB. If a YouTube trailer is available, AuroraTV attempts to load its official YouTube embed after the focused item remains selected for 2.8 seconds. This is **off by default** because WebView / YouTube autoplay may not work on all Fire TV software and can consume bandwidth. No trailer is guaranteed.
+- **Separate networking:** TMDB trending fetches no longer occupy the same workers that render the IPTV library.
+- **Version identification:** `0.9` is visible beside the AuroraTV brand. APK version code is 9.
+
+**Limitations:** TMDB-based ranking, proper landscape backdrops and official trailers all require a working user-provided TMDB API v3 key. If none is configured, the UI remains fully usable but uses the provider's portrait artwork. Because this project builds remotely, CI can verify compilation and package creation but cannot measure frame-rate, playback compatibility or remote responsiveness on your specific Fire TV. TMDB attribution/data terms: [TMDB](https://www.themoviedb.org/).
