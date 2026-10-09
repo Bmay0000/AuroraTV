@@ -1348,11 +1348,12 @@ public class MainActivity extends Activity {
   cinematicOverview=text("",TvLayout.clamp(m.bodySize(),12,16));
   cinematicOverview.setTextColor(0xffd6e4e9);
   cinematicOverview.setMaxLines(2);
+  if(m.heightDp<620)cinematicOverview.setVisibility(View.GONE);
   cinematicOverview.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicOverview);
   LinearLayout controls=new LinearLayout(this);
   LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(40));
-  actions.topMargin=dp(12);info.addView(controls,actions);
+  actions.topMargin=dp(m.heightDp<620?3:9);info.addView(controls,actions);
   Button watch=button("▶  WATCH NOW",()->{
    if(cinematicFocused!=null)showMediaDetails(cinematicFocused);
   });
