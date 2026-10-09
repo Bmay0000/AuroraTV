@@ -279,6 +279,106 @@ public final class LibraryStore extends SQLiteOpenHelper {
         return result;
     }
 
+    public static final class RecentMovies {
+        public final List<LibraryCore.Item> english;
+        public final List<LibraryCore.Item> unverified;
+        RecentMovies(List<LibraryCore.Item> english,List<LibraryCore.Item> unverified){
+            this.english=english;
+            this.unverified=unverified;
+        }
+    }
+
+    /**
+     * Data-backed, NOT random, NOT provider alphabetic-order recommendations.
+     * Movie release-year metadata takes precedence; older catalogs can use an
+     * unmistakable terminal "(2026)" / "[2026]" year tag.
+     */
+    public RecentMovies recentMovies(Set<String> hidden,Set<String> hiddenCategories,
+            Set<String> favorites,Set<String> allowed,boolean hideUnknown,
+            Set<String> visibleItems,Set<String> visibleCategories){
+        final int year=MediaDiscovery.currentYear();
+        StringBuilder sql=new StringBuilder("SELECT ").append(FIELDS)
+            .append(" FROM entries WHERE type='movie' AND (release_year>=?");
+        ArrayList<String> arguments=new ArrayList<>();
+        arguments.add(Integer.toString(year-2));
+        sql.append(" OR (release_year=0 AND (");
+        for(int y=year;y>=year-2;y--){
+            if(y!=year)sql.append(" OR ");
+            sql.append("name LIKE ? OR name LIKE ? OR name LIKE ? OR name LIKE ?");
+            String str=Integer.toString(y);
+            arguments.add("% ("+str+")");
+            arguments.add("% ["+str+"]");
+            arguments.add("% ("+str+") HD");
+            arguments.add("% ["+str+"] HD");
+        }
+        sql.append("))) ORDER BY release_year DESC,rating DESC,added_at DESC,row_id DESC LIMIT 900");
+        List<LibraryCore.Item> english=new ArrayList<>();
+        List<LibraryCore.Item> unknown=new ArrayList<>();
+        try(Cursor cursor=getReadableDatabase().rawQuery(sql.toString(),
+                  arguments.toArray(new String[0]))){
+            while(cursor.moveToNext()){
+                if(Thread.currentThread().isInterrupted())break;
+                LibraryCore.Item candidate=item(cursor);
+                if(!MediaDiscovery.recent(candidate.releaseYear,year))continue;
+                if(!LibraryCore.visible(candidate,hidden,hiddenCategories,favorites,
+                        allowed,hideUnknown,visibleItems,visibleCategories))continue;
+                if(MediaDiscovery.confirmedEnglish(candidate))english.add(candidate);
+                else if(!MediaDiscovery.knownForeign(candidate))unknown.add(candidate);
+            }
+        }
+        java.util.Comparator<LibraryCore.Item> ranking=(a,b)->{
+            int match=Integer.compare(b.releaseYear,a.releaseYear);
+            if(match!=0)return match;
+            match=Double.compare(b.rating,a.rating);
+            if(match!=0)return match;
+            match=Long.compare(b.addedAt,a.addedAt);
+            if(match!=0)return match;
+            match=Boolean.compare(b.artwork!=null&&!b.artwork.isEmpty(),
+                a.artwork!=null&&!a.artwork.isEmpty());
+            if(match!=0)return match;
+            return a.name.compareToIgnoreCase(b.name);
+        };
+        english.sort(ranking);
+        unknown.sort(ranking);
+        if(english.size()>18)english=new ArrayList<>(english.subList(0,18));
+        if(unknown.size()>18)unknown=new ArrayList<>(unknown.subList(0,18));
+        return new RecentMovies(english,unknown);
+    }
+
+    public static final class GenreCategory {
+        public final String name;
+        public final String genre;
+        public final boolean verifiedEnglishCategory;
+        public final int count;
+        GenreCategory(String name,String genre,boolean verified,int count){
+            this.name=name;this.genre=genre;verifiedEnglishCategory=verified;this.count=count;
+        }
+    }
+
+    /** User's actual provider genres, not imaginary generic category links. */
+    public List<GenreCategory> movieGenres(){
+        List<GenreCategory> categories=new ArrayList<>();
+        try(Cursor cursor=getReadableDatabase().rawQuery(
+             "SELECT category,COUNT(*) FROM entries WHERE type='movie' " +
+             "GROUP BY category ORDER BY COUNT(*) DESC LIMIT 250",null)){
+            while(cursor.moveToNext()){
+                if(Thread.currentThread().isInterrupted())break;
+                String group=cursor.getString(0);
+                int count=cursor.getInt(1);
+                String genre=MediaDiscovery.genre(group);
+                if(genre.isEmpty()||count<3)continue;
+                String locale=LibraryCore.infer(group);
+                if(!locale.equals("en")&&!locale.equals("unknown"))continue;
+                categories.add(new GenreCategory(group,genre,locale.equals("en"),count));
+            }
+        }
+        categories.sort((a,b)->{
+            int en=Boolean.compare(b.verifiedEnglishCategory,a.verifiedEnglishCategory);
+            return en!=0?en:Integer.compare(b.count,a.count);
+        });
+        return categories;
+    }
+
     /** URLs are only decrypted when a user actually opens a title. */
     public LibraryCore.Item resolve(LibraryCore.Item item) throws Exception {
         if (item.url != null && !item.url.isEmpty()) return item;
