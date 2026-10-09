@@ -54,6 +54,8 @@ class _AuroraShellState extends State<AuroraShell>{
   IptvSource? source;
   int page=0,focusRevision=0;
   final ValueNotifier<int> heroVersion=ValueNotifier<int>(0);
+  final List<FocusNode> navFocus=List.generate(7,(i)=>FocusNode(debugLabel:'Nav $i'));
+  final ScrollController navScroll=ScrollController();
   bool ready=false,loading=false,showLogin=false,trailers=false,previewOn=false;
   String status='',epgUrl='';
   MediaEntry? featured;
@@ -167,7 +169,11 @@ class _AuroraShellState extends State<AuroraShell>{
   }
   void _choose(int index){
     if(page==index)return;
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(()=>page=index);
+    WidgetsBinding.instance.addPostFrameCallback((_){
+      if(mounted && page==index) navFocus[index].requestFocus();
+    });
     if(index==1)_loadLive();
     if(index==2||index==3){
       final kind=index==2?MediaKind.movie:MediaKind.series;
@@ -296,6 +302,8 @@ class _AuroraShellState extends State<AuroraShell>{
   @override void dispose(){
     db.close();provider.dispose();tmdb.dispose();epg.dispose();
     heroVersion.dispose();
+    for(final node in navFocus){node.dispose();}
+    navScroll.dispose();
     super.dispose();
   }
 
@@ -326,7 +334,7 @@ class _AuroraShellState extends State<AuroraShell>{
             Colors.black.withValues(alpha:.12),Colors.black.withValues(alpha:.90)])))),
       SafeArea(child:Column(children:[
         _navBar(media.width),
-        Expanded(child:IndexedStack(index:page,children:[
+        Expanded(child:FocusScope(child:IndexedStack(index:page,children:[
           _discovery(MediaKind.movie,home:true),
           GuideScreen(db:db,channels:live,groups:groups[MediaKind.live]??[],
             group:channelGroup,onGroup:_loadLive,onPlay:_open,previewOn:previewOn,
@@ -336,7 +344,7 @@ class _AuroraShellState extends State<AuroraShell>{
           _myList(),
           _searchPage(),
           _libraryPage(),
-        ])),
+        ]))),
       ])),
       if(loading)Positioned(left:0,right:0,bottom:0,child:Container(
         color:Colors.black87,padding:const EdgeInsets.all(12),
@@ -354,11 +362,14 @@ class _AuroraShellState extends State<AuroraShell>{
           TextSpan(text:'TV',style:TextStyle(color:C.aqua)),
         ])),
         const SizedBox(width:28),
-        Expanded(child:ListView.separated(scrollDirection:Axis.horizontal,
-          itemCount:labels.length,separatorBuilder:(_,__)=>const SizedBox(width:4),
-          itemBuilder:(ctx,i)=>AuroraButton(
-            text:labels[i],selected:page==i,onPressed:()=>_choose(i),
-            nav:true))),
+        Expanded(child:SingleChildScrollView(controller:navScroll,
+          scrollDirection:Axis.horizontal,child:Row(children:[
+          for(var i=0;i<labels.length;i++)
+            FocusTraversalOrder(order:NumericFocusOrder(i.toDouble()),
+              child:AuroraButton(
+                focusNode:navFocus[i],text:labels[i],selected:page==i,
+                onPressed:()=>_choose(i),nav:true)),
+        ]))),
         const SizedBox(width:8),
         IconButton(onPressed:_settings,tooltip:'Settings',icon:const Icon(Icons.settings_outlined,size:25)),
       ]));
@@ -495,12 +506,12 @@ Widget artwork(String url,{BoxFit fit=BoxFit.cover}){
 class AuroraButton extends StatelessWidget{
   final String text;final VoidCallback onPressed;
   final bool primary,selected,nav;
+  final FocusNode? focusNode;
   const AuroraButton({super.key,required this.text,required this.onPressed,
-    this.primary=false,this.selected=false,this.nav=false});
+    this.primary=false,this.selected=false,this.nav=false,this.focusNode});
   @override Widget build(BuildContext context)=>Padding(
     padding:EdgeInsets.symmetric(horizontal:nav?3:0,vertical:nav?7:0),
-    child:FocusableActionDetector(child:Builder(builder:(ctx){
-      return OutlinedButton(onPressed:onPressed,style:ButtonStyle(
+    child:OutlinedButton(focusNode:focusNode,onPressed:onPressed,style:ButtonStyle(
         minimumSize:WidgetStatePropertyAll(Size(nav?54:156,nav?37:44)),
         padding:WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal:nav?14:20)),
         backgroundColor:WidgetStatePropertyAll(primary?Colors.white:
@@ -509,8 +520,7 @@ class AuroraButton extends StatelessWidget{
         side:WidgetStatePropertyAll(BorderSide(
           color:selected?C.aqua:primary?Colors.white:C.secondary.withValues(alpha:nav?0:.23))),
         shape:WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius:BorderRadius.circular(nav?12:9))),
-      ),child:Text(text,maxLines:1,style:TextStyle(fontSize:nav?14:15,fontWeight:FontWeight.w700)));
-    })),
+      ),child:Text(text,maxLines:1,style:TextStyle(fontSize:nav?14:15,fontWeight:FontWeight.w700))),
   );
 }
 
@@ -521,40 +531,44 @@ class MediaCard extends StatefulWidget{
   @override State<MediaCard> createState()=>_MediaCardState();
 }
 class _MediaCardState extends State<MediaCard>{
-  bool focused=false;
-  @override Widget build(BuildContext context){
-    return Padding(padding:const EdgeInsets.symmetric(horizontal:5,vertical:4),
-      child:FocusableActionDetector(
-        onFocusChange:(hasFocus){
-          setState(()=>focused=hasFocus);
-          if(hasFocus){widget.onFocused();Scrollable.ensureVisible(context,
-            duration:const Duration(milliseconds:220),alignment:.22);}
-        },
-        child:InkWell(onTap:widget.onOpen,onFocusChange:(hasFocus){
-          if(focused!=hasFocus){setState(()=>focused=hasFocus);if(hasFocus)widget.onFocused();}
-        },
-          borderRadius:BorderRadius.circular(12),
-          child:AnimatedContainer(duration:const Duration(milliseconds:180),
-            width:242,decoration:BoxDecoration(
-              borderRadius:BorderRadius.circular(12),
-              border:Border.all(width:focused?2:1,color:focused?C.aqua:Colors.white12),
-              boxShadow:focused?[BoxShadow(color:C.aqua.withValues(alpha:.2),blurRadius:14)]:[],
-            ),clipBehavior:Clip.antiAlias,
-            child:Stack(fit:StackFit.expand,children:[
-              artwork(widget.item.artwork),
-              DecoratedBox(decoration:BoxDecoration(gradient:LinearGradient(
-                begin:Alignment.topCenter,end:Alignment.bottomCenter,
-                colors:[Colors.transparent,Colors.black.withValues(alpha:.84)]))),
-              if(widget.index>0)Positioned(top:8,left:10,
-                child:Text('#${widget.index}',style:const TextStyle(color:C.aqua,fontWeight:FontWeight.w800))),
-              Positioned(left:12,right:12,bottom:10,child:Text(widget.item.cleanTitle,
-                maxLines:2,overflow:TextOverflow.ellipsis,
-                style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700,color:Colors.white,
-                  shadows:[Shadow(color:Colors.black,blurRadius:8)]))),
-            ]),
-          )),
-      ));
-  }
+ bool focused=false;
+ @override Widget build(BuildContext context)=>Padding(
+  padding:const EdgeInsets.symmetric(horizontal:5,vertical:4),
+  child:InkWell(
+    canRequestFocus:true,
+    onTap:widget.onOpen,
+    onFocusChange:(hasFocus){
+      if(!mounted)return;
+      if(focused!=hasFocus)setState(()=>focused=hasFocus);
+      if(hasFocus){
+        widget.onFocused();
+        // Only the nearest scrollable moves. The previous ensureVisible call
+        // also jumped the vertical Home scroll while browsing a horizontal row.
+      }
+    },
+    borderRadius:BorderRadius.circular(12),
+    child:AnimatedContainer(duration:const Duration(milliseconds:130),
+      width:242,decoration:BoxDecoration(
+        borderRadius:BorderRadius.circular(12),
+        border:Border.all(width:focused?3:1,color:focused?C.aqua:Colors.white12),
+        boxShadow:focused?[BoxShadow(color:C.aqua.withValues(alpha:.22),blurRadius:10)]:[],
+      ),clipBehavior:Clip.antiAlias,
+      child:Stack(fit:StackFit.expand,children:[
+        artwork(widget.item.artwork),
+        DecoratedBox(decoration:BoxDecoration(gradient:LinearGradient(
+          begin:Alignment.topCenter,end:Alignment.bottomCenter,
+          colors:[Colors.transparent,Colors.black.withValues(alpha:.84)]))),
+        if(widget.index>0)Positioned(top:8,left:10,
+          child:Text('#${widget.index}',style:const TextStyle(
+            color:C.aqua,fontWeight:FontWeight.w800))),
+        Positioned(left:12,right:12,bottom:10,child:Text(widget.item.cleanTitle,
+          maxLines:2,overflow:TextOverflow.ellipsis,
+          style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700,color:Colors.white,
+            shadows:[Shadow(color:Colors.black,blurRadius:8)]))),
+      ]),
+    ),
+  ),
+);
 }
 
 class LoginScreen extends StatefulWidget{
