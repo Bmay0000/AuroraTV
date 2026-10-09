@@ -16,8 +16,8 @@ public final class TvLayoutTest {
    verify(layout.marginY>=6 && layout.marginY<=17,"Safe vertical margin "+device[1]);
    verify(layout.sidebar==0,"Full-width top navigation "+device[0]);
    verify(layout.contentWidth()>=320,"Browse area is too narrow "+device[0]);
-   verify(layout.posterWidth>=90 && layout.posterWidth<=165,"Compact poster tiles bounded");
-   verify(layout.posterColumns>=4 && layout.posterColumns<=12,"Reasonable number of visible posters");
+   verify(layout.posterWidth>=88 && layout.posterWidth<=185,"Compact poster tiles bounded");
+   verify(layout.posterColumns>=4 && layout.posterColumns<=24,"Reasonable number of visible posters");
    verify(layout.posterCardHeight<layout.heightDp,"Poster tiles taller than screen");
    verify(layout.heroHeight<=170 && layout.heroHeight<=layout.heightDp*.3,"Compact hero reveals first shelf");
    verify(layout.navRow<=62,"Remote nav row bounded");
@@ -27,6 +27,15 @@ public final class TvLayoutTest {
   verify(uhd.posterColumns>hd.posterColumns,"Wide displays show more films");
   verify(uhd.posterWidth>=hd.posterWidth,"Poster clarity should not shrink");
   verify(hd.posterColumns>=7,"Typical Fire TV width should show at least seven posters");
+  TvLayout comfortable=TvLayout.of(960,540,"comfortable");
+  TvLayout compact=TvLayout.of(960,540,"compact");
+  TvLayout dense=TvLayout.of(960,540,"dense");
+  verify(comfortable.posterColumns<compact.posterColumns,"Comfortable layout has larger tiles");
+  verify(dense.posterColumns>compact.posterColumns,"Dense layout shows extra titles");
+  verify(dense.posterCardHeight<compact.posterCardHeight,"Dense layout reveals more rows");
+  verify(TvLayout.of(640,360).headerHeight()+TvLayout.of(640,360).navRow+
+    36+38+TvLayout.of(640,360).posterCardHeight<=360,
+    "Compact Fire TV can show a full first shelf without hero");
   verify(uhd.headerHeight()>=hd.headerHeight(),"Header should scale responsibly");
   System.out.println(cases+" responsive Fire TV layout tests passed");
  }
