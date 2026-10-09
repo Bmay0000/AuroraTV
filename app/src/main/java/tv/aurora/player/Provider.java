@@ -9,7 +9,29 @@ import java.text.SimpleDateFormat;
 public final class Provider {
  static String enc(String s)throws Exception{return URLEncoder.encode(s,"UTF-8");}
  static String segment(String s)throws Exception{return enc(s).replace("+","%20");}
- static String get(String url)throws Exception{HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setConnectTimeout(15000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","AuroraTV/0.1");try{if(c.getResponseCode()!=200)throw new IOException("Provider returned HTTP "+c.getResponseCode());try(InputStream in=c.getInputStream();ByteArrayOutputStream b=new ByteArrayOutputStream()){byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1){b.write(buf,0,n);if(b.size()>128*1024*1024)throw new IOException("Provider response exceeds 128 MB");}return b.toString("UTF-8");}}finally{c.disconnect();}}
+ static String get(String url)throws Exception{
+  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();
+  c.setConnectTimeout(12000);c.setReadTimeout(18000);
+  c.setRequestProperty("User-Agent","AuroraTV/0.4");
+  c.setRequestProperty("Accept-Encoding","gzip");
+  try{
+   if(c.getResponseCode()!=200)throw new IOException("Provider returned HTTP "+c.getResponseCode());
+   try(InputStream in=responseStream(c);ByteArrayOutputStream b=new ByteArrayOutputStream()){
+    byte[] buf=new byte[16384];int n;
+    while((n=in.read(buf))!=-1){
+     if(b.size()+n>16*1024*1024)throw new IOException("Provider metadata too large");
+     b.write(buf,0,n);
+    }
+    return b.toString("UTF-8");
+   }
+  }finally{c.disconnect();}
+ }
+ static InputStream responseStream(HttpURLConnection connection)throws IOException{
+  InputStream stream=connection.getInputStream();
+  if("gzip".equalsIgnoreCase(connection.getContentEncoding()))
+   return new java.util.zip.GZIPInputStream(stream,32768);
+  return new BufferedInputStream(stream,32768);
+ }
  static String base(String s)throws Exception{URL u=new URL(s);if(!u.getProtocol().matches("https?"))throw new IOException("Use an http:// or https:// address");return s.replaceAll("/+$","");}
  public static List<LibraryCore.Item> xtream(String host,String user,String pass)throws Exception{host=base(host);String api=host+"/player_api.php?username="+enc(user)+"&password="+enc(pass);JSONObject auth=new JSONObject(get(api));if(auth.optJSONObject("user_info")==null||auth.getJSONObject("user_info").optInt("auth")!=1)throw new IOException("Login rejected");List<LibraryCore.Item> out=new ArrayList<>();String[] kinds={"live","vod","series"};for(String kind:kinds){JSONArray cats;try{cats=new JSONArray(get(api+"&action=get_"+kind+"_categories"));}catch(JSONException ex){cats=new JSONArray();}Map<String,String> names=new HashMap<>();for(int j=0;j<cats.length();j++){JSONObject c=cats.optJSONObject(j);if(c==null)continue;names.put(c.optString("category_id"),c.optString("category_name"));}JSONArray rows=new JSONArray(get(api+"&action=get_"+kind+(kind.equals("series")?"":"_streams")));for(int j=0;j<rows.length();j++){JSONObject r=rows.optJSONObject(j);if(r==null)continue;String id=r.optString(kind.equals("series")?"series_id":"stream_id");if(id.isEmpty()||id.equals("null"))continue;String type=kind.equals("vod")?"movie":kind;String ext=kind.equals("live")?"ts":r.optString("container_extension","mp4");if(ext.isEmpty()||ext.equals("null"))ext="mp4";String url=kind.equals("series")?api+"&action=get_series_info&series_id="+enc(id):host+"/"+(kind.equals("vod")?"movie":kind)+"/"+segment(user)+"/"+segment(pass)+"/"+id+"."+ext;out.add(new LibraryCore.Item(LibraryCore.key(host+"|"+user+"|"+type+"|"+id),r.optString("name"),names.getOrDefault(r.optString("category_id"),"Uncategorized"),url,type,r.optString("epg_channel_id"),""));}}return out;}
 
@@ -46,12 +68,13 @@ public final class Provider {
    }catch(JSONException badCategories){/* Some providers omit category endpoints. */}
    String endpoint=api+"&action=get_"+kind+(kind.equals("series")?"":"_streams");
    HttpURLConnection connection=(HttpURLConnection)new URL(endpoint).openConnection();
-   connection.setConnectTimeout(15000);connection.setReadTimeout(45000);
-   connection.setRequestProperty("User-Agent","AuroraTV/0.1");
+   connection.setConnectTimeout(12000);connection.setReadTimeout(22000);
+   connection.setRequestProperty("User-Agent","AuroraTV/0.4");
+   connection.setRequestProperty("Accept-Encoding","gzip");
    try{
     int status=connection.getResponseCode();
     if(status!=200)throw new IOException("Provider "+kind+" request returned HTTP "+status);
-    try(android.util.JsonReader reader=new android.util.JsonReader(new InputStreamReader(connection.getInputStream(),"UTF-8"))){
+    try(android.util.JsonReader reader=new android.util.JsonReader(new InputStreamReader(responseStream(connection),"UTF-8"))){
      reader.setLenient(true);
      if(reader.peek()!=android.util.JsonToken.BEGIN_ARRAY)
       throw new IOException("Provider returned invalid "+kind+" list");
@@ -85,8 +108,11 @@ public final class Provider {
       if(id.isEmpty()||id.equals("null"))continue;
       String type=kind.equals("vod")?"movie":kind;
       if(ext.isEmpty()||!ext.matches("[a-zA-Z0-9]{1,6}"))ext=kind.equals("live")?"ts":"mp4";
-      String streamUrl=kind.equals("series")?api+"&action=get_series_info&series_id="+enc(id)
-        :host+"/"+(kind.equals("vod")?"movie":kind)+"/"+segment(user)+"/"+segment(pass)+"/"+id+"."+ext;
+      String streamKind=kind.equals("vod")?"movie":kind;
+      String streamUrl=XtreamReference.of(streamKind,id,ext);
+      if(streamUrl==null)
+       streamUrl=kind.equals("series")?api+"&action=get_series_info&series_id="+enc(id)
+        :host+"/"+streamKind+"/"+segment(user)+"/"+segment(pass)+"/"+id+"."+ext;
       LibraryCore.Item item=new LibraryCore.Item(LibraryCore.key(host+"|"+user+"|"+type+"|"+id),
         name.isEmpty()?"Untitled":name,names.getOrDefault(cat,"Uncategorized"),
         streamUrl,type,epg,language);
