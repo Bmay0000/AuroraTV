@@ -150,6 +150,66 @@ public final class Provider {
   progress.update("m3u",count);
   return count;
  }
+ /** Fetch a concise, real synopsis only when a user opens a title preview.
+  *  IPTV providers do not all supply film metadata; empty means unavailable. */
+ public static String mediaSummary(LibraryCore.Item item,String host,String user,String password)
+         throws Exception {
+  if(item==null || item.url==null || !("movie".equals(item.type)||
+          "series".equals(item.type)))return "";
+  String endpoint;
+  if("series".equals(item.type)) {
+   if(!item.url.contains("action=get_series_info"))return "";
+   endpoint=item.url;
+  } else {
+   java.util.regex.Matcher match=java.util.regex.Pattern.compile(
+     "/movie/[^/]+/[^/]+/(\\d+)\\.[A-Za-z0-9]{1,6}(?:\\?.*)?$")
+     .matcher(item.url);
+   if(!match.find())return "";
+   endpoint=base(host)+"/player_api.php?username="+enc(user)+
+     "&password="+enc(password)+"&action=get_vod_info&vod_id="+enc(match.group(1));
+  }
+  // Provider info may contain episode arrays; protect Fire TV from massive
+  // responses. The preview is optional if metadata exceeds our budget.
+  HttpURLConnection connection=(HttpURLConnection)new URL(endpoint).openConnection();
+  connection.setConnectTimeout(6500);connection.setReadTimeout(7500);
+  connection.setRequestProperty("User-Agent","AuroraTV/0.3");
+  try{
+   if(connection.getResponseCode()!=200)return "";
+   try(InputStream input=connection.getInputStream();
+       ByteArrayOutputStream buffer=new ByteArrayOutputStream()){
+    byte[] chunk=new byte[4096];int read;
+    while((read=input.read(chunk))!=-1){
+     if(buffer.size()+read>2*1024*1024)return "";
+     buffer.write(chunk,0,read);
+    }
+    JSONObject response=new JSONObject(buffer.toString("UTF-8"));
+    JSONObject info=response.optJSONObject("info");
+    if(info==null)info=response.optJSONObject("movie_data");
+    if(info==null)info=response;
+    String plot=info.optString("plot","");
+    if(plot.isEmpty())plot=info.optString("description","");
+    if(plot.isEmpty())plot=info.optString("overview","");
+    StringBuilder detail=new StringBuilder();
+    String year=info.optString("releasedate",info.optString("releaseDate",""));
+    String genre=info.optString("genre","");
+    String rating=info.optString("rating","");
+    if(!year.isEmpty())detail.append(year.length()>10?year.substring(0,10):year);
+    if(!genre.isEmpty()){
+     if(detail.length()>0)detail.append("  ·  ");
+     detail.append(genre);
+    }
+    if(!rating.isEmpty()){
+     if(detail.length()>0)detail.append("  ·  ");
+     detail.append("Rating ").append(rating);
+    }
+    if(!plot.isEmpty()){
+     if(detail.length()>0)detail.append("\n\n");
+     detail.append(plot.substring(0,Math.min(750,plot.length())));
+    }
+    return detail.toString().trim();
+   }
+  }finally{connection.disconnect();}
+ }
  public static List<LibraryCore.Item> episodes(LibraryCore.Item series)throws Exception{JSONObject root=new JSONObject(get(series.url));JSONObject seasons=root.getJSONObject("episodes");List<LibraryCore.Item> out=new ArrayList<>();List<String> keys=new ArrayList<>();seasons.keys().forEachRemaining(keys::add);Collections.sort(keys,(a,b)->{try{return Integer.compare(Integer.parseInt(a),Integer.parseInt(b));}catch(NumberFormatException ex){return a.compareTo(b);}});URL u=new URL(series.url);Map<String,String> args=new HashMap<>();for(String q:u.getQuery().split("&")){String[] p=q.split("=",2);if(p.length==2)args.put(p[0],URLDecoder.decode(p[1],"UTF-8"));}String host=series.url.substring(0,series.url.indexOf("/player_api.php"));for(String key:keys){JSONArray eps=seasons.getJSONArray(key);for(int i=0;i<eps.length();i++){JSONObject e=eps.getJSONObject(i);String id=e.optString("id");out.add(new LibraryCore.Item(series.id+"|"+id,"S"+key+" · E"+e.optString("episode_num")+"  "+e.optString("title"),series.category,host+"/series/"+segment(args.get("username"))+"/"+segment(args.get("password"))+"/"+id+"."+e.optString("container_extension","mp4"),"episode","",""));}}return out;}
  public static class Program { public String channel,title;public long start,end; }
  public static List<Program> epg(String url)throws Exception{String xml=get(base(url));XmlPullParser p=Xml.newPullParser();p.setInput(new StringReader(xml));List<Program> out=new ArrayList<>();Program current=null;for(int event=p.getEventType();event!=XmlPullParser.END_DOCUMENT;event=p.next()){if(event==XmlPullParser.START_TAG&&p.getName().equals("programme")){current=new Program();current.channel=p.getAttributeValue(null,"channel");current.start=date(p.getAttributeValue(null,"start"));current.end=date(p.getAttributeValue(null,"stop"));}else if(event==XmlPullParser.START_TAG&&p.getName().equals("title")&&current!=null)current.title=p.nextText();else if(event==XmlPullParser.END_TAG&&p.getName().equals("programme")&&current!=null){out.add(current);current=null;}}return out;}
