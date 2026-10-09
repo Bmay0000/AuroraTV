@@ -141,6 +141,15 @@ class CatalogDatabase {
     return rows.map((e) => e['category'] as String).toList();
   }
 
+  Future<List<MediaEntry>> byIds(List<String> ids) async {
+    if(ids.isEmpty)return [];
+    final limited=ids.take(80).toList();
+    final marks=List.filled(limited.length,'?').join(',');
+    final rows=await _db!.rawQuery('SELECT * FROM media WHERE id IN ($marks) AND hidden=0',limited);
+    final indexed={for(final row in rows) row['id'] as String: MediaEntry.fromRow(row)};
+    return limited.map((id)=>indexed[id]).whereType<MediaEntry>().toList();
+  }
+
   Future<void> mark(String id, {bool? favorite, bool? hidden}) async {
     final values = <String, Object?>{};
     if (favorite != null) values['favorite'] = favorite ? 1 : 0;
