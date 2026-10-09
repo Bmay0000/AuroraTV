@@ -1285,178 +1285,270 @@ public class MainActivity extends Activity {
  void stopGuidePreview(){
   if(guidePreview!=null){guidePreview.close();guidePreview=null;}
  }
+ static final class CompactGuideRow {
+  TextView channel,programme,next;
+ }
+
  void tvGuide(){
   stopGuidePreview();
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="guide";section="live";refreshSidebar();
   final int token=++browseToken;
-  final String selectedCategory=category;
-  final int selectedPage=guidePage,limit=18;
-  final Set<String> h=new HashSet<>(hidden),c=new HashSet<>(categories),
-    fav=new HashSet<>(favorites),lang=new HashSet<>(allowed),
-    manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
+  final String filter=guideFilter,search=guideQuery;
+  final Set<String> h=new HashSet<>(hidden),hc=new HashSet<>(categories),
+      fav=new HashSet<>(favorites),langs=new HashSet<>(allowed),
+      manual=new HashSet<>(shown),groups=new HashSet<>(shownCategories);
   final boolean strict=hideUnknown;
   body.removeAllViews();
-  body.addView(kicker("GETTING YOUR CHANNEL SCHEDULE"));
+  body.addView(kicker("OPENING CHANNEL GUIDE…"));
   catalogReadIO.execute(()->{
    try{
-    LibraryStore.Page result=store.page("live",selectedCategory,"",false,false,
-      h,c,fav,lang,strict,manual,manualGroups,selectedPage*limit,limit);
-    final List<GuideEngine.Slot> listings=new ArrayList<>();
-    for(LibraryCore.Item channel:result.rows)listings.add(epg.nowNext(channel));
+    final List<LibraryCore.Item> channels=store.channelDirectory(
+        filter,search,h,hc,fav,langs,strict,manual,groups);
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||!screen.equals("guide"))return;
      TvLayout metrics=tv();
-     int channelW=metrics.guideChannel,nowW=metrics.guideNow,
-         nextW=metrics.guideNext,actionsW=metrics.guideAction;
-     int rowHeight=TvLayout.clamp((int)(metrics.heightDp*.078),42,65);
      body.removeAllViews();
-     LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);
-     heading.addView(headline("TV GUIDE",TvLayout.clamp(metrics.headingSize(),25,36),Color.WHITE),
-       new LinearLayout.LayoutParams(0,-2,1));
-     int actionButtonWidth=metrics.contentWidth()<680?111:144;
-     Button settings=button("⚙  GUIDE SETUP",this::guideSettings);
-     settings.setTextSize(14);
-     heading.addView(settings,new LinearLayout.LayoutParams(dp(actionButtonWidth),dp(49)));
-     Button refreshButton=button("⟳  REFRESH",()->{
-      scheduleGuideSync(true,true);
-      toast("Guide refresh started");
+     // One compact toolbar, no separate hero/selection area or pagination.
+     LinearLayout toolbar=new LinearLayout(this);
+     toolbar.setGravity(Gravity.CENTER_VERTICAL);
+     body.addView(toolbar,new LinearLayout.LayoutParams(-1,dp(37)));
+     TextView heading=headline("LIVE GUIDE",TvLayout.clamp(metrics.bodySize()+3,16,23),Color.WHITE);
+     toolbar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
+     TextView total=text(channels.size()+" CHANNELS",11);
+     total.setTextColor(MUTED);
+     toolbar.addView(total);
+     Button searchButton=button(search.isEmpty()?"⌕ SEARCH":"⌕ "+search,()->guideSearch());
+     searchButton.setSingleLine(true);searchButton.setEllipsize(TextUtils.TruncateAt.END);
+     toolbar.addView(searchButton,new LinearLayout.LayoutParams(dp(
+       TvLayout.clamp(metrics.widthDp/7,78,140)),dp(32)));
+     Button settings=button("⚙",this::guideSettings);
+     settings.setContentDescription("TV Guide data and preview settings");
+     toolbar.addView(settings,new LinearLayout.LayoutParams(dp(43),dp(32)));
+     Button refresh=button("⟳",()->{
+      scheduleGuideSync(true,true);toast("Updating your guide in the background");
      });
-     refreshButton.setTextSize(14);
-     heading.addView(refreshButton,new LinearLayout.LayoutParams(dp(actionButtonWidth-12),dp(49)));
-     body.addView(heading,new LinearLayout.LayoutParams(-1,dp(metrics.heightDp<750?38:51)));
-     LinearLayout meta=new LinearLayout(this);meta.setGravity(Gravity.CENTER_VERTICAL);
-     body.addView(meta,new LinearLayout.LayoutParams(-1,dp(metrics.heightDp<750?38:49)));
-     Button categoriesButton=button("▦  "+selectedCategory+"   ▾",this::chooseGuideCategory);
-     categoriesButton.setSingleLine(true);
-     categoriesButton.setEllipsize(TextUtils.TruncateAt.END);
-     meta.addView(categoriesButton,new LinearLayout.LayoutParams(0,dp(46),1));
-     TextView clock=text("●  LIVE • "+displayTime(System.currentTimeMillis()),14);
-     clock.setTextColor(ACCENT);clock.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
-     meta.addView(clock,new LinearLayout.LayoutParams(dp(
-       TvLayout.clamp(metrics.contentWidth()/4,110,235)),dp(46)));
-     LinearLayout previewArea=new LinearLayout(this);
-     int previewHeight=TvLayout.clamp((int)(metrics.heightDp*.15),65,138);
-     LinearLayout.LayoutParams previewPosition=new LinearLayout.LayoutParams(-1,dp(previewHeight));
-     previewPosition.topMargin=dp(6);
-     body.addView(previewArea,previewPosition);
-     guidePreview=new GuidePreviewPane(this,store,posters,previewArea,metrics,
-       prefs.getBoolean("guide.preview.auto",true));
-     TextView helper=text("Highlight a channel to preview silently · Select to watch · Long press for options",13);
-     if(metrics.heightDp>=730){helper.setTextColor(MUTED);body.addView(helper);}
+     refresh.setContentDescription("Refresh TV programmes");
+     toolbar.addView(refresh,new LinearLayout.LayoutParams(dp(43),dp(32)));
 
-     HorizontalScrollView horizontal=new HorizontalScrollView(this);
-     horizontal.setHorizontalScrollBarEnabled(false);horizontal.setFillViewport(true);
-     horizontal.setClipToPadding(false);
-     body.addView(horizontal,new LinearLayout.LayoutParams(-1,0,1));
-     ScrollView scroll=new ScrollView(this);
-     scroll.setVerticalScrollBarEnabled(false);
-     scroll.setFillViewport(false);
-     horizontal.addView(scroll,new FrameLayout.LayoutParams(dp(metrics.guideWidth()),-1));
-     LinearLayout feed=column();feed.setPadding(dp(2),dp(4),dp(4),dp(8));
-     scroll.addView(feed);
-     LinearLayout timeline=new LinearLayout(this);
-     timeline.setGravity(Gravity.CENTER_VERTICAL);
-     timeline.setBackground(rounded(0xff154252,12,0xff28566b));
-     feed.addView(timeline,new LinearLayout.LayoutParams(-1,dp(metrics.heightDp<650?38:51)));
-     timeline.addView(guideColumn("CHANNEL",dp(channelW),ACCENT));
-     timeline.addView(guideColumn("ON NOW",dp(nowW),ACCENT));
-     timeline.addView(guideColumn("UP NEXT",dp(nextW),ACCENT));
-     timeline.addView(guideColumn("OPTIONS",dp(actionsW),ACCENT));
-     if(result.rows.isEmpty()){
-      TextView empty=text("No visible channels in this category. Check your filters or restore a category.",18);
-      empty.setTextColor(MUTED);feed.addView(empty);
-     }
-     final List<TextView[]> cells=new ArrayList<>();
-     for(int n=0;n<result.rows.size();n++){
-      LibraryCore.Item channel=result.rows.get(n);
-      GuideEngine.Slot slot=listings.get(n);
-      LinearLayout row=new LinearLayout(this);
-      row.setGravity(Gravity.CENTER_VERTICAL);
-      row.setPadding(dp(4),dp(5),dp(4),dp(5));
-      row.setBackground(rounded(n%2==0?0xff111f32:0xff13253a,10,0xff20364a));
-      LinearLayout.LayoutParams rowMargins=new LinearLayout.LayoutParams(-1,dp(rowHeight+7));
-      rowMargins.topMargin=dp(5);feed.addView(row,rowMargins);
-      Button watch=button("▶  "+channel.name,()->open(channel));
-      final GuidePreviewPane preview=guidePreview;
-      final boolean lightRow=n%2==0;
-      watch.setOnFocusChangeListener((view,focused)->{
-       row.setBackground(rounded(focused?0xff1d4655:(lightRow?0xff111f32:0xff13253a),
-          10,focused?ACCENT:0xff20364a));
-       watch.setBackground(rounded(focused?ACCENT:PANEL,11,focused?ACCENT:0xff26374b));
-       watch.setTextColor(focused?BG:Color.WHITE);
-       watch.setScaleX(focused?1.025f:1f);watch.setScaleY(focused?1.025f:1f);
-       if(focused&&preview!=null)preview.highlight(channel,slot);
+     HorizontalScrollView chipsScroll=new HorizontalScrollView(this);
+     chipsScroll.setHorizontalScrollBarEnabled(false);
+     chipsScroll.setClipChildren(true);chipsScroll.setClipToPadding(true);
+     body.addView(chipsScroll,new LinearLayout.LayoutParams(-1,dp(38)));
+     LinearLayout chips=new LinearLayout(this);
+     chips.setOrientation(LinearLayout.HORIZONTAL);
+     chips.setGravity(Gravity.CENTER_VERTICAL);
+     chipsScroll.addView(chips,new ViewGroup.LayoutParams(-2,-1));
+     final String[] filters={"North America","News","Sports","Entertainment",
+       "Movies","Kids","English","All","My Channels","International","Other"};
+     for(String option:filters){
+      Button chip=button(option,()->{
+       if(option.equals(guideFilter))return;
+       guideFilter=option;guidePage=0;tvGuide();
       });
-      watch.setTextSize(TvLayout.clamp(metrics.bodySize(),14,18));
-      watch.setGravity(Gravity.CENTER_VERTICAL|Gravity.LEFT);
-      watch.setSingleLine(false);watch.setMaxLines(2);
-      watch.setEllipsize(TextUtils.TruncateAt.END);
-      watch.setPadding(dp(10),0,dp(8),0);
-      row.addView(watch,new LinearLayout.LayoutParams(dp(channelW),-1));
-      LinearLayout current=column();current.setGravity(Gravity.CENTER_VERTICAL);
-      TextView now=text("",TvLayout.clamp(metrics.bodySize(),14,18));
-      now.setTextColor(Color.WHITE);now.setMaxLines(3);
-      now.setEllipsize(TextUtils.TruncateAt.END);
-      current.addView(now,new LinearLayout.LayoutParams(-1,0,1));
-      ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
-      progress.setMax(1000);
-      progress.setProgressTintList(ColorStateList.valueOf(ACCENT));
-      progress.setProgressBackgroundTintList(ColorStateList.valueOf(0xff30445a));
-      current.addView(progress,new LinearLayout.LayoutParams(-1,dp(4)));
-      LinearLayout.LayoutParams nowLp=new LinearLayout.LayoutParams(dp(nowW),-1);
-      nowLp.setMargins(dp(5),0,dp(5),0);row.addView(current,nowLp);
-      TextView next=text("",TvLayout.clamp(metrics.bodySize()-1,13,17));
-      next.setMaxLines(3);next.setEllipsize(TextUtils.TruncateAt.END);
-      next.setTextColor(0xffbacada);
-      LinearLayout.LayoutParams nextLp=new LinearLayout.LayoutParams(dp(nextW),-1);
-      next.setGravity(Gravity.CENTER_VERTICAL);row.addView(next,nextLp);
-      Button more=button("⋯  More",()->moreGuide(channel));
-      more.setTextSize(14);
-      row.addView(more,new LinearLayout.LayoutParams(dp(actionsW),dp(49)));
-      updateGuideCells(slot,now,next,progress);
-      cells.add(new TextView[]{now,next});
+      chip.setTextSize(TvLayout.clamp(metrics.bodySize()-2,11,14));
+      chip.setPadding(dp(9),0,dp(9),0);
+      if(option.equals(filter))chip.setBackground(rounded(0xff20594e,9,ACCENT));
+      LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-2,dp(31));
+      size.rightMargin=dp(4);chips.addView(chip,size);
      }
-     LinearLayout controls=new LinearLayout(this);
-     controls.setGravity(Gravity.CENTER_VERTICAL);
-     if(selectedPage>0)
-      controls.addView(button("◀ PREVIOUS",()->{guidePage--;tvGuide();}),
-        new LinearLayout.LayoutParams(0,dp(52),1));
-     if(result.more)
-      controls.addView(button("NEXT CHANNELS  →",()->{guidePage++;tvGuide();}),
-        new LinearLayout.LayoutParams(0,dp(52),1));
-     body.addView(controls);
-     int scheduled=0;
-     for(GuideEngine.Slot slot:listings)if(slot.hasData())scheduled++;
-     subtitle.setText(scheduled+" / "+result.rows.size()+" guide listings · Page "+(selectedPage+1));
-     if(!result.rows.isEmpty()&&scheduled*4<result.rows.size()){
-      Button health=button("MISSING LISTINGS?  EXPLORE EPG SOURCES  →",this::guideSettings);
-      health.setTextSize(13);body.addView(health,new LinearLayout.LayoutParams(-1,dp(48)));
-     }
-     queueVisibleShortEpg(result.rows,listings,cells,token);
-     scheduleGuideSync(false,true);
-     if(!result.rows.isEmpty()){
-      // Initial highlighted row automatically schedules its muted preview.
-      for(int i=0;i<feed.getChildCount();i++){
-       View child=feed.getChildAt(i);
-       if(child instanceof LinearLayout && ((LinearLayout)child).getChildCount()>0){
-        View first=((LinearLayout)child).getChildAt(0);
-        if(first instanceof Button && ((Button)first).getText().toString().startsWith("▶")){
-         first.requestFocus();break;
+     Button moreCategories=button("CATEGORIES ▾",this::chooseGuideCategory);
+     moreCategories.setTextSize(12);
+     chips.addView(moreCategories,new LinearLayout.LayoutParams(dp(119),dp(31)));
+
+     LinearLayout main=new LinearLayout(this);
+     main.setGravity(Gravity.TOP);
+     main.setClipChildren(true);main.setClipToPadding(true);
+     LinearLayout.LayoutParams viewport=new LinearLayout.LayoutParams(-1,0,1);
+     viewport.topMargin=dp(3);
+     body.addView(main,viewport);
+     LinearLayout directory=column();
+     directory.setClipToPadding(true);directory.setClipChildren(true);
+     final int paneWidth=TvLayout.clamp((int)(metrics.contentWidth()*.265),180,350);
+     LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,-1,1);
+     left.rightMargin=dp(7);main.addView(directory,left);
+     LinearLayout columns=new LinearLayout(this);
+     columns.setGravity(Gravity.CENTER_VERTICAL);
+     columns.setBackground(rounded(0xff12303b,8,0));
+     directory.addView(columns,new LinearLayout.LayoutParams(-1,dp(28)));
+     int leftWidth=Math.max(380,metrics.contentWidth()-paneWidth-20);
+     int channelW=(int)(leftWidth*.40),nowW=(int)(leftWidth*.36),nextW=leftWidth-channelW-nowW;
+     TextView channelHeader=text("CHANNEL",11);channelHeader.setTextColor(ACCENT);
+     columns.addView(channelHeader,new LinearLayout.LayoutParams(0,-2,.40f));
+     TextView nowHeader=text("ON NOW",11);nowHeader.setTextColor(ACCENT);
+     columns.addView(nowHeader,new LinearLayout.LayoutParams(0,-2,.36f));
+     TextView nextHeader=text("UP NEXT",11);nextHeader.setTextColor(ACCENT);
+     columns.addView(nextHeader,new LinearLayout.LayoutParams(0,-2,.24f));
+
+     final java.util.Map<String,GuideEngine.Slot> slots=new java.util.concurrent.ConcurrentHashMap<>();
+     final Set<String> pending=java.util.concurrent.ConcurrentHashMap.newKeySet();
+     final ListView listing=new ListView(this);
+     listing.setVerticalScrollBarEnabled(false);
+     listing.setDividerHeight(dp(1));
+     listing.setCacheColorHint(Color.TRANSPARENT);
+     listing.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
+     listing.setSelector(selectionOutline());
+     listing.setDrawSelectorOnTop(true);
+     listing.setClipToPadding(true);
+     listing.setPadding(dp(1),dp(2),dp(1),dp(2));
+     directory.addView(listing,new LinearLayout.LayoutParams(-1,0,1));
+     final int lineHeight=TvLayout.clamp((int)(metrics.heightDp*.073),33,49);
+     final BaseAdapter adapter=new BaseAdapter(){
+      @Override public int getCount(){return channels.size();}
+      @Override public Object getItem(int position){return channels.get(position);}
+      @Override public long getItemId(int position){return position;}
+      @Override public View getView(int position,View recycled,ViewGroup parent){
+       LinearLayout row;
+       CompactGuideRow holder;
+       if(recycled instanceof LinearLayout && recycled.getTag() instanceof CompactGuideRow){
+        row=(LinearLayout)recycled;holder=(CompactGuideRow)row.getTag();
+       }else{
+        row=new LinearLayout(MainActivity.this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(5),dp(2),dp(4),dp(2));
+        holder=new CompactGuideRow();
+        holder.channel=text("",TvLayout.clamp(metrics.bodySize()-1,12,16));
+        holder.programme=text("",TvLayout.clamp(metrics.bodySize()-2,11,15));
+        holder.next=text("",TvLayout.clamp(metrics.bodySize()-3,10,14));
+        holder.channel.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        for(TextView t:new TextView[]{holder.channel,holder.programme,holder.next}){
+         t.setMaxLines(1);t.setSingleLine(true);
+         t.setEllipsize(TextUtils.TruncateAt.END);
+         t.setPadding(dp(5),0,dp(5),0);
         }
+        holder.programme.setTextColor(0xffd5e3ed);
+        holder.next.setTextColor(0xffa2b6c6);
+        row.addView(holder.channel,new LinearLayout.LayoutParams(0,-2,.40f));
+        row.addView(holder.programme,new LinearLayout.LayoutParams(0,-2,.36f));
+        row.addView(holder.next,new LinearLayout.LayoutParams(0,-2,.24f));
+        row.setTag(holder);
+        row.setLayoutParams(new AbsListView.LayoutParams(-1,dp(lineHeight)));
        }
+       LibraryCore.Item item=channels.get(position);
+       holder.channel.setText(item.name);
+       GuideEngine.Slot available=slots.get(item.id);
+       holder.programme.setText(available!=null&&available.now!=null?
+           available.now.title:"Programme information unavailable");
+       holder.next.setText(available!=null&&available.next!=null?
+           available.next.title:"—");
+       row.setBackground(rounded(position%2==0?0xff111e2d:0xff142334,7,0));
+       return row;
       }
+     };
+     listing.setAdapter(adapter);
+     if(channels.isEmpty()){
+      TextView empty=text("No channels in this section. Try All, English, or a provider category.",15);
+      directory.addView(empty);
      }
+
+     LinearLayout previewPanel=column();
+     previewPanel.setClipChildren(true);previewPanel.setClipToPadding(true);
+     main.addView(previewPanel,new LinearLayout.LayoutParams(dp(paneWidth),-1));
+     LinearLayout window=new LinearLayout(this);
+     // Actual video is in a right-side preview, not a huge block above the guide.
+     previewPanel.addView(window,new LinearLayout.LayoutParams(-1,-2));
+     guidePreview=new GuidePreviewPane(this,store,posters,window,metrics,
+       prefs.getBoolean("guide.preview.auto",true),true);
+     final GuidePreviewPane preview=guidePreview;
+     final LibraryCore.Item[] focused={null};
+     Button watch=button("▶ WATCH",()->{
+      if(focused[0]!=null)open(focused[0]);
+     });
+     LinearLayout.LayoutParams wb=new LinearLayout.LayoutParams(-1,dp(37));
+     wb.topMargin=dp(7);previewPanel.addView(watch,wb);
+     Button info=button("⋯ CHANNEL OPTIONS",()->{
+      if(focused[0]!=null)moreGuide(focused[0]);
+     });
+     previewPanel.addView(info,new LinearLayout.LayoutParams(-1,dp(34)));
+     listing.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
+      @Override public void onItemSelected(AdapterView<?> parent,View v,int position,long id){
+       if(position<0||position>=channels.size())return;
+       LibraryCore.Item chosen=channels.get(position);
+       focused[0]=chosen;
+       preview.highlight(chosen,slots.get(chosen.id));
+       fetchGuideSchedules(token,channels,Math.max(0,position-5),26,slots,pending,adapter,
+         chosen.id,preview);
+      }
+      @Override public void onNothingSelected(AdapterView<?> parent){}
+     });
+     listing.setOnItemClickListener((parent,v,position,id)->{
+      if(position>=0&&position<channels.size())open(channels.get(position));
+     });
+     listing.setOnItemLongClickListener((parent,v,position,id)->{
+      if(position>=0&&position<channels.size())moreGuide(channels.get(position));
+      return true;
+     });
+     listing.setOnScrollListener(new AbsListView.OnScrollListener(){
+      @Override public void onScrollStateChanged(AbsListView view,int state){}
+      @Override public void onScroll(AbsListView view,int first,int visible,int total){
+       if(visible>0)fetchGuideSchedules(token,channels,first,visible+10,
+         slots,pending,adapter,focused[0]==null?"":focused[0].id,preview);
+      }
+     });
+     if(!channels.isEmpty()){
+      listing.setSelection(0);
+      listing.requestFocus();
+      focused[0]=channels.get(0);
+      preview.highlight(channels.get(0),slots.get(channels.get(0).id));
+      fetchGuideSchedules(token,channels,0,32,slots,pending,adapter,
+        channels.get(0).id,preview);
+     }else searchButton.requestFocus();
+     scheduleGuideSync(false,true);
     });
-   }catch(Exception error){
+   }catch(Exception ex){
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||!screen.equals("guide"))return;
      body.removeAllViews();
-     body.addView(headline("Guide temporarily unavailable",22,Color.WHITE));
-     body.addView(button("TRY AGAIN",this::tvGuide));
+     body.addView(text("Could not load channels. Please try again.",16));
+     body.addView(button("RETRY",this::tvGuide));
     });
    }
   });
+ }
+
+ void fetchGuideSchedules(int token,List<LibraryCore.Item> channels,int first,int count,
+     Map<String,GuideEngine.Slot> cache,Set<String> pending,
+     BaseAdapter adapter,String selectedId,GuidePreviewPane preview){
+  if(token!=browseToken||!screen.equals("guide"))return;
+  List<LibraryCore.Item> needed=new ArrayList<>();
+  for(int i=Math.max(0,first);i<Math.min(channels.size(),first+count);i++){
+   LibraryCore.Item item=channels.get(i);
+   if(cache.containsKey(item.id)||!pending.add(item.id))continue;
+   needed.add(item);
+  }
+  if(needed.isEmpty())return;
+  catalogReadIO.execute(()->{
+   final Map<String,GuideEngine.Slot> filled=new HashMap<>();
+   for(LibraryCore.Item item:needed){
+    if(token!=browseToken||Thread.currentThread().isInterrupted())break;
+    try{filled.put(item.id,epg.nowNext(item));}catch(Exception ignored){}
+   }
+   runOnUiThread(()->{
+    for(LibraryCore.Item item:needed)pending.remove(item.id);
+    if(isDestroyed()||token!=browseToken||!screen.equals("guide"))return;
+    cache.putAll(filled);
+    adapter.notifyDataSetChanged();
+    if(selectedId!=null&&filled.containsKey(selectedId)&&preview==guidePreview)
+     preview.updateSchedule(filled.get(selectedId));
+   });
+  });
+ }
+
+ void guideSearch(){
+  EditText field=new EditText(this);
+  field.setText(guideQuery);field.setSingleLine(true);
+  field.setHint("Channel name or category");
+  field.setTextColor(Color.WHITE);
+  field.setPadding(dp(15),dp(12),dp(15),dp(12));
+  new AlertDialog.Builder(this).setTitle("Find a channel")
+   .setView(field)
+   .setPositiveButton("SEARCH",(dialog,which)->{
+    guideQuery=field.getText().toString().trim();tvGuide();
+   })
+   .setNeutralButton("CLEAR",(dialog,which)->{
+    guideQuery="";tvGuide();
+   })
+   .setNegativeButton("CANCEL",null).show();
  }
 
  TextView guideColumn(String text,int width,int color){
