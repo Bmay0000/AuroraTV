@@ -682,7 +682,7 @@ class AuroraButton extends StatelessWidget{
         backgroundColor:WidgetStateProperty.resolveWith((states)=>
           states.contains(WidgetState.focused)?C.aqua.withValues(alpha:.35):
           primary?Colors.white:
-          selected?C.aqua.withValues(alpha:.16):Colors.black.withValues(alpha:nav?.02:.45)),
+          selected?C.aqua.withValues(alpha:.16):Colors.black.withValues(alpha:nav ? 0.02 : 0.45)),
         foregroundColor:WidgetStatePropertyAll(primary?Colors.black:Colors.white),
         side:WidgetStateProperty.resolveWith((states)=>BorderSide(
           width:states.contains(WidgetState.focused)?2.5:1,
