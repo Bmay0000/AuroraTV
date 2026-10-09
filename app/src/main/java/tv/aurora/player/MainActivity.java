@@ -23,7 +23,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false,browseAll=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV3",false)){
     // Prior versions auto-enabled strict mode for English-only libraries,
@@ -290,7 +290,7 @@ public class MainActivity extends Activity {
   if(key.equals("guide"))return screen.equals("guide");
   if(key.equals("favorites"))return screen.equals("browse")&&favOnly;
   if(key.equals("library"))return screen.equals("browse")&&editing;
-  return screen.equals("browse")&&!favOnly&&!editing&&key.equals(section);
+  return (screen.equals("browse")||screen.equals("discover"))&&!favOnly&&!editing&&key.equals(section);
  }
  void refreshSidebar(){
   for(Button item:navButtons.values())styleNav(item,item.isFocused());
@@ -335,11 +335,11 @@ public class MainActivity extends Activity {
   });
   addNav("movie","Movies",()->{
    section="movie";favOnly=false;hiddenOnly=false;editing=false;
-   page=0;category="All";query="";browse();
+   page=0;category="All";query="";browseAll=false;browse();
   });
   addNav("series","TV Shows",()->{
    section="series";favOnly=false;hiddenOnly=false;editing=false;
-   page=0;category="All";query="";browse();
+   page=0;category="All";query="";browseAll=false;browse();
   });
   addNav("favorites","My List",()->{
    favOnly=true;hiddenOnly=false;editing=false;page=0;browse();
@@ -431,7 +431,7 @@ public class MainActivity extends Activity {
    try{
     LibraryStore.RecentMovies result=store.recentMovies(h,hc,fav,langs,strict,manual,groups);
     runOnUiThread(()->{
-     if(isDestroyed()||token!=browseToken||!"home".equals(screen))return;
+     if(isDestroyed()||token!=browseToken||(!"home".equals(screen)&&!"discover".equals(screen)))return;
      recentArea.removeAllViews();
      if(!result.english.isEmpty())
       homeShelf(recentArea,"NEW & RECENT • ENGLISH MOVIES","movie",result.english);
@@ -461,7 +461,7 @@ public class MainActivity extends Activity {
       store.featuredInternational(type,24,h,hc,fav,lang,strict,manual,groups):
       store.featuredEnglish(type,24,h,hc,fav,lang,strict,manual,groups);
     runOnUiThread(()->{
-     if(isDestroyed()||token!=browseToken||!"home".equals(screen))return;
+     if(isDestroyed()||token!=browseToken||(!"home".equals(screen)&&!"discover".equals(screen)))return;
      if(matches.isEmpty())return;
      homeShelf(target,label,type,matches);
     });
@@ -517,7 +517,7 @@ public class MainActivity extends Activity {
      unique.add(candidate.genre);
     }
     runOnUiThread(()->{
-     if(isDestroyed()||token!=browseToken||!"home".equals(screen))return;
+     if(isDestroyed()||token!=browseToken||(!"home".equals(screen)&&!"discover".equals(screen)))return;
      target.removeAllViews();
      for(Genre row:verified)
       homeShelf(target,row.category.genre+" • ENGLISH MOVIES",
@@ -704,7 +704,7 @@ public class MainActivity extends Activity {
     guideFilter="North America";guideQuery="";guidePage=0;tvGuide();return;
    }
    section=type;category=exactCategory==null?"All":exactCategory;
-   query="";page=0;favOnly=false;hiddenOnly=false;editing=false;browse();
+   browseAll=true;query="";page=0;favOnly=false;hiddenOnly=false;editing=false;browse();
   });
   more.setTextSize(11);
   line.addView(more,new LinearLayout.LayoutParams(dp(97),dp(32)));
@@ -1001,9 +1001,103 @@ public class MainActivity extends Activity {
   return row;
  }
 
+ /** A streaming-service browse page: curated English categories first,
+  *  then unverified titles, then international. The complete grid is one
+  *  action away, rather than immediately dumping alphabetically sorted VOD. */
+ void catalogLanding(String type){
+  stopGuidePreview();
+  screen="discover";section=type;refreshSidebar();
+  final int token=++browseToken;
+  final Set<String> h=new HashSet<>(hidden),hc=new HashSet<>(categories),
+      fav=new HashSet<>(favorites),langs=new HashSet<>(allowed),
+      manual=new HashSet<>(shown),groups=new HashSet<>(shownCategories);
+  final boolean strict=hideUnknown;
+  body.removeAllViews();
+  LinearLayout toolbar=new LinearLayout(this);
+  toolbar.setGravity(Gravity.CENTER_VERTICAL);
+  body.addView(toolbar,new LinearLayout.LayoutParams(-1,dp(38)));
+  TextView heading=headline(type.equals("movie")?"MOVIES":"TV SHOWS",
+      TvLayout.clamp(tv().bodySize()+4,17,23),Color.WHITE);
+  toolbar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
+  Button search=button("⌕ FIND",()->{
+   section=type;focusSearchNext=true;browseAll=true;browse();
+  });
+  toolbar.addView(search,new LinearLayout.LayoutParams(dp(79),dp(32)));
+  Button groupsButton=button("GENRES ▾",()->{
+   section=type;browseAll=true;chooseCategory();
+  });
+  toolbar.addView(groupsButton,new LinearLayout.LayoutParams(dp(104),dp(32)));
+  Button all=button("ALL TITLES →",()->{
+   section=type;category="All";browseAll=true;page=0;browse();
+  });
+  toolbar.addView(all,new LinearLayout.LayoutParams(dp(119),dp(32)));
+
+  ScrollView scroller=new ScrollView(this);
+  scroller.setVerticalScrollBarEnabled(false);scroller.setFillViewport(false);
+  scroller.setClipChildren(true);scroller.setClipToPadding(true);
+  body.addView(scroller,new LinearLayout.LayoutParams(-1,0,1));
+  LinearLayout feed=column();
+  feed.setPadding(dp(3),dp(1),dp(3),dp(10));
+  feed.setClipChildren(true);feed.setClipToPadding(true);
+  scroller.addView(feed,new ScrollView.LayoutParams(-1,-2));
+  LinearLayout recent=column(),english=column(),genres=column(),unknown=column(),
+      international=column();
+  feed.addView(recent);feed.addView(english);feed.addView(genres);
+  feed.addView(unknown);feed.addView(international);
+  if("movie".equals(type)){
+   fetchRecentMovies(token,recent,unknown,international,h,hc,fav,langs,strict,manual,groups);
+   fetchGenreShelves(token,genres,h,hc,fav,langs,strict,manual,groups);
+  }else{
+   fetchSeriesCategories(token,genres,h,hc,fav,langs,strict,manual,groups);
+  }
+  fetchLanguageShelf(token,type,english,
+      type.equals("movie")?"POPULAR ENGLISH MOVIES":"ENGLISH TV SERIES",
+      false,h,hc,fav,langs,strict,manual,groups);
+  fetchLanguageShelf(token,type,international,
+      type.equals("movie")?"MORE INTERNATIONAL MOVIES":"INTERNATIONAL TV SERIES",
+      true,h,hc,fav,langs,strict,manual,groups);
+ }
+
+ void fetchSeriesCategories(int token,LinearLayout target,
+       Set<String> h,Set<String> hc,Set<String> fav,Set<String> langs,boolean strict,
+       Set<String> manual,Set<String> groups){
+  catalogReadIO.execute(()->{
+   try{
+    List<String> categoryNames=new ArrayList<>();
+    for(String categoryName:store.categories("series")){
+     if(categoryNames.size()>=4)break;
+     if(!"en".equals(LibraryCore.infer(categoryName)))continue;
+     categoryNames.add(categoryName);
+    }
+    final Map<String,List<LibraryCore.Item>> entries=new LinkedHashMap<>();
+    for(String cat:categoryNames){
+     LibraryStore.Page result=store.page("series",cat,"",false,false,
+       h,hc,fav,langs,strict,manual,groups,0,80);
+     List<LibraryCore.Item> rows=new ArrayList<>();
+     for(LibraryCore.Item item:result.rows){
+      if(MediaDiscovery.confirmedEnglish(item))rows.add(item);
+      if(rows.size()>=24)break;
+     }
+     if(rows.size()>1)entries.put(cat,rows);
+    }
+    runOnUiThread(()->{
+     if(isDestroyed()||token!=browseToken||!screen.equals("discover"))return;
+     target.removeAllViews();
+     for(Map.Entry<String,List<LibraryCore.Item>> entry:entries.entrySet())
+      homeShelf(target,entry.getKey(),"series",entry.getValue(),entry.getKey());
+    });
+   }catch(Exception ignored){}
+  });
+ }
+
  void browse(){
   stopGuidePreview();
   if(!store.hasLibrary()){loginScreen(false);return;}
+  if(!browseAll&&!editing&&!hiddenOnly&&!favOnly&&
+      ("movie".equals(section)||"series".equals(section))&&
+      "All".equals(category)&&(query==null||query.isEmpty())){
+   catalogLanding(section);return;
+  }
   screen="browse";refreshSidebar();
   final int token=++browseToken;
   final String type=section,cat=category,search=query;
