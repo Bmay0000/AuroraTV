@@ -8,7 +8,10 @@ AuroraTV is an independent, original dark-themed streaming interface for Android
 
 - Xtream Codes and M3U login, with locally encrypted credentials, compact credential-free Xtream references, and AES-GCM encryption for playlist URLs.
 - Live TV, movies, series/episodes, search, favorites, language filtering, category hiding/restoration and poster-based browsing.
-- Fixed top navigation, full-width cinematic hero, horizontal media shelves, Continue Watching and My List, high-contrast remote selection and poster/title spotlights.
+- Compact, responsive top navigation with a restrained featured banner, 7+ poster slots on a typical Fire TV layout, dense film/series grids, Continue Watching and My List, and high-contrast remote selection.
+- Homepage discovery focused on **recent English-language films** using provider release-year and language metadata (or explicit years in titles), plus real action, comedy, thriller and other genre sections from the user's provider. Unknown languages are clearly marked as unverified, and no fabricated release dates are shown.
+- Adjustable **Display density** under Settings: Comfortable, Compact (default) or Extra compact for more movie posters and more rows per TV screen.
+- Existing v0.5 catalogs migrate in place to optional release year, rating and added-at metadata. No new IPTV import is needed to install v0.6. Full release-year data depends on what the provider includes.
 - A TV Guide combining compatible Xtream/short EPG with configurable XMLTV feeds.
 - **Guide preview panel:** move focus onto a station to begin an automatic, silent preview after a short delay. Only one preview connection is active. Press Select to watch fullscreen.
 - Fullscreen Media3 playback, stable buffering/recovery options, live restart, VOD resume, seekbar, rewind/fast forward, selectable playback speeds, audio/subtitle track choices (when streams provide them), aspect controls and stream-health diagnostics.
@@ -49,6 +52,7 @@ The included signing key is for **development/testing**, not store releases. Min
 - Muted guide previews require an additional temporary stream connection and a supported hardware decoder. Rapid remote focus changes are debounced; failed previews stop after a timeout. Some providers limit simultaneous stream connections.
 - Channel guide entries require genuine programme data. Missing schedules may need an independent XMLTV source or manual channel matching.
 - Subtitle/audio menus depend on tracks actually present in the video stream; not every codec or provider supports every playback speed.
+- Release recommendations only claim a verified English language when provider metadata, explicit language or recognized category codes support it. Movies without a trustworthy year are not presented as new releases; recommendations depend on the IPTV provider's available data.
 - Hardware performance and remote behavior need testing on specific Fire TV models. Passing CI compilation is not a substitute for device playback testing.
 
 AuroraTV is an independently designed player; it does not include copied commercial streaming-service layouts, names or artwork.
