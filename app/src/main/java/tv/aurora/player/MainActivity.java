@@ -1131,16 +1131,15 @@ public class MainActivity extends Activity {
      LinearLayout heading=new LinearLayout(this);
      heading.setGravity(Gravity.CENTER_VERTICAL);
      boolean compact=tv().heightDp<470;
-     int actionHeight=compact?35:46;
+     int actionHeight=compact?31:36;
      String title=(isEditing?"EDIT  /  ":"")+(showHidden?"HIDDEN":onlyFavorites?"FAVORITES":
        type.equals("live")?"LIVE TV":type.equals("movie")?"MOVIES":"TV SHOWS");
      heading.addView(headline(title,TvLayout.clamp(tv().headingSize(),compact?20:23,31),Color.WHITE),new LinearLayout.LayoutParams(0,-2,1));
-     int actionsWidth=tv().contentWidth()<650?105:134;
+     int actionsWidth=tv().contentWidth()<650?98:118;
      Button filters=button("☷  FILTERS",this::smart);
      heading.addView(filters,new LinearLayout.LayoutParams(dp(actionsWidth),dp(actionHeight)));
-     Button back=button("⌂  HOME",this::home);
-     heading.addView(back,new LinearLayout.LayoutParams(dp(actionsWidth),dp(actionHeight)));
-     body.addView(heading,new LinearLayout.LayoutParams(-1,dp(compact?37:50)));
+
+     body.addView(heading,new LinearLayout.LayoutParams(-1,dp(compact?33:41)));
 
      // Users can search within the selected media type without going back to
      // the navigation menu. Search is performed by SQLite, not in-memory scans.
@@ -1192,36 +1191,35 @@ public class MainActivity extends Activity {
       return;
      }
      subtitle.setText("Your entertainment, your selection");
-     if(!compact)
-      body.addView(text("Showing "+(requested*PAGE_SIZE+1)+"–"+
-          (requested*PAGE_SIZE+result.rows.size())+(result.more?"+":"")+" matching titles",13));
+
+     final List<LibraryCore.Item> shownRows=new ArrayList<>(result.rows);
+     final boolean[] more={result.more},loadingMore={false};
+     final int[] loadedPages={requested};
+     final BaseAdapter[] viewAdapter={null};
+     Runnable fetchNext=()->{
+      if(loadingMore[0]||!more[0]||token!=browseToken)return;
+      loadingMore[0]=true;
+      final int next=loadedPages[0]+1;
+      catalogReadIO.execute(()->{
+       try{
+        LibraryStore.Page batch=store.page(type,cat,search,showHidden,onlyFavorites,
+          h,hc,fav,lang,hide,manual,manualGroups,next*PAGE_SIZE,PAGE_SIZE);
+        runOnUiThread(()->{
+         if(isDestroyed()||token!=browseToken||!"browse".equals(screen))return;
+         shownRows.addAll(batch.rows);
+         loadedPages[0]=next;
+         more[0]=batch.more;
+         loadingMore[0]=false;
+         if(viewAdapter[0]!=null)viewAdapter[0].notifyDataSetChanged();
+        });
+       }catch(Exception e){
+        runOnUiThread(()->{
+         if(token==browseToken){loadingMore[0]=false;more[0]=false;}
+        });
+       }
+      });
+     };
      if(type.equals("movie")||type.equals("series")){
-      LinearLayout featuredSelection=new LinearLayout(this);
-      featuredSelection.setGravity(Gravity.CENTER_VERTICAL);
-      featuredSelection.setPadding(dp(12),dp(7),dp(15),dp(7));
-      featuredSelection.setBackground(rounded(0xff172a3a,14,0xff2c5861));
-      LinearLayout.LayoutParams spotlightSize=new LinearLayout.LayoutParams(-1,dp(tv().heightDp<750?60:76));
-      spotlightSize.bottomMargin=dp(8);
-      if(!compact)body.addView(featuredSelection,spotlightSize);
-      ImageView spotlightPoster=new ImageView(this);
-      spotlightPoster.setScaleType(ImageView.ScaleType.CENTER_CROP);
-      featuredSelection.addView(spotlightPoster,
-         new LinearLayout.LayoutParams(dp(tv().heightDp<750?38:51),-1));
-      LinearLayout details=column();
-      details.setPadding(dp(17),0,dp(4),0);
-      details.setGravity(Gravity.CENTER_VERTICAL);
-      featuredSelection.addView(details,new LinearLayout.LayoutParams(0,-1,1));
-      details.addView(kicker("YOUR SELECTION"));
-      TextView spotlightTitle=headline("Choose a title",TvLayout.clamp(tv().bodySize()+5,18,25),Color.WHITE);
-      spotlightTitle.setSingleLine(true);
-      spotlightTitle.setEllipsize(TextUtils.TruncateAt.END);
-      details.addView(spotlightTitle);
-      TextView spotlightCategory=text("Press SELECT for details and playback",14);
-      spotlightCategory.setTextColor(MUTED);
-      spotlightCategory.setSingleLine(true);
-      details.addView(spotlightCategory);
-      TextView selectTip=kicker("●  SELECT TO OPEN");
-      if(tv().contentWidth()>680)featuredSelection.addView(selectTip);
       GridView grid=new GridView(this);
       grid.setNumColumns(GridView.AUTO_FIT);
       grid.setColumnWidth(dp(tv().posterWidth));
@@ -1229,41 +1227,35 @@ public class MainActivity extends Activity {
       grid.setHorizontalSpacing(dp(tv().columnGap));
       grid.setVerticalSpacing(dp(tv().columnGap));
       grid.setVerticalScrollBarEnabled(false);
-      grid.setClipToPadding(false);
-      grid.setPadding(dp(5),dp(10),dp(5),dp(16));
+      grid.setClipToPadding(true);
+      grid.setPadding(dp(3),dp(4),dp(3),dp(5));
       grid.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
       grid.setSelector(selectionOutline());
       grid.setDrawSelectorOnTop(true);
       grid.setFocusable(true);
       body.addView(grid,new LinearLayout.LayoutParams(-1,0,1));
-      grid.setAdapter(new BaseAdapter(){
-       public int getCount(){return result.rows.size();}
-       public Object getItem(int n){return result.rows.get(n);}
+      BaseAdapter gridAdapter=new BaseAdapter(){
+       public int getCount(){return shownRows.size();}
+       public Object getItem(int n){return shownRows.get(n);}
        public long getItemId(int n){return n;}
        public View getView(int n,View reuse,ViewGroup parent){
-        return posterGridCard(result.rows.get(n),reuse);
+        return posterGridCard(shownRows.get(n),reuse);
+       }
+      };
+      viewAdapter[0]=gridAdapter;
+      grid.setAdapter(gridAdapter);
+      grid.setOnScrollListener(new AbsListView.OnScrollListener(){
+       public void onScrollStateChanged(AbsListView view,int state){}
+       public void onScroll(AbsListView view,int first,int visible,int total){
+        if(visible>0&&first+visible>=shownRows.size()-18)fetchNext.run();
        }
       });
-      grid.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
-       public void onItemSelected(AdapterView<?> parent,View view,int pos,long id){
-        LibraryCore.Item film=result.rows.get(pos);
-        spotlightTitle.setText(film.name);
-        spotlightCategory.setText(film.category);
-        posters.bind(spotlightPoster,film.artwork);
-       }
-       public void onNothingSelected(AdapterView<?> parent){}
-      });
-      if(!result.rows.isEmpty()){
-       LibraryCore.Item first=result.rows.get(0);
-       spotlightTitle.setText(first.name);
-       spotlightCategory.setText(first.category);
-       posters.bind(spotlightPoster,first.artwork);
-      }
+
       grid.setOnItemClickListener((parent,v,n,id)->{
-       LibraryCore.Item media=result.rows.get(n);
+       LibraryCore.Item media=shownRows.get(n);
        if(editing)actions(media);else showMediaDetails(media);
       });
-      grid.setOnItemLongClickListener((parent,v,n,id)->{actions(result.rows.get(n));return true;});
+      grid.setOnItemLongClickListener((parent,v,n,id)->{actions(shownRows.get(n));return true;});
      }else{
       LinearLayout selection=new LinearLayout(this);
       selection.setGravity(Gravity.CENTER_VERTICAL);
@@ -1291,19 +1283,27 @@ public class MainActivity extends Activity {
       ListView list=new ListView(this);
       list.setDividerHeight(dp(9));
       body.addView(list,new LinearLayout.LayoutParams(-1,0,1));
-      list.setAdapter(new BaseAdapter(){
-       public int getCount(){return result.rows.size();}
-       public Object getItem(int n){return result.rows.get(n);}
+      BaseAdapter listAdapter=new BaseAdapter(){
+       public int getCount(){return shownRows.size();}
+       public Object getItem(int n){return shownRows.get(n);}
        public long getItemId(int n){return n;}
        public View getView(int n,View reuse,ViewGroup parent){
-        return liveChannelRow(result.rows.get(n),reuse);
+        return liveChannelRow(shownRows.get(n),reuse);
+       }
+      };
+      viewAdapter[0]=listAdapter;
+      list.setAdapter(listAdapter);
+      list.setOnScrollListener(new AbsListView.OnScrollListener(){
+       public void onScrollStateChanged(AbsListView view,int state){}
+       public void onScroll(AbsListView view,int first,int visible,int total){
+        if(visible>0&&first+visible>=shownRows.size()-18)fetchNext.run();
        }
       });
       list.setSelector(selectionOutline());
       list.setDrawSelectorOnTop(true);
       list.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
        public void onItemSelected(AdapterView<?> parent,View v,int position,long id){
-        LibraryCore.Item channel=result.rows.get(position);
+        LibraryCore.Item channel=shownRows.get(position);
         channelTitle.setText(channel.name);
         channelNow.setText(channel.category+nowNext(channel).replace('\n',' '));
         posters.bind(stationLogo,channel.artwork);
@@ -1317,16 +1317,11 @@ public class MainActivity extends Activity {
        posters.bind(stationLogo,first.artwork);
       }
       list.setOnItemClickListener((parent,v,n,id)->{
-       LibraryCore.Item picked=result.rows.get(n);if(editing)actions(picked);else showLivePreview(picked);
+       LibraryCore.Item picked=shownRows.get(n);if(editing)actions(picked);else showLivePreview(picked);
       });
-      list.setOnItemLongClickListener((parent,v,n,id)->{actions(result.rows.get(n));return true;});
+      list.setOnItemLongClickListener((parent,v,n,id)->{actions(shownRows.get(n));return true;});
      }
-     LinearLayout navigation=new LinearLayout(this);
-     if(requested>0)navigation.addView(button("◀ Previous",()->{page--;browse();}),
-         new LinearLayout.LayoutParams(0,dp(55),1));
-     if(result.more)navigation.addView(button("Next ▶",()->{page++;browse();}),
-         new LinearLayout.LayoutParams(0,dp(55),1));
-     body.addView(navigation);
+
     });
    }catch(Exception error){
     runOnUiThread(()->{
