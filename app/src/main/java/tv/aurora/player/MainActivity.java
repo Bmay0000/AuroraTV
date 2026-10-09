@@ -1423,6 +1423,14 @@ public class MainActivity extends Activity {
    if(cinematicOverview!=null)cinematicOverview.setText("");
    if(cinematicMeta!=null)cinematicMeta.setText("");
    if(cinematicPoster!=null)posters.bind(cinematicPoster,item.artwork);
+   // Every provider gets a cinematic atmospheric background even without a TMDB key.
+   if(cinemaBackground!=null && item.artwork!=null && item.artwork.startsWith("http")){
+    posters.bind(cinemaBackground,item.artwork);
+    cinemaBackground.setAlpha(.22f);
+    if(android.os.Build.VERSION.SDK_INT>=31)
+     cinemaBackground.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(
+       35f,35f,android.graphics.Shader.TileMode.CLAMP));
+   }
    scheduleCinematicTrailer(item,revision);
    cinematicSubtitle.setText((item.releaseYear>0?item.releaseYear+"  •  ":"")+
         ("series".equals(item.type)?"SERIES":"MOVIE")+"  •  YOUR LIBRARY");
@@ -1506,12 +1514,12 @@ public class MainActivity extends Activity {
    if(child instanceof ImageView&&child!=old&&child!=cinematicPoster)parent.removeView(child);
   }
   if(url==null||url.isEmpty()){
-   if(cinemaBackground!=null)cinemaBackground.setImageDrawable(null);
    if(cinematicPoster!=null)cinematicPoster.setVisibility(View.VISIBLE);
    if(old!=null)old.animate().alpha(0f).setDuration(160).start();
    return;
   }
   if(cinemaBackground!=null){
+   if(android.os.Build.VERSION.SDK_INT>=31)cinemaBackground.setRenderEffect(null);
    cinemaBackground.setAlpha(.12f);
    posters.bind(cinemaBackground,url);
    cinemaBackground.animate().alpha(1f).setDuration(400).start();
@@ -1865,6 +1873,7 @@ public class MainActivity extends Activity {
  }
 
  void tvGuide(){
+  clearCinematic();
   stopGuidePreview();
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="guide";section="live";refreshSidebar();
