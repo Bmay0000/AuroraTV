@@ -275,12 +275,21 @@ class _AuroraShellState extends State<AuroraShell>{
           if(!mounted)return;
           if(episodes.isNotEmpty){_episodes(candidate,episodes);return;}
         }
+        // Some services list S01E01 / 1x01 episodes as VOD files and leave
+        // get_series_info empty. Only accept strict title+episode matches.
+        final standalone=await db.standaloneEpisodes(item.cleanTitle);
         if(!mounted)return;
+        if(standalone.isNotEmpty){
+          _episodes(item,standalone);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:Text('Episodes located in your IPTV on-demand catalog.')));
+          return;
+        }
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          duration:const Duration(seconds:9),
+          duration:const Duration(seconds:10),
           content:Text(issue==null
-           ?'The IPTV series entry has no episodes (provider series ID ${item.streamId}).'
-           :'Unable to read episodes for provider series ID ${item.streamId}: $issue')));
+           ?'Series ${item.streamId}: provider returned no episodes and no separately listed VOD episodes were found.'
+           :'Series ${item.streamId}: $issue. No separately listed episodes found.')));
       }catch(_){
         if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content:Text('Unable to load episodes from your IPTV provider.')));
