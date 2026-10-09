@@ -919,6 +919,7 @@ class _GuideScreenState extends State<GuideScreen>{
    final channels=widget.channels;
    final selected=focused??(channels.isNotEmpty?channels.first:null);
    final now=DateTime.now();
+   final channelsWithEpg=widget.channels.where((e)=>programs[key(e)]?.isNotEmpty??false).length;
    final categoryGroups=['North America','All','Favorites',...widget.groups.take(12)].toSet().toList();
    return Padding(padding:const EdgeInsets.symmetric(horizontal:18,vertical:8),child:Column(children:[
      SizedBox(height:96,child:Row(children:[
@@ -948,7 +949,7 @@ class _GuideScreenState extends State<GuideScreen>{
      Row(children:[
        TextButton(onPressed:widget.refreshEpg,child:const Text('↻ Refresh EPG')),
        const Spacer(),
-       Text('${channels.length} PLAYABLE CHANNELS',style:const TextStyle(color:C.secondary,fontSize:12)),
+       Text('${channels.length} CHANNELS · EPG ${channelsWithEpg}/${channels.length}',style:const TextStyle(color:C.secondary,fontSize:12)),
        const SizedBox(width:10),
        IconButton(onPressed:(){setState(()=>anchor=anchor.subtract(const Duration(hours:1)));_loadForAnchor();},
          icon:const Icon(Icons.chevron_left)),
