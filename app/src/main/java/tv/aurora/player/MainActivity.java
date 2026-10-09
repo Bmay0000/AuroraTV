@@ -384,57 +384,183 @@ public class MainActivity extends Activity {
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="home";refreshSidebar();
   final int token=++browseToken;
-  final Set<String> h=new HashSet<>(hidden),cats=new HashSet<>(categories),
-      fav=new HashSet<>(favorites),langs=new HashSet<>(allowed),
-      manual=new HashSet<>(shown),groups=new HashSet<>(shownCategories);
+  final Set<String> hiddenSnapshot=new HashSet<>(hidden),
+      categorySnapshot=new HashSet<>(categories),
+      favoriteSnapshot=new HashSet<>(favorites),
+      languageSnapshot=new HashSet<>(allowed),
+      restored=new HashSet<>(shown),restoredCategories=new HashSet<>(shownCategories);
   final boolean strict=hideUnknown;
   body.removeAllViews();
-  subtitle.setText("●  READY TO BROWSE");
-  // Render the entire interactive shell immediately. Catalog data is
-  // filled asynchronously shelf-by-shelf; no provider API calls on launch.
-  ScrollView scroller=new ScrollView(this);
-  scroller.setVerticalScrollBarEnabled(false);
-  scroller.setFillViewport(false);
-  scroller.setClipToPadding(true);scroller.setClipChildren(true);
-  body.addView(scroller,new LinearLayout.LayoutParams(-1,-1));
-  LinearLayout feed=column();feed.setClipChildren(true);feed.setClipToPadding(true);
-  feed.setPadding(dp(6),0,dp(9),dp(24));
-  scroller.addView(feed,new ScrollView.LayoutParams(-1,-2));
+  subtitle.setText("DISCOVER SOMETHING GREAT");
+  ScrollView scroll=new ScrollView(this);
+  scroll.setVerticalScrollBarEnabled(false);
+  scroll.setFillViewport(false);
+  scroll.setClipChildren(true);scroll.setClipToPadding(true);
+  body.addView(scroll,new LinearLayout.LayoutParams(-1,-1));
+  LinearLayout feed=column();
+  feed.setClipChildren(true);feed.setClipToPadding(true);
+  feed.setPadding(dp(3),0,dp(5),dp(14));
+  scroll.addView(feed,new ScrollView.LayoutParams(-1,-2));
+
   FrameLayout heroHolder=new FrameLayout(this);
   feed.addView(heroHolder,new LinearLayout.LayoutParams(-1,dp(tv().heroHeight)));
   heroHolder.addView(homeHero(null),new FrameLayout.LayoutParams(-1,-1));
   quickCategories(feed);
-  LinearLayout recentArea=column(),liveArea=column(),movieArea=column(),
-      seriesArea=column(),listArea=column();
-  feed.addView(recentArea);
-  feed.addView(liveArea);feed.addView(movieArea);feed.addView(seriesArea);
-  feed.addView(listArea);
-  List<String> recentIds=Arrays.asList(prefs.getString("recent.items","").split(","));
-  List<String> favoritesIds=new ArrayList<>(fav);
-  if(!recentIds.isEmpty()&&!recentIds.get(0).isEmpty())
-   fetchPersonalShelf(token,"CONTINUE WATCHING",recentArea,recentIds,
-     h,cats,fav,langs,strict,manual,groups);
-  if(!favoritesIds.isEmpty())
-   fetchPersonalShelf(token,"MY LIST",listArea,favoritesIds,
-     h,cats,fav,langs,strict,manual,groups);
-  showShelfPlaceholder(liveArea,"LIVE RIGHT NOW");
-  showShelfPlaceholder(movieArea,"MOVIES TO EXPLORE");
-  showShelfPlaceholder(seriesArea,"YOUR NEXT TV OBSESSION");
-  // Queue the smallest useful catalog queries first, not a full import.
-  fetchHomeShelf(token,"live","LIVE RIGHT NOW",liveArea,
-      h,cats,fav,langs,strict,manual,groups,null);
-  fetchHomeShelf(token,"movie","MOVIES TO EXPLORE",movieArea,
-      h,cats,fav,langs,strict,manual,groups,heroHolder);
-  fetchHomeShelf(token,"series","YOUR NEXT TV OBSESSION",seriesArea,
-      h,cats,fav,langs,strict,manual,groups,null);
-  // Only after the UI is usable may EPG refresh start. One debounce per Activity.
+
+  LinearLayout newlyReleased=column(),genreArea=column(),personal=column(),
+      seriesArea=column(),liveArea=column(),movieArea=column(),saved=column();
+  feed.addView(newlyReleased);
+  feed.addView(genreArea);
+  feed.addView(personal);
+  feed.addView(seriesArea);
+  feed.addView(liveArea);
+  feed.addView(movieArea);
+  feed.addView(saved);
+
+  showShelfPlaceholder(newlyReleased,"NEW & RECENT MOVIES");
+  fetchRecentMovies(token,newlyReleased,heroHolder,
+      hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
+      restored,restoredCategories);
+  fetchGenreShelves(token,genreArea,
+      hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
+      restored,restoredCategories);
+
+  List<String> history=Arrays.asList(prefs.getString("recent.items","").split(","));
+  if(!history.isEmpty()&&!history.get(0).isEmpty())
+   fetchPersonalShelf(token,"CONTINUE WATCHING",personal,history,
+     hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
+     restored,restoredCategories);
+  if(!favoriteSnapshot.isEmpty())
+   fetchPersonalShelf(token,"MY LIST",saved,new ArrayList<>(favoriteSnapshot),
+     hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
+     restored,restoredCategories);
+
+  showShelfPlaceholder(seriesArea,"EXPLORE TV SERIES");
+  showShelfPlaceholder(liveArea,"LIVE CHANNELS");
+  showShelfPlaceholder(movieArea,"EXPLORE ALL MOVIES");
+  fetchHomeShelf(token,"series","EXPLORE TV SERIES",seriesArea,
+     hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
+     restored,restoredCategories,null);
+  fetchHomeShelf(token,"live","LIVE CHANNELS",liveArea,
+     hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
+     restored,restoredCategories,null);
+  fetchHomeShelf(token,"movie","EXPLORE ALL MOVIES",movieArea,
+     hiddenSnapshot,categorySnapshot,favoriteSnapshot,languageSnapshot,strict,
+     restored,restoredCategories,null);
+
   if(pendingGuideUpdate!=null)uiHandler.removeCallbacks(pendingGuideUpdate);
   pendingGuideUpdate=()->{
-   if(!isDestroyed() && "home".equals(screen) && !loading && playbackScreen==null)
+   if(!isDestroyed()&&"home".equals(screen)&&!loading&&playbackScreen==null)
     scheduleGuideSync(false,true);
   };
   uiHandler.postDelayed(pendingGuideUpdate,90000L);
  }
+
+ void fetchRecentMovies(int token,LinearLayout target,FrameLayout hero,
+      Set<String> h,Set<String> hc,Set<String> fav,Set<String> langs,boolean strict,
+      Set<String> manual,Set<String> groups){
+  catalogReadIO.execute(()->{
+   try{
+    LibraryStore.RecentMovies recent=store.recentMovies(h,hc,fav,langs,strict,
+      manual,groups);
+    boolean verified=!recent.english.isEmpty();
+    List<LibraryCore.Item> picks=verified?recent.english:recent.unverified;
+    runOnUiThread(()->{
+     if(isDestroyed()||token!=browseToken||!"home".equals(screen))return;
+     target.removeAllViews();
+     if(!picks.isEmpty()){
+      String title=verified?"NEW & RECENT · ENGLISH MOVIES":
+       "RECENT MOVIES · LANGUAGE UNVERIFIED";
+      homeShelf(target,title,"movie",picks);
+      LibraryCore.Item first=picks.get(0);
+      hero.removeAllViews();
+      hero.addView(homeHero(first),new FrameLayout.LayoutParams(-1,-1));
+     }else{
+      // Never market alphabetical or random titles as new releases.
+      TextView note=text("Recent-release dates aren't available for these titles. "+
+        "Explore the genres below or refresh your provider's catalog.",13);
+      note.setTextColor(MUTED);
+      target.addView(note);
+     }
+    });
+   }catch(Exception error){
+    runOnUiThread(()->{
+     if(isDestroyed()||token!=browseToken||!"home".equals(screen))return;
+     target.removeAllViews();
+     target.addView(text("Recent movies are temporarily unavailable.",13));
+    });
+   }
+  });
+ }
+
+ void fetchGenreShelves(int token,LinearLayout target,
+      Set<String> h,Set<String> hc,Set<String> fav,Set<String> langs,boolean strict,
+      Set<String> manual,Set<String> groups){
+  catalogReadIO.execute(()->{
+   try{
+    class Genre{
+     final LibraryStore.GenreCategory category;
+     final List<LibraryCore.Item> titles;
+     Genre(LibraryStore.GenreCategory c,List<LibraryCore.Item> list){
+      category=c;titles=list;
+     }
+    }
+    List<Genre> selections=new ArrayList<>();
+    Set<String> picked=new HashSet<>();
+    List<LibraryStore.GenreCategory> available=store.movieGenres();
+    for(LibraryStore.GenreCategory candidate:available){
+     if(Thread.currentThread().isInterrupted()||token!=browseToken)break;
+     if(selections.size()>=4)break;
+     if(picked.contains(candidate.genre))continue;
+     LibraryStore.Page page=store.page("movie",candidate.name,"",false,false,
+       h,hc,fav,langs,strict,manual,groups,0,18);
+     if(page.rows.size()<2)continue;
+     selections.add(new Genre(candidate,page.rows));
+     picked.add(candidate.genre);
+    }
+    runOnUiThread(()->{
+     if(isDestroyed()||token!=browseToken||!"home".equals(screen))return;
+     target.removeAllViews();
+     if(selections.isEmpty())return;
+     TextView header=headline("BROWSE BY GENRE",
+       TvLayout.clamp(tv().headingSize()-3,17,25),Color.WHITE);
+     LinearLayout.LayoutParams headerLoc=new LinearLayout.LayoutParams(-1,dp(34));
+     headerLoc.topMargin=dp(9);
+     target.addView(header,headerLoc);
+     HorizontalScrollView chooser=new HorizontalScrollView(this);
+     chooser.setHorizontalScrollBarEnabled(false);
+     target.addView(chooser,new LinearLayout.LayoutParams(-1,dp(42)));
+     LinearLayout chips=new LinearLayout(this);
+     chips.setGravity(Gravity.CENTER_VERTICAL);
+     chooser.addView(chips,new ViewGroup.LayoutParams(-2,-1));
+     for(Genre row:selections){
+      String actualCategory=row.category.name;
+      Button chip=button(row.category.genre,()->openMovieCategory(actualCategory));
+      chip.setTextSize(12);
+      LinearLayout.LayoutParams chipLoc=new LinearLayout.LayoutParams(dp(
+        TvLayout.clamp(row.category.genre.length()*12+35,92,160)),dp(35));
+      chipLoc.rightMargin=dp(8);
+      chips.addView(chip,chipLoc);
+     }
+     for(Genre row:selections)
+      homeShelf(target,row.category.genre+" MOVIES","movie",
+        row.titles,row.category.name);
+    });
+   }catch(Exception ignored){
+    runOnUiThread(()->{
+     if(!isDestroyed()&&token==browseToken&&"home".equals(screen))
+      target.removeAllViews();
+    });
+   }
+  });
+ }
+
+ void openMovieCategory(String targetCategory){
+  section="movie";category=targetCategory;
+  query="";page=0;favOnly=false;hiddenOnly=false;editing=false;
+  browse();
+ }
+
  void fetchPersonalShelf(int token,String title,LinearLayout target,
       List<String> ids,Set<String> h,Set<String> c,Set<String> fav,
       Set<String> languages,boolean strict,Set<String> restore,Set<String> groups){
