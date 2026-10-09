@@ -12,7 +12,7 @@ public final class MediaDiscovery {
     // Title inference is conservative: use a terminal four-digit release year,
     // not numbers in the middle of a film name ("2001: A Space Odyssey").
     private static final Pattern TRAILING_YEAR=Pattern.compile(
-        "(?:\\s[\\[(](19\\d{2}|20\\d{2})[\\])])(?:\\s(?:4K|UHD|FHD|HD|SD))?$",
+        "(?:\\s(?:\\((19\\d{2}|20\\d{2})\\)|\\[(19\\d{2}|20\\d{2})\\]|(19\\d{2}|20\\d{2})))(?:\\s(?:4K|UHD|FHD|HD|SD))?$",
         Pattern.CASE_INSENSITIVE);
     private static final Pattern EXPLICIT_YEAR=Pattern.compile(
         "^(19\\d{2}|20\\d{2})(?:$|[-/ ])");
@@ -41,7 +41,12 @@ public final class MediaDiscovery {
         if(title==null)return 0;
         Matcher matcher=TRAILING_YEAR.matcher(title.trim());
         if(!matcher.find())return 0;
-        int year=Integer.parseInt(matcher.group(1));
+        String found=null;
+        for(int index=1;index<=matcher.groupCount();index++){
+            if(matcher.group(index)!=null){found=matcher.group(index);break;}
+        }
+        if(found==null)return 0;
+        int year=Integer.parseInt(found);
         return year>=1900 && year<=currentYear+1?year:0;
     }
 
