@@ -77,6 +77,23 @@ public final class ChannelDiscovery {
     private static final Pattern LEADING=Pattern.compile(
         "^(?:USA?|CAN|CANADA|CA|NA|NORTH AMERICA|UK|GB|EN|ENG|4K|8K)\\s+",Pattern.CASE_INSENSITIVE);
     private static final Pattern NONLATIN=Pattern.compile("[\\p{IsArabic}\\p{IsCyrillic}\\p{IsHan}\\p{IsHangul}]");
+    private static final Pattern SYMBOLS=Pattern.compile("[\\[\\](){}|:/+.,]");
+    private static final Pattern WHITESPACE=Pattern.compile("\\s+");
+    private static final Pattern TRAILING_REGION=Pattern.compile(
+        "\\s+(?:EAST|WEST|USA|US|CA|CANADA)$");
+    private static final Pattern LOCAL_NAME=Pattern.compile(
+        "^(?:ABC|CBS|NBC|FOX|PBS)(?: [0-9]{1,2})?$");
+    private static final Pattern CALL_SIGN=Pattern.compile(
+        "^(?:W|K)[A-Z]{3}(?: [0-9]{1,2})?(?: ABC| CBS| NBC| FOX| PBS)?$");
+    private static final Pattern FHD=Pattern.compile("(?:FHD|1080P|1080I)");
+    private static final Pattern UHD=Pattern.compile("(?:UHD|4K)");
+    private static final Pattern HD=Pattern.compile("(?:^|[^A-Z])HD(?:$|[^A-Z])");
+    private static final Pattern BACKUP=Pattern.compile("(?:BACKUP|BKP|TEST|ALT|DUMMY|OFFLINE)");
+    private static final Pattern HEVC=Pattern.compile("(?:HEVC|H265)");
+    private static final Pattern NUMBERED_EVENT=Pattern.compile(
+        "(?:ESPN|SPORTS|SPORT|FOX SPORTS|PPV|EVENT|GAME|MATCH|FEED|MULTIVIEW|EXTRA|ALT)\\s*\\+?\\s*[0-9]{1,5}");
+    private static final Pattern EVENT_MARKER=Pattern.compile(
+        "(?:PPV|EVENT|MATCH|GAME|BACKUP|TEST|FEED|MULTIVIEW|EXTRA|ALTERNATE)(?:\\s|$)");
     private static final Pattern NA_CATEGORY=Pattern.compile(
         "(?i)(?:^|[^A-Z])(?:USA?|UNITED STATES|CANADA|CANADIAN|NORTH AMERICA|NA|US SPORTS|US NEWS)(?:$|[^A-Z])");
 
@@ -84,15 +101,15 @@ public final class ChannelDiscovery {
         if(raw==null)return "";
         String name=raw.toUpperCase(Locale.ROOT);
         name=name.replace("&"," AND ").replace("É","E");
-        name=name.replaceAll("[\\[\\](){}|:/+.,]"," ");
+        name=SYMBOLS.matcher(name).replaceAll(" ");
         name=QUALITY.matcher(name).replaceAll(" ");
-        name=name.replaceAll("\\s+"," ").trim();
+        name=WHITESPACE.matcher(name).replaceAll(" ").trim();
         for(int n=0;n<4;n++){
             Matcher m=LEADING.matcher(name);
             if(!m.find())break;
             name=name.substring(m.end()).trim();
         }
-        name=name.replaceFirst("\\s+(?:EAST|WEST|USA|US|CA|CANADA)$","");
+        name=TRAILING_REGION.matcher(name).replaceFirst("");
         return name;
     }
 
@@ -138,8 +155,8 @@ public final class ChannelDiscovery {
 
     private static boolean localNetwork(String normalized){
         if(normalized==null)return false;
-        if(normalized.matches("^(?:ABC|CBS|NBC|FOX|PBS)(?: [0-9]{1,2})?$"))return true;
-        return normalized.matches("^(?:W|K)[A-Z]{3}(?: [0-9]{1,2})?(?: ABC| CBS| NBC| FOX| PBS)?$");
+        if(LOCAL_NAME.matcher(normalized).matches())return true;
+        return CALL_SIGN.matcher(normalized).matches();
     }
 
     public static boolean northAmerica(LibraryCore.Item item){
@@ -204,11 +221,11 @@ public final class ChannelDiscovery {
         if(NA_CATEGORY.matcher(category).find())quality+=25;
         if("en".equals(LibraryCore.language(item)))quality+=20;
         if(item.epgId!=null&&!item.epgId.trim().isEmpty())quality+=15;
-        if(name.matches(".*(?:FHD|1080P|1080I).*"))quality+=20;
-        else if(name.matches(".*(?:UHD|4K).*"))quality+=12;
-        else if(name.matches(".*(?:^|[^A-Z])HD(?:$|[^A-Z]).*"))quality+=11;
-        if(name.matches(".*(?:BACKUP|BKP|TEST|ALT|DUMMY|OFFLINE).*"))quality-=80;
-        if(name.matches(".*(?:HEVC|H265).*"))quality-=5;
+        if(FHD.matcher(name).find())quality+=20;
+        else if(UHD.matcher(name).find())quality+=12;
+        else if(HD.matcher(name).find())quality+=11;
+        if(BACKUP.matcher(name).find())quality-=80;
+        if(HEVC.matcher(name).find())quality-=5;
         return quality;
     }
 
@@ -218,8 +235,8 @@ public final class ChannelDiscovery {
         if(item==null)return false;
         String name=canonicalName(item.name);
         return (name.startsWith("ESPN ") && satelliteNumber(item)==0)
-            || name.matches(".*(?:ESPN|SPORTS|SPORT|FOX SPORTS|PPV|EVENT|GAME|MATCH|FEED|MULTIVIEW|EXTRA|ALT)\\s*\\+?\\s*[0-9]{1,5}.*")
-            || name.matches(".*(?:PPV|EVENT|MATCH|GAME|BACKUP|TEST|FEED|MULTIVIEW|EXTRA|ALTERNATE)(?:\\s|$).*");
+            || NUMBERED_EVENT.matcher(name).find()
+            || EVENT_MARKER.matcher(name).find();
     }
 
     /** Deduplicate network renditions for the default guide and genre tabs,
