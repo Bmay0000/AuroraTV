@@ -35,7 +35,7 @@ public final class TrailerCatalog {
   if(apiKey==null||apiKey.isEmpty()||title==null||title.isEmpty())return "";
   String clean=title.replaceFirst("(?i)^(?:EN|ENG|US|UK|AU|NZ)\\s*[-|:]\\s*","")
     .replaceFirst("(?i)\\s*\\(\\d{4}\\)\\s*$","");
-  String cacheKey=LibraryCore.key("trailer|"+series+"|"+clean+"|"+year);
+  String cacheKey=LibraryCore.key("trailer|"+series+"|"+clean+"|"+year+"|"+apiKey);
   SharedPreferences pref=context.getSharedPreferences("aurora_trailers",Context.MODE_PRIVATE);
   String previous=pref.getString(cacheKey,null);
   if(previous!=null)return previous;
