@@ -354,8 +354,10 @@ class ChannelLineup {
     var s=raw.toUpperCase().trim();
     // Strip prefixes such as |NA|, [US], USA:, CA -, and provider group tags.
     for(var i=0;i<4;i++){
-      final next=s.replaceFirst(RegExp(
-        r'^\s*(?:[|\[(]\s*)?(?:US|USA|CA|CAN|CANADA|NA|NORTH AMERICA|UK|EN|ENG|ENGLISH|AU|NZ|LIVE|TV|VIP|SPORTS|ENTERTAINMENT)\s*(?:[|\])]|[:\-]\s*|\s+)',caseSensitive:false),'').trim();
+      final next=s
+        .replaceFirst(RegExp(r'^\s*[|\[(]\s*(?:US|USA|CA|CAN|CANADA|NA|NORTH AMERICA|UK|EN|ENG|ENGLISH|AU|NZ|LIVE|TV|VIP)\s*[|\])]\s*'),'')
+        .replaceFirst(RegExp(r'^\s*(?:US|USA|CA|CAN|CANADA|NA|NORTH AMERICA|UK|EN|ENG|ENGLISH|AU|NZ|LIVE|TV|VIP)\s*[:|\-]\s*'),'')
+        .trim();
       if(next==s||next.isEmpty)break;
       s=next;
     }
