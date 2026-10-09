@@ -12,12 +12,12 @@ public final class LibraryCore {
    this.id=id;this.name=name;this.category=category;this.url=url;this.type=type;this.epgId=epgId;this.language=language;
   }
  }
- public private static final char[] HEX="0123456789abcdef".toCharArray();
+ private static final char[] HEX="0123456789abcdef".toCharArray();
  private static final ThreadLocal<MessageDigest> SHA256=ThreadLocal.withInitial(()->{
   try{return MessageDigest.getInstance("SHA-256");}
   catch(Exception e){throw new IllegalStateException(e);}
  });
- static String key(String text){
+ public static String key(String text){
   MessageDigest md=SHA256.get();
   md.reset();
   byte[] b=md.digest(text.getBytes(StandardCharsets.UTF_8));
