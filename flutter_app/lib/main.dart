@@ -1,0 +1,787 @@
+import 'dart:async';
+import 'dart:math' as math;
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart';
+import 'catalog.dart';
+import 'provider.dart';
+import 'metadata.dart';
+import 'epg.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft,DeviceOrientation.landscapeRight]);
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  runApp(const AuroraApp());
+}
+
+class C {
+  static const canvas=Color(0xff060a10);
+  static const surface=Color(0xff13212b);
+  static const ink=Color(0xffeaf0f3);
+  static const secondary=Color(0xffa3b7c0);
+  static const aqua=Color(0xff5debd0);
+  static const gold=Color(0xfff0bc57);
+}
+
+class AuroraApp extends StatelessWidget {
+  const AuroraApp({super.key});
+  @override Widget build(BuildContext context)=>MaterialApp(
+    debugShowCheckedModeBanner:false,title:'AuroraTV',
+    theme:ThemeData.dark(useMaterial3:true).copyWith(
+      scaffoldBackgroundColor:C.canvas,
+      colorScheme:const ColorScheme.dark(primary:C.aqua,surface:C.surface),
+      textTheme:const TextTheme(
+        headlineLarge:TextStyle(fontSize:40,fontWeight:FontWeight.w800,color:Colors.white,height:1.06),
+        titleLarge:TextStyle(fontSize:22,fontWeight:FontWeight.w700,color:Colors.white),
+        titleMedium:TextStyle(fontSize:17,fontWeight:FontWeight.w600,color:Colors.white),
+        bodyMedium:TextStyle(fontSize:15,color:C.ink,height:1.4),
+      ),
+    ),
+    home:const AuroraShell(),
+  );
+}
+
+class AuroraShell extends StatefulWidget {
+  const AuroraShell({super.key});
+  @override State<AuroraShell> createState()=>_AuroraShellState();
+}
+class _AuroraShellState extends State<AuroraShell>{
+  final db=CatalogDatabase(),provider=ProviderClient(),tmdb=TmdbClient(),epg=XmltvService();
+  IptvSource? source;
+  int page=0,focusRevision=0;
+  bool ready=false,loading=false,showLogin=false,trailers=false,previewOn=false;
+  String status='',epgUrl='';
+  MediaEntry? featured;
+  MovieMeta meta=const MovieMeta();
+  final Map<MediaKind,List<MediaEntry>> shelves={};
+  final Map<MediaKind,List<MediaEntry>> trends={};
+  final Map<MediaKind,List<String>> groups={};
+  final Map<MediaKind,List<MediaEntry>> favorites={};
+  List<MediaEntry> live=[];
+  String channelGroup='All';
+  int selectedCategory=0;
+  bool englishFirst=true;
+
+  @override void initState(){super.initState();_restore();}
+  Future<void> _restore() async{
+    try{
+      await db.open();
+      await tmdb.restore();
+      source=await IptvCredentials.load();
+      final prefs=await SharedPreferences.getInstance();
+      epgUrl=prefs.getString('epg.url')??'';
+      trailers=prefs.getBool('trailers')??false;
+      previewOn=prefs.getBool('preview')??false;
+      englishFirst=prefs.getBool('english.first')??true;
+      await _reload();
+      if(!mounted)return;
+      setState((){ready=true;showLogin=source==null;});
+      _getTrends();
+    }catch(e){if(mounted)setState((){status='Startup failed: $e';ready=true;showLogin=true;});}
+  }
+  Future<void> _reload() async{
+    for(final kind in MediaKind.values){
+      shelves[kind]=await db.list(kind,limit:32);
+      groups[kind]=await db.categories(kind);
+      favorites[kind]=await db.list(kind,favorites:true,limit:60);
+    }
+    live=shelves[MediaKind.live]??[];
+    final picks=trends[MediaKind.movie]??[];
+    final movies=shelves[MediaKind.movie]??[];
+    final ranked=movies.where((e)=>e.likelyEnglish&&e.rating>=6.0&&e.artwork.isNotEmpty).toList()
+      ..sort((a,b)=>b.rating.compareTo(a.rating));
+    final next=picks.isNotEmpty?picks.first:ranked.isNotEmpty?ranked.first:
+      movies.firstWhere((e)=>e.likelyEnglish&&e.artwork.isNotEmpty,
+        orElse:()=>movies.isNotEmpty?movies.first:const MediaEntry(id:'empty',title:'Browse your library',kind:MediaKind.movie));
+    if(next.id!='empty')_feature(next);
+  }
+  Future<void> _getTrends() async{
+    if(tmdb.apiKey.isEmpty)return;
+    for(final kind in [MediaKind.movie,MediaKind.series]){
+      final names=await tmdb.trending(kind);
+      if(names.isEmpty)continue;
+      final matched=await db.matchTitles(kind,names);
+      if(!mounted)return;
+      setState((){trends[kind]=matched;});
+      if(kind==MediaKind.movie&&matched.isNotEmpty&&page==0)_feature(matched.first);
+    }
+  }
+  void _feature(MediaEntry item){
+    final id=++focusRevision;
+    if(mounted)setState((){featured=item;meta=const MovieMeta();});
+    tmdb.details(item).then((result){
+      if(mounted&&id==focusRevision)setState(()=>meta=result);
+    });
+  }
+  Future<void> _connect(IptvSource next)async{
+    setState((){loading=true;status='Checking provider…';});
+    try{
+      await provider.verify(next);
+      await IptvCredentials.save(next);
+      source=next;
+      final count=await provider.import(next,db,(message){
+        if(mounted)setState(()=>status=message);
+      });
+      await _reload();
+      if(!mounted)return;
+      setState((){loading=false;showLogin=false;status='Imported $count titles and channels';page=0;});
+      _getTrends();
+    }catch(e){if(mounted)setState((){loading=false;status=e.toString();});}
+  }
+  Future<void> _refresh()async{
+    if(source==null)return;
+    setState((){loading=true;status='Refreshing provider…';});
+    try{
+      final count=await provider.import(source!,db,(message){
+        if(mounted)setState(()=>status=message);
+      });
+      await _reload();
+      if(mounted)setState((){loading=false;status='Refreshed $count entries';});
+      _getTrends();
+    }catch(e){if(mounted)setState((){loading=false;status='Refresh failed: $e';});}
+  }
+  Future<void> _refreshEpg() async{
+    if(source==null)return;
+    setState((){loading=true;status='Importing programme information…';});
+    try{
+      final count=await epg.refresh(source!,db,externalUrl:epgUrl);
+      if(mounted)setState((){loading=false;status='Updated $count real EPG programmes';});
+    }catch(e){if(mounted)setState((){loading=false;status='EPG error: $e';});}
+  }
+  void _choose(int index){
+    if(page==index)return;
+    setState(()=>page=index);
+    if(index==1)_loadLive();
+  }
+  Future<void> _loadLive({String group='All'}) async{
+    final loaded=await db.list(MediaKind.live,category:group,limit:120);
+    if(mounted)setState((){live=loaded;channelGroup=group;});
+  }
+  Future<void> _toggle(MediaEntry item,{bool hide=false})async{
+    await db.mark(item.id,favorite:hide?null:!item.favorite,hidden:hide?true:null);
+    await _reload();if(mounted)setState((){});
+  }
+  void _open(MediaEntry item) async{
+    final src=source;
+    if(src==null)return;
+    if(item.kind==MediaKind.series&&!item.id.startsWith('xtream:episode:')){
+      final episodes=await provider.episodes(src,item);
+      if(!mounted)return;
+      if(episodes.isNotEmpty){_episodes(item,episodes);return;}
+    }
+    final stream=src.playback(item);
+    if(stream.isEmpty)return;
+    if(!mounted)return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder:(_)=>PlayerScreen(title:item.cleanTitle,url:stream)));
+  }
+  void _episodes(MediaEntry item,List<MediaEntry> episodes){
+    showDialog<void>(context:context,builder:(ctx)=>Dialog(
+      backgroundColor:const Color(0xff101a26),
+      child:SizedBox(width:650,height:430,child:Column(children:[
+        Padding(padding:const EdgeInsets.all(20),child:Text(item.cleanTitle,style:Theme.of(context).textTheme.titleLarge)),
+        Expanded(child:ListView.builder(itemCount:episodes.length,itemBuilder:(context,index){
+          final ep=episodes[index];
+          return ListTile(title:Text(ep.title),subtitle:Text(ep.category),
+            onTap:(){Navigator.pop(ctx);_open(ep);});
+        })),
+      ])),
+    ));
+  }
+  void _details(MediaEntry item){
+    showDialog<void>(context:context,builder:(ctx)=>Dialog(
+      backgroundColor:const Color(0xff0e1821),
+      shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(18)),
+      child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:770,maxHeight:500),
+        child:Padding(padding:const EdgeInsets.all(24),child:Row(children:[
+          SizedBox(width:200,child:artwork(item.artwork,fit:BoxFit.contain)),
+          const SizedBox(width:28),
+          Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Text(item.cleanTitle,style:Theme.of(context).textTheme.headlineLarge),
+            const SizedBox(height:14),
+            Text('${item.year>0?item.year:''}  ${meta.genres}',style:const TextStyle(color:C.gold)),
+            const SizedBox(height:16),
+            Expanded(child:SingleChildScrollView(child:Text(meta.overview.isNotEmpty?meta.overview:item.category,
+              style:const TextStyle(color:C.secondary,fontSize:16)))),
+            Row(children:[
+              AuroraButton(text:'▶  Play',onPressed:(){Navigator.pop(ctx);_open(item);},primary:true),
+              const SizedBox(width:12),
+              AuroraButton(text:item.favorite?'♥ In My List':'+ My List',
+                onPressed:(){Navigator.pop(ctx);_toggle(item);}),
+            ]),
+          ])),
+        ])),
+      ),
+    ));
+  }
+  void _settings(){
+    final key=TextEditingController(text:tmdb.apiKey);
+    final guide=TextEditingController(text:epgUrl);
+    showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(
+      builder:(ctx,rebuild)=>AlertDialog(
+        backgroundColor:const Color(0xff121e29),
+        title:const Text('AuroraTV Settings'),
+        content:SizedBox(width:520,child:SingleChildScrollView(child:Column(
+          mainAxisSize:MainAxisSize.min,children:[
+          TextField(controller:key,decoration:const InputDecoration(labelText:'TMDB API key (optional)')),
+          const SizedBox(height:12),
+          TextField(controller:guide,decoration:const InputDecoration(labelText:'External XMLTV URL (optional)')),
+          const SizedBox(height:12),
+          SwitchListTile(title:const Text('English-first discovery'),value:englishFirst,
+            onChanged:(v){rebuild(()=>englishFirst=v);}),
+          SwitchListTile(title:const Text('Automatic preview in Live Guide'),value:previewOn,
+            onChanged:(v){rebuild(()=>previewOn=v);}),
+          SwitchListTile(title:const Text('Trailer previews (future native integration)'),value:trailers,
+            onChanged:null),
+        ]))),
+        actions:[
+          TextButton(onPressed:(){Navigator.pop(ctx);setState(()=>showLogin=true);},child:const Text('Change provider')),
+          TextButton(onPressed:(){Navigator.pop(ctx);_refresh();},child:const Text('Refresh library')),
+          TextButton(onPressed:(){Navigator.pop(ctx);_refreshEpg();},child:const Text('Refresh EPG')),
+          TextButton(onPressed:()async{
+            await tmdb.saveKey(key.text);epgUrl=guide.text.trim();
+            final prefs=await SharedPreferences.getInstance();
+            await prefs.setString('epg.url',epgUrl);
+            await prefs.setBool('english.first',englishFirst);
+            await prefs.setBool('preview',previewOn);
+            if(ctx.mounted)Navigator.pop(ctx);
+            if(mounted)setState((){});
+            _getTrends();
+          },child:const Text('Save')),
+        ],
+      )
+    ));
+  }
+  @override void dispose(){
+    db.close();provider.dispose();tmdb.dispose();epg.dispose();
+    super.dispose();
+  }
+
+  @override Widget build(BuildContext context){
+    if(!ready)return const Scaffold(body:Center(child:CircularProgressIndicator(color:C.aqua)));
+    if(showLogin)return LoginScreen(connect:_connect,loading:loading,status:status);
+
+    final media=MediaQuery.sizeOf(context);
+    final isCinema=page==0||page==2||page==3;
+    return Scaffold(body:Stack(children:[
+      Positioned.fill(child:AnimatedSwitcher(duration:const Duration(milliseconds:350),
+        child:Container(key:ValueKey(isCinema?(meta.backdrop.isNotEmpty?meta.backdrop:featured?.artwork??''):'empty'),
+          color:C.canvas,
+          child:isCinema&&featured!=null
+          ?artwork(meta.backdrop.isNotEmpty?meta.backdrop:featured!.artwork,fit:BoxFit.cover)
+          :const SizedBox.shrink()))),
+      if(isCinema)Positioned.fill(child:DecoratedBox(decoration:BoxDecoration(
+        gradient:LinearGradient(begin:Alignment.centerLeft,end:Alignment.centerRight,
+          colors:[Colors.black.withValues(alpha:.95),Colors.black.withValues(alpha:.70),
+            Colors.black.withValues(alpha:.24),Colors.black.withValues(alpha:.06)])))),
+      if(isCinema)Positioned.fill(child:DecoratedBox(decoration:BoxDecoration(
+        gradient:LinearGradient(begin:Alignment.topCenter,end:Alignment.bottomCenter,
+          colors:[Colors.black.withValues(alpha:.67),Colors.transparent,
+            Colors.black.withValues(alpha:.12),Colors.black.withValues(alpha:.90)])))),
+      SafeArea(child:Column(children:[
+        _navBar(media.width),
+        Expanded(child:IndexedStack(index:page,children:[
+          _discovery(MediaKind.movie,home:true),
+          GuideScreen(db:db,channels:live,groups:groups[MediaKind.live]??[],
+            group:channelGroup,onGroup:_loadLive,onPlay:_open,previewOn:previewOn,
+            source:source,refreshEpg:_refreshEpg),
+          _discovery(MediaKind.movie),
+          _discovery(MediaKind.series),
+          _myList(),
+          _searchPage(),
+          _libraryPage(),
+        ])),
+      ])),
+      if(loading)Positioned(left:0,right:0,bottom:0,child:Container(
+        color:Colors.black87,padding:const EdgeInsets.all(12),
+        child:Text(status,textAlign:TextAlign.center))),
+    ]));
+  }
+  Widget _navBar(double width){
+    const labels=['Home','Live TV & Guide','Movies','TV Shows','My List','Search','Edit Library'];
+    return Container(
+      height:58,padding:EdgeInsets.symmetric(horizontal:width<1050?18:30),
+      decoration:BoxDecoration(color:Colors.black.withValues(alpha:.30)),
+      child:Row(children:[
+        RichText(text:const TextSpan(style:TextStyle(fontSize:25,fontWeight:FontWeight.w800),children:[
+          TextSpan(text:'Aurora',style:TextStyle(color:Colors.white)),
+          TextSpan(text:'TV',style:TextStyle(color:C.aqua)),
+        ])),
+        const SizedBox(width:28),
+        Expanded(child:ListView.separated(scrollDirection:Axis.horizontal,
+          itemCount:labels.length,separatorBuilder:(_,__)=>const SizedBox(width:4),
+          itemBuilder:(ctx,i)=>AuroraButton(
+            text:labels[i],selected:page==i,onPressed:()=>_choose(i),
+            nav:true))),
+        const SizedBox(width:8),
+        IconButton(onPressed:_settings,tooltip:'Settings',icon:const Icon(Icons.settings_outlined,size:25)),
+      ]));
+  }
+
+  Widget _discovery(MediaKind kind,{bool home=false}){
+    final mainKind=home?MediaKind.movie:kind;
+    final items=shelves[mainKind]??[];
+    final ranked=trends[mainKind]??[];
+    final english=items.where((v)=>v.likelyEnglish).toList();
+    final recent=english.isNotEmpty?english:items;
+    final title=home?'TOP 20 TODAY':mainKind==MediaKind.movie?'TOP 20 MOVIES TODAY':'TOP 20 SERIES TODAY';
+    return LayoutBuilder(builder:(ctx,c){
+      final available=c.maxHeight;
+      final heroHeight=(available*.64).clamp(245.0,540.0);
+      return ListView(padding:EdgeInsets.zero,children:[
+        SizedBox(height:heroHeight,child:Align(alignment:Alignment.centerLeft,
+          child:Padding(padding:const EdgeInsets.fromLTRB(34,12,0,6),child:ConstrainedBox(
+            constraints:BoxConstraints(maxWidth:math.min(c.maxWidth*.49,680)),
+            child:_heroText())))),
+        if(ranked.isNotEmpty)
+          _shelf(title,ranked,mainKind,ranked:true),
+        if(home && (trends[MediaKind.series]?.isNotEmpty??false))
+          _shelf('TOP 20 TV SHOWS TODAY',trends[MediaKind.series]!,MediaKind.series,ranked:true),
+        _shelf(home?'NEW & RECENT · ENGLISH MOVIES':
+            mainKind==MediaKind.movie?'DISCOVER MOVIES':'DISCOVER SERIES',
+            recent,mainKind),
+        if(home)_shelf('TV SERIES FOR YOU',
+          shelves[MediaKind.series]??[],MediaKind.series),
+        if(home)_shelf('CONTINUE WATCHING / MY LIST',
+          [...?favorites[MediaKind.movie],...?favorites[MediaKind.series]],MediaKind.movie),
+        if(!home)for(final genre in (groups[mainKind]??[]).take(8))
+          _genreShelf(mainKind,genre),
+        const SizedBox(height:70),
+      ]);
+    });
+  }
+  Widget _heroText(){
+    final current=featured;
+    if(current==null)return const Text('Connect your IPTV library to discover entertainment',
+      style:TextStyle(fontSize:24,color:C.ink));
+    final hasMeta=meta.rating>0||current.rating>0;
+    final rating=meta.rating>0?meta.rating:current.rating;
+    return Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Text('AURORATV  /  FEATURED',style:TextStyle(fontSize:11,letterSpacing:3,
+        fontWeight:FontWeight.w700,color:C.aqua.withValues(alpha:.95))),
+      const SizedBox(height:13),
+      Text(current.cleanTitle.toUpperCase(),maxLines:2,overflow:TextOverflow.ellipsis,
+        style:TextStyle(fontSize:math.min(48,MediaQuery.sizeOf(context).height*.074),
+          fontWeight:FontWeight.w800,height:1.05,letterSpacing:1.2,color:Colors.white,
+          shadows:const [Shadow(blurRadius:12,color:Colors.black)])),
+      const SizedBox(height:13),
+      Text('${hasMeta?'★ ${rating.toStringAsFixed(1)}     ':''}${current.year>0?'${current.year}    ':''}${meta.genres.isNotEmpty?meta.genres:current.kind==MediaKind.series?'TV SERIES':'MOVIE'}',
+        style:const TextStyle(color:C.gold,fontSize:15,fontWeight:FontWeight.w600)),
+      if(meta.overview.isNotEmpty)...[
+        const SizedBox(height:15),
+        Text(meta.overview,maxLines:3,overflow:TextOverflow.ellipsis,
+          style:const TextStyle(fontSize:16,height:1.48,color:C.ink)),
+      ],
+      const SizedBox(height:23),
+      Row(mainAxisSize:MainAxisSize.min,children:[
+        AuroraButton(text:'▶  Watch Now',primary:true,onPressed:()=>_open(current)),
+        const SizedBox(width:10),
+        AuroraButton(text:'ⓘ  More Info',onPressed:()=>_details(current)),
+      ]),
+    ]);
+  }
+  Widget _shelf(String heading,List<MediaEntry> items,MediaKind kind,{bool ranked=false}){
+    if(items.isEmpty)return const SizedBox.shrink();
+    return Padding(padding:const EdgeInsets.only(top:8,bottom:12),child:Column(
+      crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Padding(padding:const EdgeInsets.fromLTRB(34,0,28,10),child:Row(children:[
+        Expanded(child:Text(heading,style:const TextStyle(fontSize:21,fontWeight:FontWeight.w700))),
+        TextButton(onPressed:()=>_choose(kind==MediaKind.series?3:2),
+          child:const Text('See All  →',style:TextStyle(color:C.secondary,fontSize:13))),
+      ])),
+      SizedBox(height:155,child:ListView.builder(
+        scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:30),
+        itemCount:math.min(items.length,20),itemBuilder:(ctx,i){
+          final item=items[i];
+          return MediaCard(item:item,index:ranked?i+1:0,
+            onFocused:()=>_feature(item),onOpen:()=>_details(item));
+        })),
+    ]));
+  }
+  Widget _genreShelf(MediaKind kind,String group){
+    return FutureBuilder<List<MediaEntry>>(future:db.list(kind,category:group,limit:14),
+      builder:(ctx,snapshot)=>snapshot.hasData?
+        _shelf(group.toUpperCase(),snapshot.data!,kind):const SizedBox.shrink());
+  }
+  Widget _myList()=>_catalogPage('MY LIST',[
+    ...?favorites[MediaKind.movie],...?favorites[MediaKind.series],...?favorites[MediaKind.live],
+  ]);
+  Widget _catalogPage(String heading,List<MediaEntry> items)=>Padding(
+    padding:const EdgeInsets.fromLTRB(32,26,32,12),
+    child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Text(heading,style:Theme.of(context).textTheme.headlineLarge),
+      const SizedBox(height:20),
+      Expanded(child:GridView.builder(gridDelegate:const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent:285,mainAxisSpacing:16,crossAxisSpacing:12,childAspectRatio:1.6),
+        itemCount:items.length,itemBuilder:(ctx,i)=>MediaCard(item:items[i],index:0,
+          onFocused:()=>_feature(items[i]),onOpen:()=>_details(items[i])))),
+    ]));
+  Widget _searchPage()=>_SearchContent(db:db,onOpen:_details,onFocused:_feature);
+  Widget _libraryPage()=>_LibraryContent(db:db,onRefresh:_refresh,onHide:(item)=>_toggle(item,hide:true),
+    onFavorite:_toggle);
+}
+
+Widget artwork(String url,{BoxFit fit=BoxFit.cover}){
+  if(url.isEmpty||!url.startsWith('http'))return const DecoratedBox(
+    decoration:BoxDecoration(gradient:LinearGradient(colors:[Color(0xff172a38),Color(0xff07121d)])),
+    child:Center(child:Icon(Icons.movie_creation_outlined,size:39,color:Color(0xff35505d))));
+  return Image.network(url,fit:fit,errorBuilder:(_,__,___)=>const ColoredBox(
+    color:Color(0xff14232d),child:Center(child:Icon(Icons.movie_outlined,color:C.secondary))),
+    loadingBuilder:(ctx,child,event)=>event==null?child:const ColoredBox(color:Color(0xff13202b)));
+}
+
+class AuroraButton extends StatelessWidget{
+  final String text;final VoidCallback onPressed;
+  final bool primary,selected,nav;
+  const AuroraButton({super.key,required this.text,required this.onPressed,
+    this.primary=false,this.selected=false,this.nav=false});
+  @override Widget build(BuildContext context)=>Padding(
+    padding:EdgeInsets.symmetric(horizontal:nav?3:0,vertical:nav?7:0),
+    child:FocusableActionDetector(child:Builder(builder:(ctx){
+      return OutlinedButton(onPressed:onPressed,style:ButtonStyle(
+        minimumSize:WidgetStatePropertyAll(Size(nav?54:156,nav?37:44)),
+        padding:WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal:nav?14:20)),
+        backgroundColor:WidgetStatePropertyAll(primary?Colors.white:
+          selected?C.aqua.withValues(alpha:.16):Colors.black.withValues(alpha:nav?.02:.45)),
+        foregroundColor:WidgetStatePropertyAll(primary?Colors.black:Colors.white),
+        side:WidgetStatePropertyAll(BorderSide(
+          color:selected?C.aqua:primary?Colors.white:C.secondary.withValues(alpha:nav?0:.23))),
+        shape:WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius:BorderRadius.circular(nav?12:9))),
+      ),child:Text(text,maxLines:1,style:TextStyle(fontSize:nav?14:15,fontWeight:FontWeight.w700)));
+    })),
+  );
+}
+
+class MediaCard extends StatefulWidget{
+  final MediaEntry item;final int index;final VoidCallback onFocused,onOpen;
+  const MediaCard({super.key,required this.item,required this.index,
+    required this.onFocused,required this.onOpen});
+  @override State<MediaCard> createState()=>_MediaCardState();
+}
+class _MediaCardState extends State<MediaCard>{
+  bool focused=false;
+  @override Widget build(BuildContext context){
+    return Padding(padding:const EdgeInsets.symmetric(horizontal:5,vertical:4),
+      child:FocusableActionDetector(
+        onFocusChange:(hasFocus){
+          setState(()=>focused=hasFocus);
+          if(hasFocus){widget.onFocused();Scrollable.ensureVisible(context,
+            duration:const Duration(milliseconds:220),alignment:.22);}
+        },
+        child:InkWell(onTap:widget.onOpen,onFocusChange:(hasFocus){
+          if(focused!=hasFocus){setState(()=>focused=hasFocus);if(hasFocus)widget.onFocused();}
+        },
+          borderRadius:BorderRadius.circular(12),
+          child:AnimatedContainer(duration:const Duration(milliseconds:180),
+            width:242,decoration:BoxDecoration(
+              borderRadius:BorderRadius.circular(12),
+              border:Border.all(width:focused?2:1,color:focused?C.aqua:Colors.white12),
+              boxShadow:focused?[BoxShadow(color:C.aqua.withValues(alpha:.2),blurRadius:14)]:[],
+            ),clipBehavior:Clip.antiAlias,
+            child:Stack(fit:StackFit.expand,children:[
+              artwork(widget.item.artwork),
+              DecoratedBox(decoration:BoxDecoration(gradient:LinearGradient(
+                begin:Alignment.topCenter,end:Alignment.bottomCenter,
+                colors:[Colors.transparent,Colors.black.withValues(alpha:.84)]))),
+              if(widget.index>0)Positioned(top:8,left:10,
+                child:Text('#${widget.index}',style:const TextStyle(color:C.aqua,fontWeight:FontWeight.w800))),
+              Positioned(left:12,right:12,bottom:10,child:Text(widget.item.cleanTitle,
+                maxLines:2,overflow:TextOverflow.ellipsis,
+                style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700,color:Colors.white,
+                  shadows:[Shadow(color:Colors.black,blurRadius:8)]))),
+            ]),
+          )),
+      ));
+  }
+}
+
+class LoginScreen extends StatefulWidget{
+  final Future<void> Function(IptvSource) connect;
+  final bool loading;final String status;
+  const LoginScreen({super.key,required this.connect,required this.loading,required this.status});
+  @override State<LoginScreen> createState()=>_LoginScreenState();
+}
+class _LoginScreenState extends State<LoginScreen>{
+  final server=TextEditingController(),user=TextEditingController(),
+    pass=TextEditingController(),playlist=TextEditingController();
+  bool m3u=false;
+  @override Widget build(BuildContext context)=>Scaffold(body:Center(
+    child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:610),
+      child:SingleChildScrollView(padding:const EdgeInsets.all(30),child:Column(
+        crossAxisAlignment:CrossAxisAlignment.start,children:[
+        const Text('AuroraTV',style:TextStyle(fontSize:40,fontWeight:FontWeight.w800,color:C.aqua)),
+        const SizedBox(height:8),
+        const Text('Your channels. Your cinema. Your screen.',style:TextStyle(color:C.secondary,fontSize:17)),
+        const SizedBox(height:22),
+        SegmentedButton<bool>(segments:const [
+          ButtonSegment(value:false,label:Text('Xtream Codes')),
+          ButtonSegment(value:true,label:Text('M3U Playlist')),
+        ],selected:{m3u},onSelectionChanged:(s)=>setState(()=>m3u=s.first)),
+        const SizedBox(height:18),
+        if(!m3u)...[
+          TextField(controller:server,decoration:const InputDecoration(labelText:'Server URL, including port')),
+          TextField(controller:user,decoration:const InputDecoration(labelText:'Username')),
+          TextField(controller:pass,obscureText:true,decoration:const InputDecoration(labelText:'Password')),
+        ]else TextField(controller:playlist,maxLines:3,
+          decoration:const InputDecoration(labelText:'Playlist URL or pasted #EXTM3U data')),
+        const SizedBox(height:22),
+        FilledButton(onPressed:widget.loading?null:()=>widget.connect(m3u?
+          IptvSource(kind:'m3u',playlist:playlist.text.trim()):
+          IptvSource(kind:'xtream',server:server.text.trim(),username:user.text.trim(),
+            password:pass.text)),
+          child:Text(widget.loading?'Importing…':'Connect and Import Library')),
+        if(widget.loading)const Padding(padding:EdgeInsets.all(12),child:LinearProgressIndicator()),
+        if(widget.status.isNotEmpty)Padding(padding:const EdgeInsets.only(top:13),
+          child:Text(widget.status,style:const TextStyle(color:C.secondary))),
+      ]))),
+  )));
+}
+
+class PlayerScreen extends StatefulWidget{
+ final String title,url;
+ const PlayerScreen({super.key,required this.title,required this.url});
+ @override State<PlayerScreen> createState()=>_PlayerScreenState();
+}
+class _PlayerScreenState extends State<PlayerScreen>{
+ VideoPlayerController? video;String error='';bool buffering=true;
+ @override void initState(){super.initState();_init();}
+ Future<void> _init() async{
+  final controller=VideoPlayerController.networkUrl(Uri.parse(widget.url));
+  video=controller;
+  try{
+    await controller.initialize().timeout(const Duration(seconds:20));
+    if(!mounted)return;
+    await controller.play();
+    setState(()=>buffering=false);
+  }catch(e){if(mounted)setState((){error='Unable to play stream. $e';buffering=false;});}
+ }
+ @override void dispose(){video?.dispose();super.dispose();}
+ @override Widget build(BuildContext context)=>Scaffold(body:Stack(children:[
+   Positioned.fill(child:video?.value.isInitialized==true?
+     FittedBox(fit:BoxFit.contain,child:SizedBox(
+       width:video!.value.size.width,height:video!.value.size.height,
+       child:VideoPlayer(video!))):
+     const ColoredBox(color:Colors.black)),
+   Positioned(top:20,left:25,child:Row(children:[
+     IconButton(onPressed:()=>Navigator.pop(context),icon:const Icon(Icons.arrow_back)),
+     Text(widget.title,style:const TextStyle(fontSize:21,fontWeight:FontWeight.w700)),
+   ])),
+   if(buffering)const Center(child:CircularProgressIndicator()),
+   if(error.isNotEmpty)Center(child:Column(mainAxisSize:MainAxisSize.min,children:[
+     Text(error,textAlign:TextAlign.center),
+     const SizedBox(height:12),
+     AuroraButton(text:'Retry',onPressed:(){video?.dispose();setState(()=>error='');_init();}),
+   ])),
+ ]));
+}
+
+class GuideScreen extends StatefulWidget{
+ final CatalogDatabase db;final List<MediaEntry> channels;final List<String> groups;
+ final String group;final Future<void> Function({String group}) onGroup;
+ final void Function(MediaEntry) onPlay;final bool previewOn;
+ final IptvSource? source;final VoidCallback refreshEpg;
+ const GuideScreen({super.key,required this.db,required this.channels,required this.groups,
+   required this.group,required this.onGroup,required this.onPlay,required this.previewOn,
+   required this.source,required this.refreshEpg});
+ @override State<GuideScreen> createState()=>_GuideScreenState();
+}
+class _GuideScreenState extends State<GuideScreen>{
+ DateTime anchor=DateTime.now();
+ Map<String,List<TvProgramme>> programs={};
+ MediaEntry? focused;Timer? debounce;VideoPlayerController? preview;
+ @override void initState(){super.initState();_load();}
+ @override void didUpdateWidget(covariant GuideScreen old){
+   super.didUpdateWidget(old);
+   if(old.channels!=widget.channels||old.group!=widget.group)_load();
+ }
+ Future<void> _load()async{
+   final now=DateTime.now();
+   anchor=DateTime(now.year,now.month,now.day,now.hour,now.minute<30?0:30);
+   final result=await widget.db.schedules(widget.channels.map((e)=>e.id).toList(),
+     anchor,anchor.add(const Duration(hours:3)));
+   if(mounted)setState(()=>programs=result);
+ }
+ void _focus(MediaEntry item){
+   if(focused?.id==item.id)return;
+   setState(()=>focused=item);
+   debounce?.cancel();preview?.dispose();preview=null;
+   if(!widget.previewOn||widget.source==null)return;
+   debounce=Timer(const Duration(milliseconds:1400),()async{
+     try{
+       final video=VideoPlayerController.networkUrl(Uri.parse(widget.source!.playback(item)));
+       await video.initialize().timeout(const Duration(seconds:8));
+       if(!mounted||focused?.id!=item.id){video.dispose();return;}
+       video.setVolume(0);
+       await video.play();setState(()=>preview=video);
+     }catch(_){/* Optional PiP must never prevent guide navigation. */}
+   });
+ }
+ @override void dispose(){debounce?.cancel();preview?.dispose();super.dispose();}
+ @override Widget build(BuildContext context){
+   final channels=widget.channels;
+   final selected=focused??(channels.isNotEmpty?channels.first:null);
+   final now=DateTime.now();
+   final categoryGroups=['All','Favorites',...widget.groups.take(12)];
+   return Padding(padding:const EdgeInsets.symmetric(horizontal:18,vertical:8),child:Column(children:[
+     SizedBox(height:96,child:Row(children:[
+       Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+         Text(selected?.cleanTitle??'Live TV Guide',
+           style:const TextStyle(fontSize:22,fontWeight:FontWeight.w800)),
+         const SizedBox(height:6),
+         Text(_currentProgram(selected,now)?.title??'Live channels · programme information as available',
+           maxLines:1,overflow:TextOverflow.ellipsis,
+           style:const TextStyle(fontSize:16,color:C.ink)),
+         Text(_currentProgram(selected,now)?.description??'Navigate with your remote. Select a channel to watch.',
+           maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:12,color:C.secondary)),
+       ])),
+       const SizedBox(width:16),
+       SizedBox(width:210,height:92,child:ClipRRect(borderRadius:BorderRadius.circular(9),
+         child:preview?.value.isInitialized==true?VideoPlayer(preview!):
+           Stack(fit:StackFit.expand,children:[
+             if(selected!=null)artwork(selected.artwork),
+             const Center(child:Icon(Icons.live_tv,color:Colors.white70,size:28)),
+           ]))),
+     ])),
+     Row(children:[
+       TextButton(onPressed:widget.refreshEpg,child:const Text('↻ Refresh EPG')),
+       const Spacer(),
+       Text('${channels.length} CHANNELS',style:const TextStyle(color:C.secondary,fontSize:12)),
+       const SizedBox(width:10),
+       IconButton(onPressed:(){setState(()=>anchor=anchor.subtract(const Duration(hours:1)));_loadForAnchor();},
+         icon:const Icon(Icons.chevron_left)),
+       Text('${_clock(anchor)} — ${_clock(anchor.add(const Duration(hours:2)))}',
+         style:const TextStyle(color:C.secondary,fontSize:12)),
+       IconButton(onPressed:(){setState(()=>anchor=anchor.add(const Duration(hours:1)));_loadForAnchor();},
+         icon:const Icon(Icons.chevron_right)),
+     ]),
+     Expanded(child:Row(children:[
+       SizedBox(width:152,child:ListView.builder(itemCount:categoryGroups.length,
+         itemBuilder:(ctx,i)=>AuroraButton(
+           text:categoryGroups[i],selected:categoryGroups[i]==widget.group,
+           onPressed:()=>widget.onGroup(group:categoryGroups[i]=='Favorites'?'All':categoryGroups[i])))),
+       const SizedBox(width:8),
+       Expanded(child:Column(children:[
+         Container(height:35,color:const Color(0xff20313f),
+           child:Row(children:[
+             const SizedBox(width:190,child:Padding(padding:EdgeInsets.only(left:12),
+               child:Text('CHANNEL',style:TextStyle(color:C.aqua,fontWeight:FontWeight.w700)))),
+             for(var i=0;i<4;i++)Expanded(child:Text(_clock(anchor.add(Duration(minutes:30*i))),
+               style:const TextStyle(color:C.ink,fontSize:13))),
+           ])),
+         Expanded(child:ListView.builder(itemCount:channels.length,itemBuilder:(ctx,i){
+           final item=channels[i];
+           final blocks=programs[item.id]??[];
+           final current=focused?.id==item.id;
+           return Focus(child:Builder(builder:(ctx)=>InkWell(
+             onFocusChange:(value){if(value)_focus(item);},
+             onTap:()=>widget.onPlay(item),
+             child:Container(height:42,margin:const EdgeInsets.only(bottom:2),
+               decoration:BoxDecoration(color:current?const Color(0xff1b5051):
+                 i.isEven?const Color(0xff142331):const Color(0xff192939)),
+               child:Row(children:[
+                 SizedBox(width:190,child:Padding(padding:const EdgeInsets.symmetric(horizontal:8),
+                   child:Row(children:[
+                     if(item.artwork.isNotEmpty)SizedBox(width:38,height:30,child:artwork(item.artwork,fit:BoxFit.contain)),
+                     const SizedBox(width:5),
+                     Expanded(child:Text(item.cleanTitle,maxLines:1,overflow:TextOverflow.ellipsis,
+                       style:const TextStyle(fontSize:13,fontWeight:FontWeight.w600))),
+                   ]))),
+                 for(var slot=0;slot<4;slot++)Expanded(child:Container(
+                   margin:const EdgeInsets.only(right:2),
+                   padding:const EdgeInsets.symmetric(horizontal:6,vertical:11),
+                   color:slot.isEven?Colors.white.withValues(alpha:.045):Colors.white.withValues(alpha:.02),
+                   child:Text(_blockTitle(blocks,anchor.add(Duration(minutes:slot*30))),
+                     maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:12)))),
+               ]),
+             ),
+           )));
+         })),
+       ])),
+     ])),
+   ]));
+ }
+ Future<void> _loadForAnchor()async{
+   final data=await widget.db.schedules(widget.channels.map((e)=>e.id).toList(),
+     anchor,anchor.add(const Duration(hours:3)));
+   if(mounted)setState(()=>programs=data);
+ }
+ TvProgramme? _currentProgram(MediaEntry? item,DateTime clock){
+   if(item==null)return null;
+   for(final p in programs[item.id]??[]){if(p.start.isBefore(clock)&&p.end.isAfter(clock))return p;}
+   return null;
+ }
+ String _blockTitle(List<TvProgramme> entries,DateTime time){
+   for(final p in entries){if(p.start.isBefore(time.add(const Duration(minutes:1)))&&p.end.isAfter(time))return p.title;}
+   return 'Programme unavailable';
+ }
+ String _clock(DateTime time)=>TimeOfDay.fromDateTime(time).format(context);
+}
+
+class _SearchContent extends StatefulWidget{
+ final CatalogDatabase db;
+ final void Function(MediaEntry) onOpen,onFocused;
+ const _SearchContent({required this.db,required this.onOpen,required this.onFocused});
+ @override State<_SearchContent> createState()=>_SearchContentState();
+}
+class _SearchContentState extends State<_SearchContent>{
+ final input=TextEditingController();List<MediaEntry> results=[];Timer? timer;
+ @override void dispose(){timer?.cancel();input.dispose();super.dispose();}
+ Future<void> _search() async {
+   if(input.text.trim().isEmpty){setState(()=>results=[]);return;}
+   final movies=await widget.db.list(MediaKind.movie,search:input.text,limit:55);
+   final series=await widget.db.list(MediaKind.series,search:input.text,limit:40);
+   final live=await widget.db.list(MediaKind.live,search:input.text,limit:20);
+   if(mounted)setState(()=>results=[...movies,...series,...live]);
+ }
+ @override Widget build(BuildContext context)=>Padding(padding:const EdgeInsets.all(30),
+   child:Column(children:[
+     TextField(controller:input,onChanged:(_){
+       timer?.cancel();timer=Timer(const Duration(milliseconds:260),_search);
+     },decoration:const InputDecoration(prefixIcon:Icon(Icons.search),labelText:'Search your entire IPTV library')),
+     const SizedBox(height:16),
+     Expanded(child:GridView.builder(
+       gridDelegate:const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent:265,
+         mainAxisSpacing:12,crossAxisSpacing:10,childAspectRatio:1.6),
+       itemCount:results.length,
+       itemBuilder:(ctx,i)=>MediaCard(item:results[i],index:0,
+         onFocused:()=>widget.onFocused(results[i]),onOpen:()=>widget.onOpen(results[i])))),
+   ]));
+}
+
+class _LibraryContent extends StatefulWidget{
+ final CatalogDatabase db;final VoidCallback onRefresh;
+ final void Function(MediaEntry) onHide,onFavorite;
+ const _LibraryContent({required this.db,required this.onRefresh,required this.onHide,required this.onFavorite});
+ @override State<_LibraryContent> createState()=>_LibraryContentState();
+}
+class _LibraryContentState extends State<_LibraryContent>{
+ MediaKind kind=MediaKind.live;List<MediaEntry> rows=[];
+ @override void initState(){super.initState();_load();}
+ Future<void> _load()async{
+   final result=await widget.db.list(kind,limit:200);
+   if(mounted)setState(()=>rows=result);
+ }
+ @override Widget build(BuildContext context)=>Padding(padding:const EdgeInsets.all(26),
+   child:Column(children:[
+     Row(children:[
+       Text('EDIT LIBRARY',style:Theme.of(context).textTheme.titleLarge),
+       const SizedBox(width:20),
+       for(final t in MediaKind.values)AuroraButton(text:t.name.toUpperCase(),
+         selected:kind==t,onPressed:(){kind=t;_load();}),
+       const Spacer(),AuroraButton(text:'Refresh',onPressed:widget.onRefresh),
+     ]),
+     const SizedBox(height:12),
+     Expanded(child:ListView.builder(itemCount:rows.length,itemBuilder:(ctx,i){
+       final item=rows[i];
+       return ListTile(title:Text(item.cleanTitle),subtitle:Text(item.category),
+         trailing:Row(mainAxisSize:MainAxisSize.min,children:[
+           IconButton(onPressed:(){widget.onFavorite(item);_load();},
+             icon:Icon(item.favorite?Icons.favorite:Icons.favorite_outline)),
+           IconButton(onPressed:(){widget.onHide(item);_load();},
+             icon:const Icon(Icons.visibility_off_outlined)),
+         ]));
+     })),
+   ]));
+}
