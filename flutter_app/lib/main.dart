@@ -856,6 +856,7 @@ class GuideScreen extends StatefulWidget{
 class _GuideScreenState extends State<GuideScreen>{
  DateTime anchor=DateTime.now();
  Map<String,List<TvProgramme>> programs={};
+ int previewRequest=0;
  String key(MediaEntry item)=>item.epgId.isNotEmpty&&programs.containsKey(item.epgId)
    ?item.epgId:'name:${GuideNames.canonical(item.cleanTitle)}';
  MediaEntry? focused;Timer? debounce;VideoPlayerController? preview;
@@ -870,24 +871,50 @@ class _GuideScreenState extends State<GuideScreen>{
    anchor=DateTime(now.year,now.month,now.day,now.hour,now.minute<30?0:30);
    final result=await widget.db.schedules(widget.channels.expand((e)=>[if(e.epgId.isNotEmpty)e.epgId,'name:${GuideNames.canonical(e.cleanTitle)}']).toSet().toList(),
      anchor,anchor.add(const Duration(hours:3)));
-   if(mounted)setState(()=>programs=result);
+   if(mounted){
+     setState(()=>programs=result);
+     // Start the embedded Live TV preview immediately on guide entry.
+     // No separate picture-in-picture action is required.
+     if(widget.channels.isNotEmpty&&focused==null){
+       WidgetsBinding.instance.addPostFrameCallback((_){
+         if(mounted)_focus(widget.channels.first);
+       });
+     }
+   }
  }
  void _focus(MediaEntry item){
-   if(focused?.id==item.id)return;
+   if(focused?.id==item.id&&preview!=null)return;
+   final request=++previewRequest;
    setState(()=>focused=item);
-   debounce?.cancel();preview?.dispose();preview=null;
+   debounce?.cancel();
+   final old=preview;
+   preview=null;
+   old?.dispose();
    if(!previewEnabled||widget.source==null||item.id.startsWith('lineup:'))return;
-   debounce=Timer(const Duration(milliseconds:1400),()async{
+   debounce=Timer(const Duration(milliseconds:450),()async{
+     VideoPlayerController? controller;
      try{
-       final video=VideoPlayerController.networkUrl(Uri.parse(widget.source!.playback(item)));
-       await video.initialize().timeout(const Duration(seconds:8));
-       if(!mounted||focused?.id!=item.id){video.dispose();return;}
-       video.setVolume(0);
-       await video.play();setState(()=>preview=video);
-     }catch(_){/* Optional PiP must never prevent guide navigation. */}
+       final uri=Uri.parse(widget.source!.playback(item));
+       controller=VideoPlayerController.networkUrl(uri);
+       await controller.initialize().timeout(const Duration(seconds:12));
+       if(!mounted||request!=previewRequest||focused?.id!=item.id){
+         await controller.dispose();return;
+       }
+       await controller.setVolume(0);
+       await controller.setLooping(true);
+       await controller.play();
+       if(mounted&&request==previewRequest)setState(()=>preview=controller);
+     }catch(_){
+       await controller?.dispose();
+       // Keep navigation available if the provider stream cannot preview.
+     }
    });
  }
- @override void dispose(){widget.revision.removeListener(_loadForAnchor);debounce?.cancel();preview?.dispose();super.dispose();}
+ @override void dispose(){
+   ++previewRequest;
+   widget.revision.removeListener(_loadForAnchor);
+   debounce?.cancel();preview?.dispose();super.dispose();
+ }
  @override Widget build(BuildContext context){
    final channels=widget.channels;
    final selected=focused??(channels.isNotEmpty?channels.first:null);
@@ -906,9 +933,9 @@ class _GuideScreenState extends State<GuideScreen>{
            maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:12,color:C.secondary)),
        ])),
        const SizedBox(width:16),
-       IconButton(tooltip:previewEnabled?'Pause TV preview':'Enable TV preview',
+       IconButton(tooltip:previewEnabled?'Turn off automatic preview':'Turn on automatic preview',
          onPressed:(){setState(()=>previewEnabled=!previewEnabled);
-           if(!previewEnabled){debounce?.cancel();preview?.dispose();preview=null;}
+           if(!previewEnabled){++previewRequest;debounce?.cancel();preview?.dispose();preview=null;}
            else if(selected!=null){focused=null;_focus(selected);}},
          icon:Icon(previewEnabled?Icons.picture_in_picture:Icons.picture_in_picture_alt)),
        SizedBox(width:210,height:92,child:ClipRRect(borderRadius:BorderRadius.circular(9),
