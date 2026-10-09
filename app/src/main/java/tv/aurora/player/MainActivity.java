@@ -603,7 +603,7 @@ public class MainActivity extends Activity {
   cards.setClipChildren(false);cards.setGravity(Gravity.TOP);
   gallery.addView(cards,new ViewGroup.LayoutParams(-2,-2));
   if(rows.isEmpty()){
-   TextView empty=text("No visible titles in this section. Try editing your filters.",16);
+   TextView empty=text("Nothing to show yet. Check your language filters or refresh your provider.",16);
    empty.setTextColor(MUTED);cards.addView(empty);
    return;
   }
@@ -890,6 +890,7 @@ public class MainActivity extends Activity {
    try{
     LibraryStore.Page result=store.page(type,cat,search,showHidden,onlyFavorites,h,hc,fav,lang,hide,
          manual,manualGroups,requested*PAGE_SIZE,PAGE_SIZE);
+    final boolean mediaTypeMissing=result.rows.isEmpty()&&store.count(type)==0;
     final Map<String,String> brief=new HashMap<>();
     if(type.equals("live")&&!showHidden){
      for(int x=0;x<Math.min(18,result.rows.size());x++){
@@ -958,7 +959,11 @@ public class MainActivity extends Activity {
      if(isEditing)body.addView(text("Select a title to favorite, restore or hide it.",14));
      if(result.rows.isEmpty()){
       if(requested>0){page=0;browse();return;}
-      body.addView(text("No titles match these filters. Change the category, search or language rules.",18));
+      body.addView(text(mediaTypeMissing?
+       "There are currently no imported "+(type.equals("movie")?"movies":type.equals("series")?"TV shows":"live channels")+
+         " in this catalog. Refresh all media to check the provider.":
+       "No titles match these filters. Change the category, search or language rules.",18));
+      if(mediaTypeMissing)body.addView(button("REFRESH COMPLETE LIBRARY",this::refresh));
       if(!search.isEmpty())body.addView(button("CLEAR SEARCH",()->{query="";page=0;browse();}));
       return;
      }
@@ -1939,6 +1944,11 @@ public class MainActivity extends Activity {
     report.append("\nPrevious incomplete import: ").append(pending.isEmpty()?"none":pending+" (repair on next startup)");
     long liveMs=prefs.getLong("import.stage.live.ms",0);
     if(liveMs>0)report.append("\nLive TV processing: ").append(liveMs/1000d).append(" seconds");
+    for(String kind:new String[]{"vod","series"}){
+     long elapsed=prefs.getLong("import.stage."+kind+".ms",0);
+     if(elapsed>0)report.append("\n").append(kind.equals("vod")?"Movies":"TV Shows")
+       .append(" processing: ").append(elapsed/1000d).append(" seconds");
+    }
     long totalMs=prefs.getLong("import.total_ms",0);
     if(totalMs>0)report.append("\nFull catalog import: ").append(totalMs/1000d).append(" seconds");
     report.append("\n\nNew imports complete Live TV, Movies and TV Shows together in an atomic update. Subsequent launches use the saved SQLite catalog. Provider network latency is outside the app's control.");
