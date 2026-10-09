@@ -754,40 +754,51 @@ public class MainActivity extends Activity {
  View mediaCard(LibraryCore.Item item,String type){
   TvLayout dim=tv();
   boolean live="live".equals(type);
-  int cardWidth=live?dim.liveCardWidth:dim.posterWidth;
-  int artHeight=live?dim.liveCardHeight-53:dim.posterHeight;
-  int totalHeight=live?dim.liveCardHeight:dim.posterCardHeight;
-  LinearLayout card=column();card.setPadding(dp(5),dp(5),dp(5),dp(5));
-  LinearLayout.LayoutParams outer=new LinearLayout.LayoutParams(dp(cardWidth),dp(totalHeight));
-  outer.rightMargin=dp(dim.columnGap);card.setLayoutParams(outer);
-  card.setBackground(rounded(PANEL,14,0xff20384a));
+  int width=live?dim.liveCardWidth:dim.posterWidth;
+  int artHeight=live?dim.liveCardHeight-40:dim.posterHeight;
+  int height=live?dim.liveCardHeight:dim.posterCardHeight;
+  LinearLayout card=column();
+  card.setPadding(dp(3),dp(3),dp(3),dp(3));
+  LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(dp(width),dp(height));
+  size.rightMargin=dp(dim.columnGap);card.setLayoutParams(size);
+  card.setBackground(rounded(PANEL,10,0xff253b4c));
   FrameLayout art=new FrameLayout(this);
-  art.setBackground(gradient(live?0xff105c69:type.equals("movie")?0xff3b385f:0xff26466b,
-     0xff111e34,13));
   art.setClipToOutline(true);
+  art.setBackground(gradient(live?0xff164854:0xff303653,0xff121f34,9));
   card.addView(art,new LinearLayout.LayoutParams(-1,dp(artHeight)));
-  TextView initial=headline(item.name.isEmpty()?"A":item.name.substring(0,1).toUpperCase(Locale.ROOT),
-    46,0xff567287);
+  TextView initial=headline(item.name.isEmpty()?"A":
+    item.name.substring(0,1).toUpperCase(Locale.ROOT),
+    TvLayout.clamp(width/4,22,35),0xff617f96);
   art.addView(initial,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
   displayArtwork(art,item.artwork);
-  TextView badge=kicker(live?"●  LIVE":type.equals("movie")?"◆  MOVIE":"▥  SERIES");
-  badge.setBackground(rounded(0xee0b2732,8,0xff315761));
-  badge.setTextSize(10);badge.setPadding(dp(8),dp(5),dp(8),dp(5));
-  FrameLayout.LayoutParams badgeLp=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.LEFT);
-  badgeLp.setMargins(dp(8),dp(8),0,0);art.addView(badge,badgeLp);
-  TextView text=text(item.name,TvLayout.clamp(dim.bodySize()-1,14,18));
-  text.setMaxLines(2);text.setEllipsize(TextUtils.TruncateAt.END);
-  text.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
-  LinearLayout.LayoutParams titleBounds=new LinearLayout.LayoutParams(-1,-2);
-  titleBounds.topMargin=dp(5);card.addView(text,titleBounds);
+  boolean recent=MediaDiscovery.recent(item.releaseYear,MediaDiscovery.currentYear());
+  if(live||recent){
+   TextView marker=kicker(live?"●  LIVE":Integer.toString(item.releaseYear));
+   marker.setTextSize(9);marker.setPadding(dp(5),dp(2),dp(5),dp(2));
+   marker.setBackground(rounded(0xea0b2732,6,0xff315761));
+   FrameLayout.LayoutParams label=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.LEFT);
+   label.setMargins(dp(5),dp(5),0,0);
+   art.addView(marker,label);
+  }
+  TextView name=text(item.name,TvLayout.clamp(dim.bodySize()-1,12,15));
+  name.setMaxLines(1);name.setEllipsize(TextUtils.TruncateAt.END);
+  name.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+  name.setPadding(dp(4),dp(3),dp(4),0);
+  card.addView(name,new LinearLayout.LayoutParams(-1,dp(23)));
+  TextView details=text(item.releaseYear>0&&!live?
+    item.releaseYear+"   ·   "+item.category:item.category,11);
+  details.setTextColor(MUTED);details.setSingleLine(true);
+  details.setEllipsize(TextUtils.TruncateAt.END);
+  details.setPadding(dp(4),0,dp(4),0);
+  card.addView(details,new LinearLayout.LayoutParams(-1,dp(15)));
   card.setFocusable(true);card.setClickable(true);
   card.setOnClickListener(v->{
    if(live)open(item);else showMediaDetails(item);
   });
   card.setOnFocusChangeListener((v,focus)->{
-   card.setBackground(rounded(focus?0xff1b484f:PANEL,14,focus?ACCENT:0xff20384a));
-   card.animate().scaleX(focus?1.035f:1f).scaleY(focus?1.035f:1f)
-     .setDuration(140).start();
+   card.setBackground(rounded(focus?0xff214a4c:PANEL,10,focus?ACCENT:0xff253b4c));
+   card.animate().scaleX(focus?1.025f:1f).scaleY(focus?1.025f:1f)
+    .setDuration(100).start();
   });
   return card;
  }
@@ -819,35 +830,35 @@ public class MainActivity extends Activity {
    holder=(PosterTile)card.getTag();
   }else{
    card=column();
-   card.setPadding(dp(5),dp(5),dp(5),dp(5));
-   card.setLayoutParams(new AbsListView.LayoutParams(-1,dp(tv().posterCardHeight+8)));
+   card.setPadding(dp(3),dp(3),dp(3),dp(3));
+   card.setLayoutParams(new AbsListView.LayoutParams(-1,dp(tv().posterCardHeight+4)));
    holder=new PosterTile();
    FrameLayout cover=new FrameLayout(this);
    cover.setBackground(gradient(0xff234554,0xff121f36,12));
    card.addView(cover,new LinearLayout.LayoutParams(-1,dp(tv().posterHeight)));
-   holder.initial=headline("A",48,0xff557f97);
+   holder.initial=headline("A",28,0xff557f97);
    cover.addView(holder.initial,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
    holder.image=new ImageView(this);
    holder.image.setScaleType(ImageView.ScaleType.CENTER_CROP);
    cover.addView(holder.image,new FrameLayout.LayoutParams(-1,-1));
-   holder.badge=headline("MOVIE",10,0xffbcfff1);
-   holder.badge.setPadding(dp(8),dp(5),dp(8),dp(5));
+   holder.badge=headline("MOVIE",9,0xffbcfff1);
+   holder.badge.setPadding(dp(5),dp(2),dp(5),dp(2));
    holder.badge.setBackground(shape(0xdd113b42));
    FrameLayout.LayoutParams badgeLocation=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.LEFT);
    badgeLocation.leftMargin=dp(7);badgeLocation.topMargin=dp(7);
    cover.addView(holder.badge,badgeLocation);
-   holder.title=text("",15);
+   holder.title=text("",TvLayout.clamp(tv().bodySize()-1,12,15));
    holder.title.setTypeface(null,Typeface.BOLD);
-   holder.title.setMaxLines(2);
+   holder.title.setMaxLines(1);
    holder.title.setEllipsize(TextUtils.TruncateAt.END);
-   holder.title.setPadding(dp(7),dp(5),dp(7),0);
-   card.addView(holder.title,new LinearLayout.LayoutParams(-1,dp(43)));
-   holder.category=text("",12);
+   holder.title.setPadding(dp(4),dp(3),dp(4),0);
+   card.addView(holder.title,new LinearLayout.LayoutParams(-1,dp(24)));
+   holder.category=text("",11);
    holder.category.setSingleLine(true);
    holder.category.setTextColor(0xffa7bbc9);
    holder.category.setEllipsize(TextUtils.TruncateAt.END);
-   holder.category.setPadding(dp(6),0,dp(6),0);
-   card.addView(holder.category);
+   holder.category.setPadding(dp(4),0,dp(4),0);
+   card.addView(holder.category,new LinearLayout.LayoutParams(-1,dp(15)));
    card.setTag(holder);
    card.setFocusable(false);
    card.setClickable(false);
@@ -858,7 +869,7 @@ public class MainActivity extends Activity {
    });
   }
   holder.title.setText((favorites.contains(item.id)?"★  ":"")+item.name);
-  holder.category.setText(item.category);
+  holder.category.setText(item.releaseYear>0?item.releaseYear+"  ·  "+item.category:item.category);
   holder.badge.setText(item.type.equals("movie")?"MOVIE":"TV SERIES");
   holder.initial.setText(item.name.isEmpty()?"A":item.name.substring(0,1).toUpperCase(Locale.ROOT));
   posters.bind(holder.image,item.artwork);
@@ -977,12 +988,12 @@ public class MainActivity extends Activity {
    row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
    row.setPadding(dp(11),dp(7),dp(11),dp(7));
    row.setBackground(rounded(0xff111e30,13,0xff1f3247));
-   row.setLayoutParams(new AbsListView.LayoutParams(-1,dp(88)));
+   row.setLayoutParams(new AbsListView.LayoutParams(-1,dp(66)));
    holder=new ChannelTile();
    FrameLayout thumbnail=new FrameLayout(this);
    thumbnail.setBackground(rounded(0xff21384b,10,0xff294d57));
    thumbnail.setClipToOutline(true);
-   row.addView(thumbnail,new LinearLayout.LayoutParams(dp(82),dp(60)));
+   row.addView(thumbnail,new LinearLayout.LayoutParams(dp(70),dp(47)));
    holder.icon=headline("TV",19,0xff91ebdc);
    FrameLayout.LayoutParams iconLoc=new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER);
    thumbnail.addView(holder.icon,iconLoc);
@@ -1117,13 +1128,13 @@ public class MainActivity extends Activity {
       featuredSelection.setGravity(Gravity.CENTER_VERTICAL);
       featuredSelection.setPadding(dp(12),dp(7),dp(15),dp(7));
       featuredSelection.setBackground(rounded(0xff172a3a,14,0xff2c5861));
-      LinearLayout.LayoutParams spotlightSize=new LinearLayout.LayoutParams(-1,dp(tv().heightDp<500?74:98));
+      LinearLayout.LayoutParams spotlightSize=new LinearLayout.LayoutParams(-1,dp(tv().heightDp<750?60:76));
       spotlightSize.bottomMargin=dp(8);
       body.addView(featuredSelection,spotlightSize);
       ImageView spotlightPoster=new ImageView(this);
       spotlightPoster.setScaleType(ImageView.ScaleType.CENTER_CROP);
       featuredSelection.addView(spotlightPoster,
-         new LinearLayout.LayoutParams(dp(tv().heightDp<500?43:57),-1));
+         new LinearLayout.LayoutParams(dp(tv().heightDp<750?38:51),-1));
       LinearLayout details=column();
       details.setPadding(dp(17),0,dp(4),0);
       details.setGravity(Gravity.CENTER_VERTICAL);
@@ -1320,7 +1331,7 @@ public class MainActivity extends Activity {
      TvLayout metrics=tv();
      int channelW=metrics.guideChannel,nowW=metrics.guideNow,
          nextW=metrics.guideNext,actionsW=metrics.guideAction;
-     int rowHeight=TvLayout.clamp((int)(metrics.heightDp*.105),57,87);
+     int rowHeight=TvLayout.clamp((int)(metrics.heightDp*.078),42,65);
      body.removeAllViews();
      LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);
      heading.addView(headline("TV GUIDE",TvLayout.clamp(metrics.headingSize(),25,36),Color.WHITE),
@@ -1335,9 +1346,9 @@ public class MainActivity extends Activity {
      });
      refreshButton.setTextSize(14);
      heading.addView(refreshButton,new LinearLayout.LayoutParams(dp(actionButtonWidth-12),dp(49)));
-     body.addView(heading,new LinearLayout.LayoutParams(-1,dp(metrics.heightDp<650?45:56)));
+     body.addView(heading,new LinearLayout.LayoutParams(-1,dp(metrics.heightDp<750?38:51)));
      LinearLayout meta=new LinearLayout(this);meta.setGravity(Gravity.CENTER_VERTICAL);
-     body.addView(meta,new LinearLayout.LayoutParams(-1,dp(metrics.heightDp<650?42:53)));
+     body.addView(meta,new LinearLayout.LayoutParams(-1,dp(metrics.heightDp<750?38:49)));
      Button categoriesButton=button("▦  "+selectedCategory+"   ▾",this::chooseGuideCategory);
      categoriesButton.setSingleLine(true);
      categoriesButton.setEllipsize(TextUtils.TruncateAt.END);
@@ -1347,7 +1358,7 @@ public class MainActivity extends Activity {
      meta.addView(clock,new LinearLayout.LayoutParams(dp(
        TvLayout.clamp(metrics.contentWidth()/4,110,235)),dp(46)));
      LinearLayout previewArea=new LinearLayout(this);
-     int previewHeight=TvLayout.clamp((int)(metrics.heightDp*.19),74,180);
+     int previewHeight=TvLayout.clamp((int)(metrics.heightDp*.15),65,138);
      LinearLayout.LayoutParams previewPosition=new LinearLayout.LayoutParams(-1,dp(previewHeight));
      previewPosition.topMargin=dp(6);
      body.addView(previewArea,previewPosition);
