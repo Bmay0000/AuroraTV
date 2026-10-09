@@ -64,3 +64,9 @@ The included signing key is for **development/testing**, not store releases. Min
 - Hardware performance and remote behavior need testing on specific Fire TV models. Passing CI compilation is not a substitute for device playback testing.
 
 AuroraTV is an independently designed player; it does not include copied commercial streaming-service layouts, names or artwork.
+
+## Daily Trending Movies and TV Shows (TMDB)
+
+AuroraTV can display separate **Top 20 Movies Today** and **Top 20 TV Shows Today** shelves. Open **Manage Connection → Daily Top 20 / TMDB key** and enter your own TMDB API v3 key. The key is kept in the app's local preferences and is not committed to this repository. TMDB daily rankings refresh at most once every 24 hours, with the previous cached ranking available offline. Only titles matched to the user's imported IPTV catalogue appear as playable cards; non-English and obviously mismatched title/year combinations are excluded. Without a key the trending shelves are hidden, and regular library browsing remains available.
+
+Movie and TV discovery pages now include a compact focus-sensitive cinematic artwork banner. **Autoplay video trailers are not yet implemented**; a focus-dependent image transition must not be confused with trailer playback. Attribution/data terms: [TMDB](https://www.themoviedb.org/).
