@@ -98,7 +98,7 @@ public final class ChannelDiscovery {
     private static boolean localNetwork(String normalized){
         if(normalized==null)return false;
         if(normalized.matches("^(?:ABC|CBS|NBC|FOX|PBS)(?: [0-9]{1,2})?$"))return true;
-        return normalized.matches("^(?:W|K)[A-Z]{2,4}(?: [0-9]{1,2})?(?: ABC| CBS| NBC| FOX| PBS)?$");
+        return normalized.matches("^(?:W|K)[A-Z]{3}(?: [0-9]{1,2})?(?: ABC| CBS| NBC| FOX| PBS)?$");
     }
 
     public static boolean northAmerica(LibraryCore.Item item){
