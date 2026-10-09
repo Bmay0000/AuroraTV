@@ -319,38 +319,89 @@ class ChannelLineup {
     'REELZ CHANNEL':'REELZ',
     'THE LEARNING CHANNEL':'TLC',
   };
-  static String canonical(String name){
-    var n=name.trim().toUpperCase()
-      .replaceFirst(RegExp(r'^(?:USA|US|UK|CA|CAN|AU|NZ|NA|EN|ENG)\s*[:|\-]\s*'),'')
-      .replaceAll(RegExp(r'\s*\((?:US|USA|UK|CA|AU|NZ|EN|HD|FHD|UHD|4K|1080P)\)\s*'),' ')
-      .replaceAll(RegExp(r'\b(?:4K|UHD|FHD|HD|HEVC|H265|H264|1080P|720P|SD)\b'),' ')
-      .replaceAll(RegExp(r'\s+'),' ').trim();
-    return aliases[n]??n;
+  // Provider titles often have regional prefixes, group tags and bitrate labels.
+  // Match conservatively against known network names, never substrings:
+  // ESPN, ESPN2, ESPNU and ESPN News must remain different stations.
+  static const _synonyms=<String,String>{
+    'A&E':'A AND E','AE':'A AND E','A AND E NETWORK':'A AND E',
+    'FX NETWORK':'FX','FX HD':'FX','FXX HD':'FXX',
+    'NAT GEO':'NATIONAL GEOGRAPHIC','NAT GEO CHANNEL':'NATIONAL GEOGRAPHIC',
+    'NATIONAL GEO':'NATIONAL GEOGRAPHIC','NATIONAL GEOGRAPHIC CHANNEL':'NATIONAL GEOGRAPHIC',
+    'DISCOVERY CHANNEL':'DISCOVERY',
+    'HISTORY CHANNEL':'HISTORY','THE HISTORY CHANNEL':'HISTORY',
+    'COMEDY CENTRAL HD':'COMEDY CENTRAL',
+    'FOX SPORTS 1':'FS1','FOX SPORTS ONE':'FS1','FOX SPORTS 2':'FS2',
+    'FOX NEWS':'FOX NEWS CHANNEL','FOX BUSINESS':'FOX BUSINESS NETWORK',
+    'ESPN 2':'ESPN2','ESPN TWO':'ESPN2','ESPN NEWS':'ESPNEWS',
+    'ESPN U':'ESPNU','ESPNU HD':'ESPNU',
+    'CBS SPORTS':'CBS SPORTS NETWORK','CBS SN':'CBS SPORTS NETWORK',
+    'NBC SPORTS':'NBC SPORTS NETWORK',
+    'SYFY CHANNEL':'SYFY','SCI FI':'SYFY','SCI-FI':'SYFY',
+    'MSNBC':'MS NOW','ION':'ION TELEVISION','ION TV':'ION TELEVISION',
+    'TCM US':'TCM','TURNER CLASSIC MOVIES':'TCM',
+    'AMC US':'AMC','AMC CHANNEL':'AMC','TNT US':'TNT',
+    'TLC US':'TLC','THE LEARNING CHANNEL':'TLC',
+    'USA':'USA NETWORK','USA CHANNEL':'USA NETWORK',
+    'BET CHANNEL':'BET','BBC AMERICA US':'BBC AMERICA',
+    'WEATHER CHANNEL':'WEATHER CHANNEL',
+    'THE WEATHER CHANNEL':'WEATHER CHANNEL',
+    'NICK JR':'NICK JR','NICK JUNIOR':'NICK JR',
+    'CSPAN':'C-SPAN','CSPAN 2':'C-SPAN2',
+    'BLOOMBERG':'BLOOMBERG TV',
+    'FOOD':'FOOD NETWORK','HGTV US':'HGTV',
+  };
+  static String canonical(String raw) {
+    var s=raw.toUpperCase().trim();
+    // Strip prefixes such as |NA|, [US], USA:, CA -, and provider group tags.
+    for(var i=0;i<4;i++){
+      final next=s.replaceFirst(RegExp(
+        r'^\s*(?:[|\[(]\s*)?(?:US|USA|CA|CAN|CANADA|NA|NORTH AMERICA|UK|EN|ENG|ENGLISH|AU|NZ|LIVE|TV|VIP|SPORTS|ENTERTAINMENT)\s*(?:[|\])]|[:\-]\s*|\s+)',caseSensitive:false),'').trim();
+      if(next==s||next.isEmpty)break;
+      s=next;
+    }
+    s=s.replaceAll(RegExp(r'\[[^\]]*(?:HD|UHD|FHD|4K|SD|HEVC)[^\]]*\]'),' ')
+      .replaceAll(RegExp(r'\([^)]*(?:HD|UHD|FHD|4K|SD|HEVC)[^)]*\)'),' ')
+      .replaceAll(RegExp(r'\b(?:4K|UHD|FHD|HD|HEVC|H265|H264|1080P|720P|SD|BACKUP|SOURCE|RAW|VIP)\b'),' ')
+      .replaceAll(RegExp(r'\s+'),' ').trim()
+      .replaceFirst(RegExp(r'^\d{2,4}\s*[-:.]\s*'),'');
+    s=_synonyms[s]??aliases[s]??s;
+    return s;
   }
-  static int? referenceNumber(MediaEntry item) => reference[canonical(item.cleanTitle)];
+  static String _key(String text)=>canonical(text).replaceAll(RegExp(r'[^A-Z0-9]'),'');
+  static final Map<String,int> _byKey={
+    for(final entry in reference.entries)_key(entry.key):entry.value,
+  };
+  static int? referenceNumber(MediaEntry item) => matchNumber(item.title);
+  static int? matchNumber(String title) {
+    final exact=_byKey[_key(title)];
+    if(exact!=null)return exact;
+    // A trailing country marker should not affect station identity.
+    final clean=canonical(title).replaceFirst(
+      RegExp(r'\s+(?:US|USA|CA|CANADA|UK|EAST COAST|WEST COAST)$'),'');
+    return _byKey[_key(clean)];
+  }
   static int _quality(MediaEntry item){
-    final n=item.title.toUpperCase();
-    var score=0;
-    if(n.contains('FHD')||n.contains('1080'))score+=6;
-    if(n.contains(' HD')||n.contains('HEVC'))score+=4;
-    if(item.likelyEnglish)score+=2;
-    if(item.artwork.startsWith('http'))score+=1;
-    return score;
+    final title=item.title.toUpperCase();
+    var points=item.likelyEnglish?10:0;
+    if(title.contains('FHD')||title.contains('1080'))points+=6;
+    if(title.contains(' HD'))points+=4;
+    if(item.artwork.startsWith('http'))points+=2;
+    if(item.epgId.isNotEmpty)points+=3;
+    return points;
   }
-  static List<MediaEntry> curated(List<MediaEntry> all){
-    final dedup=<String,MediaEntry>{};
+  static Map<int,MediaEntry> matched(List<MediaEntry> all){
+    final matches=<int,MediaEntry>{};
     for(final item in all){
       final number=referenceNumber(item);
       if(number==null)continue;
-      final key='${number}_${canonical(item.cleanTitle)}';
-      final previous=dedup[key];
-      if(previous==null||_quality(item)>_quality(previous))dedup[key]=item;
+      final current=matches[number];
+      if(current==null||_quality(item)>_quality(current))matches[number]=item;
     }
-    final rows=dedup.values.toList();
-    rows.sort((a,b){
-      final p=(referenceNumber(a)??99999).compareTo(referenceNumber(b)??99999);
-      return p!=0?p:a.cleanTitle.compareTo(b.cleanTitle);
-    });
-    return rows;
+    return matches;
+  }
+  static List<MediaEntry> curated(List<MediaEntry> all){
+    final selected=matched(all);
+    final numbers=selected.keys.toList()..sort();
+    return numbers.map((n)=>selected[n]!).toList();
   }
 }
