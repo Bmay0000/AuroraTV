@@ -21,6 +21,10 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.ProgressBar;
+import android.widget.SeekBar;
+import android.content.res.ColorStateList;
+import android.text.TextUtils;
 
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
@@ -74,11 +78,42 @@ public final class PlaybackScreen {
     private TextView state;
     private Button playPause;
     private Button optionsButton;
+    private TextView centerStatus;
+    private LinearLayout centerBanner;
+    private ProgressBar loadingIndicator;
+    private SeekBar playbackSeekbar;
+    private TextView clockText;
+    private boolean scrubbing;
     private View primaryButton;
     private boolean closed;
     private boolean overlayVisible;
     private long resumeAt;
 
+    private final Runnable updateClock=new Runnable(){
+        @Override public void run(){
+            if(closed)return;
+            if(player!=null && clockText!=null && !"live".equals(type)){
+                long duration=player.getDuration();
+                long position=Math.max(0,player.getCurrentPosition());
+                if(duration>0 && duration!=C.TIME_UNSET){
+                    clockText.setText(time(position)+"  /  "+time(duration));
+                    if(playbackSeekbar!=null && !scrubbing){
+                        int progress=(int)(1000d*Math.min(1d,position/(double)duration));
+                        playbackSeekbar.setProgress(progress);
+                    }
+                }else{
+                    clockText.setText(time(position)+"  /  —");
+                }
+            }
+            handler.postDelayed(this,1000L);
+        }
+    };
+    private static String time(long ms){
+        long seconds=Math.max(0,ms/1000),hours=seconds/3600;
+        if(hours>0)return String.format(java.util.Locale.US,"%d:%02d:%02d",
+            hours,(seconds%3600)/60,seconds%60);
+        return String.format(java.util.Locale.US,"%02d:%02d",seconds/60,seconds%60);
+    }
     private final Runnable hideControls = () -> setControlsVisible(false);
     private static final long WATCHDOG_INTERVAL_MS=2500L;
     private final Runnable watchdog = new Runnable(){
@@ -174,69 +209,126 @@ public final class PlaybackScreen {
         root.setBackgroundColor(Color.BLACK);
         root.setFocusableInTouchMode(true);
         view = new PlayerView(activity);
-        view.setUseController(false); // No permanent Media3 controller occupying the display
+        view.setUseController(false);
         view.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
-        view.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING);
+        // AuroraTV owns the buffering UI so a failed source never leaves
+        // Media3's spinner displayed indefinitely.
+        view.setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER);
         view.setKeepContentOnPlayerReset(true);
-        root.addView(view, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(view,new FrameLayout.LayoutParams(-1,-1));
+
+        centerBanner=new LinearLayout(activity);
+        centerBanner.setOrientation(LinearLayout.VERTICAL);
+        centerBanner.setGravity(Gravity.CENTER);
+        centerBanner.setPadding(dp(28),dp(17),dp(28),dp(17));
+        centerBanner.setBackground(shape(0xe9152535,15));
+        FrameLayout.LayoutParams centerBounds=new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.CENTER);
+        centerBounds.setMargins(dp(14),0,dp(14),0);
+        root.addView(centerBanner,centerBounds);
+        loadingIndicator=new ProgressBar(activity);
+        loadingIndicator.setIndeterminateTintList(ColorStateList.valueOf(0xff5debd0));
+        LinearLayout.LayoutParams spinnerLoc=new LinearLayout.LayoutParams(dp(34),dp(34));
+        spinnerLoc.gravity=Gravity.CENTER_HORIZONTAL;centerBanner.addView(loadingIndicator,spinnerLoc);
+        centerStatus=label("Connecting to your stream…",17,Color.WHITE);
+        centerStatus.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams statusSpace=new LinearLayout.LayoutParams(-2,-2);
+        statusSpace.topMargin=dp(9);
+        centerBanner.addView(centerStatus,statusSpace);
 
         controlsOverlay = new LinearLayout(activity);
         controlsOverlay.setOrientation(LinearLayout.VERTICAL);
-        controlsOverlay.setPadding(dp(20),dp(14),dp(20),dp(20));
-        controlsOverlay.setBackground(shape(0xee071624, 12));
+        controlsOverlay.setPadding(dp(35),dp(45),dp(35),dp(22));
+        GradientDrawable glass=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+            new int[]{0x05070d18,0xc00a1525,0xf7061020});
+        controlsOverlay.setBackground(glass);
         FrameLayout.LayoutParams overlayBounds = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM);
-        overlayBounds.setMargins(dp(12),0,dp(12),dp(12));
         root.addView(controlsOverlay, overlayBounds);
 
-        TextView title = label(media.name, 21, Color.WHITE);
-        title.setTypeface(null, Typeface.BOLD);
-        title.setMaxLines(1);
+        TextView label=label("AuroraTV   •   "+("live".equals(type)?"LIVE TELEVISION":
+            "movie".equals(type)?"MOVIE":"TV SERIES"),13,0xff5debd0);
+        label.setLetterSpacing(.13f);label.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+        controlsOverlay.addView(label);
+        TextView title = label(media.name, TvLayout.clamp(
+            (int)(activity.getResources().getDisplayMetrics().widthPixels/
+                activity.getResources().getDisplayMetrics().density*.023),20,29),
+            Color.WHITE);
+        title.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);
         controlsOverlay.addView(title);
-        state = label("Connecting to stream…", 14, 0xffa7c7d3);
-        LinearLayout.LayoutParams messageBounds =
-                new LinearLayout.LayoutParams(-1, dp(26));
-        controlsOverlay.addView(state,messageBounds);
-        LinearLayout buttons = new LinearLayout(activity);
-        buttons.setGravity(Gravity.CENTER_VERTICAL);
-        controlsOverlay.addView(buttons);
+        state = label("Connecting to stream…",14,0xffb5d0dc);
+        LinearLayout.LayoutParams stateBounds =
+            new LinearLayout.LayoutParams(-1,dp(27));
+        controlsOverlay.addView(state,stateBounds);
 
-        playPause = control("Pause",v -> {
-            if (player == null) return;
-            if (player.isPlaying()) player.pause(); else player.play();
-            updatePlaybackState();
-        });
-        primaryButton = playPause;
-        buttons.addView(playPause, new LinearLayout.LayoutParams(0,dp(56),1));
-
-        if ("live".equals(type)) {
-            Button live = control("Go Live",v -> {
-                if (player == null) return;
-                if (player.isCurrentMediaItemLive()) {
-                    player.seekToDefaultPosition();
-                    player.play();
-                } else Toast.makeText(activity,
-                        "This stream has no rewindable live timeline",Toast.LENGTH_SHORT).show();
+        if(!"live".equals(type)){
+            LinearLayout timing=new LinearLayout(activity);
+            timing.setGravity(Gravity.CENTER_VERTICAL);
+            playbackSeekbar=new SeekBar(activity);
+            playbackSeekbar.setMax(1000);
+            playbackSeekbar.setProgressTintList(ColorStateList.valueOf(0xff5debd0));
+            playbackSeekbar.setThumbTintList(ColorStateList.valueOf(0xff5debd0));
+            timing.addView(playbackSeekbar,new LinearLayout.LayoutParams(0,dp(40),1));
+            clockText=label("00:00  /  —",13,0xffe2f1f6);
+            clockText.setGravity(Gravity.CENTER_VERTICAL|Gravity.RIGHT);
+            timing.addView(clockText,new LinearLayout.LayoutParams(dp(134),dp(40)));
+            controlsOverlay.addView(timing);
+            playbackSeekbar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+                @Override public void onStartTrackingTouch(SeekBar bar){scrubbing=true;handler.removeCallbacks(hideControls);}
+                @Override public void onProgressChanged(SeekBar bar,int progress,boolean user){
+                    if(user && player!=null && clockText!=null &&
+                       player.getDuration()>0 && player.getDuration()!=C.TIME_UNSET)
+                        clockText.setText(time((long)(player.getDuration()*progress/1000d))+
+                            "  /  "+time(player.getDuration()));
+                }
+                @Override public void onStopTrackingTouch(SeekBar bar){
+                    scrubbing=false;
+                    if(player!=null&&player.isCurrentMediaItemSeekable() &&
+                            player.getDuration()>0 && player.getDuration()!=C.TIME_UNSET)
+                        player.seekTo((long)(player.getDuration()*bar.getProgress()/1000d));
+                    scheduleHide();
+                }
             });
-            buttons.addView(live,new LinearLayout.LayoutParams(0,dp(56),1));
-        } else {
-            Button seek = control("−30s",v -> {
-                if (player != null)
-                    player.seekTo(Math.max(0,player.getCurrentPosition()-30000));
-            });
-            buttons.addView(seek,new LinearLayout.LayoutParams(0,dp(56),1));
         }
 
-        optionsButton=control("Playback Settings",v -> showSettings());
-        buttons.addView(optionsButton,new LinearLayout.LayoutParams(0,dp(56),1));
-        Button back = control("Back to Library",v -> exit.goBack());
-        buttons.addView(back,new LinearLayout.LayoutParams(0,dp(56),1));
+        LinearLayout buttons = new LinearLayout(activity);
+        buttons.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(52));
+        actions.topMargin=dp(8);controlsOverlay.addView(buttons,actions);
+        playPause = control("Ⅱ  PAUSE",v -> togglePlay());
+        primaryButton = playPause;
+        buttons.addView(playPause,new LinearLayout.LayoutParams(0,-1,1));
+
+        if("live".equals(type)){
+            Button live=control("◉  GO LIVE",v ->{
+                if(player==null)return;
+                manualPause=false;
+                if(player.isCurrentMediaItemLive() && player.isCurrentMediaItemSeekable()){
+                    player.seekToDefaultPosition();player.play();
+                }else retry();
+                scheduleHide();
+            });
+            buttons.addView(live,new LinearLayout.LayoutParams(0,-1,1));
+        } else {
+            Button rewind=control("↶  −30 SEC",v ->{
+                if(player!=null && player.isCurrentMediaItemSeekable())
+                    player.seekTo(Math.max(0,player.getCurrentPosition()-30000));
+            });
+            buttons.addView(rewind,new LinearLayout.LayoutParams(0,-1,1));
+        }
+        Button reconnect=control("⟳  RECONNECT",v ->retry());
+        buttons.addView(reconnect,new LinearLayout.LayoutParams(0,-1,1));
+        optionsButton=control("⚙  OPTIONS",v->showSettings());
+        buttons.addView(optionsButton,new LinearLayout.LayoutParams(0,-1,1));
+        Button back=control("←  EXIT",v->exit.goBack());
+        buttons.addView(back,new LinearLayout.LayoutParams(0,-1,1));
         setControlsVisible(false);
         activity.setContentView(root);
         root.requestFocus();
-
+        handler.postDelayed(updateClock,1000L);
         startPlayer(this.resumeAt);
     }
 
@@ -606,6 +698,7 @@ public final class PlaybackScreen {
         handler.removeCallbacks(hideControls);
         handler.removeCallbacks(sampleHealth);
         handler.removeCallbacks(watchdog);
+        handler.removeCallbacks(updateClock);
         long position = 0;
         try {
             if (player != null) {
