@@ -18,7 +18,7 @@ public final class ChannelDiscovery {
         {"77","METV"},{"80","COZI TV"},{"81","GRIT"},{"82","BOUNCE TV"},
         {"84","START TV"},{"85","TRUE CRIME"},{"88","ION MYSTERY"},
         {"200","NEWS MIX"},{"202","CNN"},{"204","HLN"},{"206","ESPN"},
-        {"207","ESPNEWS"},{"208","ESPNU"},{"209","ESPN2"},
+        {"207","ESPNEWS"},{"208","ESPNU"},{"209","ESPN2"},{"210","ESPN+"},
         {"211","NFL REDZONE"},{"212","NFL NETWORK"},{"213","MLB NETWORK"},
         {"214","RACER NETWORK"},{"215","NHL NETWORK"},{"216","NBA TV"},{"217","TENNIS CHANNEL"},
         {"218","GOLF CHANNEL"},{"219","FS1"},{"221","CBS SPORTS NETWORK"},
@@ -77,6 +77,10 @@ public final class ChannelDiscovery {
     private static final Pattern LEADING=Pattern.compile(
         "^(?:USA?|CAN|CANADA|CA|NA|NORTH AMERICA|UK|GB|EN|ENG|4K|8K)\\s+",Pattern.CASE_INSENSITIVE);
     private static final Pattern NONLATIN=Pattern.compile("[\\p{IsArabic}\\p{IsCyrillic}\\p{IsHan}\\p{IsHangul}]");
+    // Satellite lists a handful of ESPN+ subfeeds near channel 210, not every
+    // numbered event in a third-party IPTV catalog.
+    private static final Pattern ESPN_PLUS=Pattern.compile(
+        "(?i)ESPN\\s*\\+\\s*([1-7])?(?!\\d)");
     private static final Pattern SYMBOLS=Pattern.compile("[\\[\\](){}|:/+.,]");
     private static final Pattern WHITESPACE=Pattern.compile("\\s+");
     private static final Pattern TRAILING_REGION=Pattern.compile(
@@ -115,6 +119,7 @@ public final class ChannelDiscovery {
 
     public static int satelliteNumber(LibraryCore.Item channel){
         if(channel==null||channel.name==null)return 0;
+        if(ESPN_PLUS.matcher(channel.name).find())return 210;
         String c=canonicalName(channel.name);
         if(c.isEmpty())return 0;
         // Explicit distinctive aliases only. Avoid collapsing FS1 into FOX,
