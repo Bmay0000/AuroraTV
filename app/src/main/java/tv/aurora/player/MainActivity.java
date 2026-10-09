@@ -24,7 +24,7 @@ import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  ImageView cinematicBackdrop; TextView cinematicTitle,cinematicSubtitle;
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false,browseAll=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";String guideSelectedId="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;long navigationStartedAt;int navigationMarkedToken=-1;
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false,browseAll=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";String guideSelectedId="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();final Map<String,GuideEngine.Slot> guideSlotCache=new java.util.concurrent.ConcurrentHashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;long navigationStartedAt;int navigationMarkedToken=-1;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV3",false)){
     // Prior versions auto-enabled strict mode for English-only libraries,
@@ -1534,8 +1534,7 @@ public class MainActivity extends Activity {
       fav=new HashSet<>(favorites),langs=new HashSet<>(allowed),
       manual=new HashSet<>(shown),groups=new HashSet<>(shownCategories);
   final boolean strict=hideUnknown;
-  body.removeAllViews();
-  body.addView(kicker("OPENING CHANNEL GUIDE…"));
+  // Retain last screen until the requested directory is ready.
   catalogReadIO.execute(()->{
    try{
     final List<LibraryCore.Item> channels=store.channelDirectory(
@@ -1620,7 +1619,7 @@ public class MainActivity extends Activity {
      TextView nextHeader=text("UP NEXT",11);nextHeader.setTextColor(ACCENT);
      columns.addView(nextHeader,new LinearLayout.LayoutParams(0,-2,.24f));
 
-     final java.util.Map<String,GuideEngine.Slot> slots=new java.util.concurrent.ConcurrentHashMap<>();
+     final java.util.Map<String,GuideEngine.Slot> slots=guideSlotCache;
      final Set<String> pending=java.util.concurrent.ConcurrentHashMap.newKeySet();
      final ListView listing=new ListView(this);
      listing.setVerticalScrollBarEnabled(false);
@@ -1709,7 +1708,7 @@ public class MainActivity extends Activity {
        focused[0]=chosen;
        guideSelectedId=chosen.id;
        preview.highlight(chosen,slots.get(chosen.id));
-       fetchGuideSchedules(token,channels,Math.max(0,position-5),26,slots,pending,adapter,
+       fetchGuideSchedules(token,channels,Math.max(0,position-3),12,slots,pending,adapter,
          chosen.id,preview);
       }
       @Override public void onNothingSelected(AdapterView<?> parent){}
@@ -1724,7 +1723,7 @@ public class MainActivity extends Activity {
      listing.setOnScrollListener(new AbsListView.OnScrollListener(){
       @Override public void onScrollStateChanged(AbsListView view,int state){}
       @Override public void onScroll(AbsListView view,int first,int visible,int total){
-       if(visible>0)fetchGuideSchedules(token,channels,first,visible+10,
+       if(visible>0)fetchGuideSchedules(token,channels,first,visible+5,
          slots,pending,adapter,focused[0]==null?"":focused[0].id,preview);
       }
      });
@@ -1734,7 +1733,7 @@ public class MainActivity extends Activity {
       focused[0]=channels.get(0);
       guideSelectedId=channels.get(0).id;
       preview.highlight(channels.get(0),slots.get(channels.get(0).id));
-      fetchGuideSchedules(token,channels,0,32,slots,pending,adapter,
+      fetchGuideSchedules(token,channels,0,14,slots,pending,adapter,
         channels.get(0).id,preview);
      }else searchButton.requestFocus();
      scheduleGuideSync(false,true);
