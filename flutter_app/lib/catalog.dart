@@ -39,7 +39,7 @@ class MediaEntry {
   };
 
   String get cleanTitle => title
-      .replaceFirst(RegExp(r'^(EN|ENG|US|UK|AU|NZ|VOD|MOVIE|SERIES)\s*[-|:]\s*', caseSensitive: false), '')
+      .replaceFirst(RegExp(r'^(?:(?:EN|ENG|US|USA|UK|AU|NZ|VOD|MOVIE|SERIES)\s*[-|:]\s*|(?:4K|UHD|FHD|HD|SD)\s*[-|:]\s*)+', caseSensitive: false), '')
       .replaceAll(RegExp(r'\s+(4K|UHD|FHD|HD)\s*$', caseSensitive: false), '')
       .trim();
 
