@@ -599,7 +599,7 @@ class _GuideScreenState extends State<GuideScreen>{
  Future<void> _load()async{
    final now=DateTime.now();
    anchor=DateTime(now.year,now.month,now.day,now.hour,now.minute<30?0:30);
-   final result=await widget.db.schedules(widget.channels.map((e)=>e.id).toList(),
+   final result=await widget.db.schedules(widget.channels.map((e)=>e.epgId).where((e)=>e.isNotEmpty).toList(),
      anchor,anchor.add(const Duration(hours:3)));
    if(mounted)setState(()=>programs=result);
  }
@@ -672,7 +672,7 @@ class _GuideScreenState extends State<GuideScreen>{
            ])),
          Expanded(child:ListView.builder(itemCount:channels.length,itemBuilder:(ctx,i){
            final item=channels[i];
-           final blocks=programs[item.id]??[];
+           final blocks=programs[item.epgId]??[];
            final current=focused?.id==item.id;
            return Focus(child:Builder(builder:(ctx)=>InkWell(
              onFocusChange:(value){if(value)_focus(item);},
