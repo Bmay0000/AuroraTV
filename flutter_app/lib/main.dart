@@ -109,27 +109,50 @@ class _AuroraShellState extends State<AuroraShell>{
         orElse:()=>movies.isNotEmpty?movies.first:const MediaEntry(id:'empty',title:'Browse your library',kind:MediaKind.movie));
     if(next.id!='empty')_feature(next);
   }
+  MediaEntry _withTmdbArt(MediaEntry providerItem,MediaEntry tmdbItem) => MediaEntry(
+    id:providerItem.id,title:providerItem.title,kind:providerItem.kind,
+    category:providerItem.category,
+    artwork:tmdbItem.artwork.isNotEmpty?tmdbItem.artwork:providerItem.artwork,
+    extension:providerItem.extension,streamId:providerItem.streamId,
+    directUrl:providerItem.directUrl,epgId:providerItem.epgId,
+    year:providerItem.year>0?providerItem.year:tmdbItem.year,
+    rating:tmdbItem.rating>0?tmdbItem.rating:providerItem.rating,
+    favorite:providerItem.favorite,hidden:providerItem.hidden);
   Future<void> _getTrends() async{
-    if(tmdb.apiKey.isEmpty){if(mounted)setState((){});return;}
-    // Display actual TMDB entries; don't hide entire shelves when no IPTV match.
+    if(tmdb.apiKey.isEmpty)return;
     for(final kind in [MediaKind.series,MediaKind.movie]){
       final daily=await tmdb.discovery(kind);
-      if(!mounted)return;
-      setState(()=>discoverToday[kind]=daily);
-    }
-    // Fetch each genre independently so every genre has its own ranked row.
-    // Space the requests to avoid burst-loading lower-end devices.
-    for(final kind in [MediaKind.series,MediaKind.movie]){
-      final grouped=<String,List<MediaEntry>>{};
+      final groupsByGenre=<String,List<MediaEntry>>{};
       for(final genre in TmdbClient.genres.entries){
         if(kind==MediaKind.movie&&genre.key>=10759)continue;
         if(kind==MediaKind.series&&(genre.key==10749||genre.key==878||genre.key==10770))continue;
-        final matches=await tmdb.discovery(kind,window:'week',genreId:genre.key);
+        final titles=await tmdb.discovery(kind,window:'week',genreId:genre.key);
         if(!mounted)return;
-        if(matches.isNotEmpty){
-          grouped[genre.value]=matches;
-          setState(()=>popularGenres[kind]=Map.from(grouped));
-        }
+        if(titles.isNotEmpty)groupsByGenre[genre.value]=titles;
+      }
+      final names=<String>{
+        ...daily.map((e)=>e.title),
+        ...groupsByGenre.values.expand((rows)=>rows.map((e)=>e.title)),
+      };
+      // One scan of the entire local IPTV catalog, not a search limited to
+      // 60 titles for every genre. This is indexed by canonical title.
+      final matching=await db.matchTitleMap(kind,names.toList());
+      if(!mounted)return;
+      List<MediaEntry> available(List<MediaEntry> tmdbItems)=>[
+        for(final item in tmdbItems)
+          if(matching[item.title]!=null)_withTmdbArt(matching[item.title]!,item)
+      ];
+      final matchedGenres=<String,List<MediaEntry>>{};
+      for(final row in groupsByGenre.entries){
+        final titles=available(row.value);
+        if(titles.isNotEmpty)matchedGenres[row.key]=titles;
+      }
+      setState((){
+        discoverToday[kind]=available(daily);
+        popularGenres[kind]=matchedGenres;
+      });
+      if(kind==MediaKind.series && page==0 && (discoverToday[kind]?.isNotEmpty??false)){
+        _feature(discoverToday[kind]!.first);
       }
     }
   }
