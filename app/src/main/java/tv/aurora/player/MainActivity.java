@@ -771,7 +771,10 @@ public class MainActivity extends Activity {
   carousel.setHorizontalScrollBarEnabled(false);
   carousel.setClipChildren(true);carousel.setClipToPadding(true);
   carousel.setPadding(dp(2),dp(2),dp(2),dp(2));
+  boolean cinematicRail=("home".equals(screen)||"discover".equals(screen))&&
+      ("movie".equals(type)||"series".equals(type));
   feed.addView(carousel,new LinearLayout.LayoutParams(-1,dp(
+    cinematicRail?TvLayout.clamp(dim.heightDp/4,120,205):
     ("live".equals(type)?dim.liveCardHeight:dim.posterCardHeight)+8)));
   LinearLayout cards=new LinearLayout(this);
   cards.setClipChildren(true);cards.setGravity(Gravity.TOP);
@@ -784,11 +787,52 @@ public class MainActivity extends Activity {
   boolean ranked=heading.startsWith("TOP 20 ");
   for(int position=0;position<rows.size();position++){
    LibraryCore.Item item=rows.get(position);
-   cards.addView(mediaCard(item,type.equals("personal")?item.type:type,
-       ranked?position+1:0));
+   boolean cinematicRail=("home".equals(screen)||"discover".equals(screen))&&
+      ("movie".equals(type)||"series".equals(type));
+   cards.addView(cinematicRail?
+      landscapeCard(item,ranked?position+1:0):
+      mediaCard(item,type.equals("personal")?item.type:type,ranked?position+1:0));
   }
  }
 
+ /** Widescreen artwork cards make the discovery feed visibly different from a provider poster grid. */
+ View landscapeCard(LibraryCore.Item item,int rank){
+  TvLayout m=tv();
+  int w=TvLayout.clamp(m.contentWidth()/3,205,380);
+  int h=TvLayout.clamp(m.heightDp/4-12,110,185);
+  FrameLayout tile=new FrameLayout(this);
+  LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(dp(w),dp(h));
+  layout.rightMargin=dp(9);tile.setLayoutParams(layout);
+  tile.setClipToOutline(true);
+  tile.setBackground(rounded(0xff142a38,13,0xff1c3c46));
+  ImageView picture=new ImageView(this);
+  picture.setScaleType(ImageView.ScaleType.CENTER_CROP);
+  tile.addView(picture,new FrameLayout.LayoutParams(-1,-1));
+  if(item.artwork!=null)posters.bind(picture,item.artwork);
+  View shade=new View(this);
+  shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
+      new int[]{0xf4000b16,0x74000c1a,0x0c05111b}));
+  tile.addView(shade,new FrameLayout.LayoutParams(-1,-1));
+  LinearLayout info=column();info.setGravity(Gravity.BOTTOM);
+  info.setPadding(dp(13),dp(4),dp(9),dp(12));
+  tile.addView(info,new FrameLayout.LayoutParams(-1,-1,Gravity.BOTTOM));
+  TextView title=headline(displayMediaName(item),TvLayout.clamp(m.bodySize()+3,14,21),Color.WHITE);
+  title.setMaxLines(2);title.setEllipsize(TextUtils.TruncateAt.END);
+  info.addView(title);
+  TextView meta=text((rank>0?"#"+rank+"  ·  ":"")+
+       (item.releaseYear>0?item.releaseYear+"  ·  ":"")+
+       ("series".equals(item.type)?"SERIES":"MOVIE"),11);
+  meta.setTextColor(0xffc4e0df);info.addView(meta);
+  tile.setFocusable(true);tile.setClickable(true);
+  tile.setOnClickListener(v->showMediaDetails(item));
+  tile.setOnFocusChangeListener((v,focus)->{
+   if(focus){featurePriority=4;updateCinematicPanel(item);}
+   tile.setBackground(rounded(focus?0xff1c5c5b:0xff142a38,13,focus?ACCENT:0xff1c3c46));
+   tile.animate().scaleX(focus?1.035f:1f).scaleY(focus?1.035f:1f)
+      .setDuration(150).start();
+  });
+  return tile;
+ }
  View mediaCard(LibraryCore.Item item,String type){
   return mediaCard(item,type,0);
  }
