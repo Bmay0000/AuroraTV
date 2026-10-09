@@ -424,7 +424,10 @@ public class MainActivity extends Activity {
   LinearLayout latest=column(),continueRow=column(),englishMovies=column(),
     americanTV=column(),englishSeries=column(),genres=column(),
     myList=column(),unknown=column(),foreign=column();
-  feed.addView(latest);
+  LinearLayout movieTrending=column(),seriesTrending=column();
+   feed.addView(latest);feed.addView(movieTrending);feed.addView(seriesTrending);
+   fetchTrendingShelf(token,"movie",movieTrending,h,hc,fav,lang,strict,manual,groups);
+   fetchTrendingShelf(token,"series",seriesTrending,h,hc,fav,lang,strict,manual,groups);
   feed.addView(continueRow);
   feed.addView(englishMovies);
   feed.addView(americanTV);
@@ -1080,7 +1083,9 @@ public class MainActivity extends Activity {
   scroller.addView(feed,new ScrollView.LayoutParams(-1,-2));
   LinearLayout recent=column(),english=column(),genres=column(),unknown=column(),
       international=column();
-  feed.addView(recent);feed.addView(english);feed.addView(genres);
+  LinearLayout trending=column();feed.addView(trending);
+   fetchTrendingShelf(token,type,trending,h,hc,fav,langs,strict,manual,groups);
+   feed.addView(recent);feed.addView(english);feed.addView(genres);
   feed.addView(unknown);feed.addView(international);
   if("movie".equals(type)){
    fetchRecentMovies(token,recent,unknown,international,h,hc,fav,langs,strict,manual,groups);
@@ -1094,6 +1099,66 @@ public class MainActivity extends Activity {
   fetchLanguageShelf(token,type,international,
       type.equals("movie")?"MORE INTERNATIONAL MOVIES":"INTERNATIONAL TV SERIES",
       true,h,hc,fav,langs,strict,manual,groups);
+ }
+
+
+ /** Only verified catalogue matches appear in the daily Top 20 rails. */
+ void fetchTrendingShelf(int token,String type,LinearLayout target,
+       Set<String> h,Set<String> hc,Set<String> fav,Set<String> langs,
+       boolean strict,Set<String> manual,Set<String> groups){
+   String apiKey=prefs.getString("tmdb.apiKey","");
+   if(apiKey.isEmpty())return;
+   catalogReadIO.execute(()->{
+    try{
+     java.util.List<TrendingCatalog.Entry> trending=TrendingCatalog.load(this,type,apiKey);
+     java.util.List<LibraryCore.Item> matches=new java.util.ArrayList<>();
+     java.util.Set<String> ids=new java.util.HashSet<>();
+     for(TrendingCatalog.Entry rank:trending){
+      if(Thread.currentThread().isInterrupted()||token!=browseToken)return;
+      String search=rank.title.length()>4?rank.title:rank.originalTitle;
+      LibraryStore.Page found=store.page(type,"All",search,false,false,
+          h,hc,fav,langs,strict,manual,groups,0,60);
+      LibraryCore.Item best=null;
+      for(LibraryCore.Item item:found.rows){
+       if(!TrendingCatalog.matches(rank,item))continue;
+       if(MediaDiscovery.knownForeign(item))continue;
+       String id=TrendingCatalog.normalize(item.name)+":"+item.releaseYear;
+       if(ids.contains(id))continue;
+       if(best==null || (item.artwork!=null&&item.artwork.startsWith("http")
+            &&(best.artwork==null||!best.artwork.startsWith("http"))))best=item;
+      }
+      if(best!=null){
+       matches.add(best);
+       ids.add(TrendingCatalog.normalize(best.name)+":"+best.releaseYear);
+      }
+     }
+     runOnUiThread(()->{
+      if(isDestroyed()||token!=browseToken
+          ||!("home".equals(screen)||"discover".equals(screen)))return;
+      target.removeAllViews();
+      if(!matches.isEmpty())homeShelf(target,
+          "TOP 20 "+("movie".equals(type)?"MOVIES":"TV SHOWS")+" TODAY · IN YOUR LIBRARY",
+          type,matches);
+     });
+    }catch(Exception ignored){
+     // Offline or invalid API key: existing library shelves remain available.
+    }
+   });
+ }
+ void trendingSettings(){
+   EditText input=new EditText(this);
+   input.setSingleLine(true);
+   input.setText(prefs.getString("tmdb.apiKey",""));
+   input.setHint("TMDB API key");
+   input.setInputType(android.text.InputType.TYPE_CLASS_TEXT|
+       android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+   new AlertDialog.Builder(this).setTitle("DAILY TOP 20")
+     .setMessage("Enter your own TMDB v3 API key to display daily trending movies and series available in your IPTV library. The key stays on this device. Movie rankings update daily.")
+     .setView(input).setPositiveButton("SAVE",(dialog,which)->{
+       prefs.edit().putString("tmdb.apiKey",input.getText().toString().trim()).apply();
+       if("home".equals(screen))home();
+       else if("discover".equals(screen))catalogLanding(section);
+     }).setNegativeButton("CANCEL",null).show();
  }
 
  void fetchSeriesCategories(int token,LinearLayout target,
@@ -2317,7 +2382,7 @@ public class MainActivity extends Activity {
 
  void connect(){
   new AlertDialog.Builder(this).setTitle("MANAGE YOUR CONNECTION")
-   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Smart EPG settings","Playback diagnostics","Library status & import speed","Display density / poster size","Disconnect and clear this device"},(d,n)->{
+   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Smart EPG settings","Playback diagnostics","Library status & import speed","Display density / poster size","Daily Top 20 / TMDB key","Disconnect and clear this device"},(d,n)->{
     if(n==0){loginScreen(false);return;}
     if(n==1){refresh();return;}
     if(n==2){guideSettings();return;}
