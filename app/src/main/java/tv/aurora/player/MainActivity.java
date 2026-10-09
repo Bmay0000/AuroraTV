@@ -22,6 +22,7 @@ import androidx.media3.common.*;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
+ ImageView cinematicBackdrop; TextView cinematicTitle,cinematicSubtitle;
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
  LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false,browseAll=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";String guideSelectedId="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;long navigationStartedAt;int navigationMarkedToken=-1;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
@@ -401,6 +402,7 @@ public class MainActivity extends Activity {
 
  boolean visible(LibraryCore.Item i){return LibraryCore.visible(i,hidden,categories,favorites,allowed,hideUnknown,shown,shownCategories);}
  void home(){
+  cinematicBackdrop=null;cinematicTitle=null;cinematicSubtitle=null;
   stopGuidePreview();
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="home";refreshSidebar();
@@ -812,6 +814,7 @@ public class MainActivity extends Activity {
    if(live)open(item);else showMediaDetails(item);
   });
   card.setOnFocusChangeListener((v,focus)->{
+   if(focus&&!live)updateCinematicPanel(item);
    card.setBackground(rounded(focus?0xff214a4c:PANEL,10,focus?ACCENT:0xff253b4c));
    card.animate().scaleX(focus?1.025f:1f).scaleY(focus?1.025f:1f)
     .setDuration(100).start();
@@ -1046,6 +1049,7 @@ public class MainActivity extends Activity {
   *  then unverified titles, then international. The complete grid is one
   *  action away, rather than immediately dumping alphabetically sorted VOD. */
  void catalogLanding(String type){
+  cinematicBackdrop=null;cinematicTitle=null;cinematicSubtitle=null;
   stopGuidePreview();
   screen="discover";section=type;refreshSidebar();
   final int token=beginNavigationRead();
@@ -1081,6 +1085,7 @@ public class MainActivity extends Activity {
   feed.setPadding(dp(3),dp(1),dp(3),dp(10));
   feed.setClipChildren(true);feed.setClipToPadding(true);
   scroller.addView(feed,new ScrollView.LayoutParams(-1,-2));
+  addCinematicPanel(feed);
   LinearLayout recent=column(),english=column(),genres=column(),unknown=column(),
       international=column();
   LinearLayout trending=column();feed.addView(trending);
@@ -1159,6 +1164,43 @@ public class MainActivity extends Activity {
        if("home".equals(screen))home();
        else if("discover".equals(screen))catalogLanding(section);
      }).setNegativeButton("CANCEL",null).show();
+ }
+
+
+ void addCinematicPanel(LinearLayout feed){
+  TvLayout m=tv();
+  FrameLayout panel=new FrameLayout(this);
+  panel.setBackground(rounded(0xff112b39,12,0xff244354));
+  panel.setClipToOutline(true);
+  LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-1,dp(TvLayout.clamp(m.heightDp/4,105,180)));
+  size.bottomMargin=dp(5);feed.addView(panel,size);
+  cinematicBackdrop=new ImageView(this);
+  cinematicBackdrop.setScaleType(ImageView.ScaleType.CENTER_CROP);
+  cinematicBackdrop.setAlpha(.4f);
+  panel.addView(cinematicBackdrop,new FrameLayout.LayoutParams(-1,-1));
+  View shade=new View(this);
+  shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+     new int[]{0xff0b1827,0xdb0b1827,0x4a0b1827}));
+  panel.addView(shade,new FrameLayout.LayoutParams(-1,-1));
+  LinearLayout info=column();info.setGravity(Gravity.CENTER_VERTICAL);
+  info.setPadding(dp(13),dp(3),dp(8),dp(3));
+  panel.addView(info,new FrameLayout.LayoutParams(dp(TvLayout.clamp(m.contentWidth()*2/3,250,760)),-1,Gravity.LEFT));
+  TextView kicker=kicker("FEATURED IN YOUR LIBRARY");kicker.setTextSize(10);info.addView(kicker);
+  cinematicTitle=headline("Explore your library",TvLayout.clamp(m.headingSize()+1,20,28),Color.WHITE);
+  cinematicTitle.setMaxLines(2);info.addView(cinematicTitle);
+  cinematicSubtitle=text("Highlight a movie or series to preview",12);
+  cinematicSubtitle.setTextColor(MUTED);cinematicSubtitle.setMaxLines(1);info.addView(cinematicSubtitle);
+ }
+ void updateCinematicPanel(LibraryCore.Item item){
+  if(cinematicBackdrop==null||cinematicTitle==null||item==null)return;
+  cinematicTitle.animate().cancel();
+  cinematicTitle.setAlpha(.3f);cinematicTitle.setText(item.name);
+  cinematicTitle.animate().alpha(1f).setDuration(180).start();
+  cinematicSubtitle.setText((item.releaseYear>0?item.releaseYear+"  ·  ":"")+item.category);
+  cinematicBackdrop.animate().cancel();
+  cinematicBackdrop.setAlpha(.16f);
+  posters.bind(cinematicBackdrop,item.artwork);
+  cinematicBackdrop.animate().alpha(.4f).setDuration(240).start();
  }
 
  void fetchSeriesCategories(int token,LinearLayout target,
