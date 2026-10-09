@@ -45,7 +45,7 @@ public final class ChannelDiscovery {
         {"301","NICK JR"},{"302","NICKTOONS"},
         {"304","TV LAND"},{"305","ION"},{"307","NEWSNATION"},
         {"311","FREEFORM"},{"312","HALLMARK CHANNEL"},
-        {"314","FMC"},{"317","QVC3"},
+        {"314","FMC"},{"318","QVC3"},
         {"323","FETV"},{"326","GREAT AMERICAN FAMILY"},
         {"327","CMT"},{"328","TV ONE"},{"329","BET"},{"330","BET HER"},
         {"331","MTV"},{"333","IFC"},
