@@ -11,7 +11,7 @@ public final class TvLayout {
             posterColumns, liveCardWidth, liveCardHeight, guideChannel, guideNow,
             guideNext, guideAction, columnGap;
 
-    private TvLayout(int w,int h){
+    private TvLayout(int w,int h,String densityMode){
         widthDp=w;heightDp=h;
         marginX=clamp((int)Math.round(w*.019),10,34);
         marginY=clamp((int)Math.round(h*.013),6,17);
@@ -19,21 +19,30 @@ public final class TvLayout {
         columnGap=clamp((int)Math.round(w*.006),5,11);
         sidebar=0; // Top navigation uses the full usable screen width.
         int usable=Math.max(300,w-2*marginX-columnGap-12);
-        int nominal=w<650?4:w<850?5:w<1050?7:w<1450?8:w<1900?10:12;
-        posterColumns=h<470?Math.min(12,nominal+1):nominal;
-        posterWidth=clamp((usable-(posterColumns+1)*columnGap)/posterColumns,90,165);
+        int nominal=w<650?4:w<850?5:w<1050?7:w<1450?8:w<1900?10:
+            w<2500?12:w<3200?16:20;
+        int variation="dense".equals(densityMode)?2:"comfortable".equals(densityMode)?-2:0;
+        int columns=clamp(nominal+(h<470?1:0)+variation,4,24);
+        while(columns>4&&(usable-(columns+1)*columnGap)/columns<88)columns--;
+        posterColumns=columns;
+        posterWidth=clamp((usable-(posterColumns+1)*columnGap)/posterColumns,88,185);
         posterHeight=(int)Math.round(posterWidth*1.34);
         posterCardHeight=posterHeight+44;
         liveCardWidth=clamp((usable-6*columnGap)/6,115,190);
         liveCardHeight=(int)Math.round(liveCardWidth*.57)+40;
-        heroHeight=clamp((int)Math.round(h*.215),104,170);
+        heroHeight="dense".equals(densityMode)?clamp((int)(h*.18),95,145):
+            "comfortable".equals(densityMode)?clamp((int)(h*.28),110,205):
+            clamp((int)Math.round(h*.215),104,170);
         guideChannel=clamp((int)Math.round(usable*.235),135,460);
         guideNow=clamp((int)Math.round(usable*.34),175,650);
         guideNext=clamp((int)Math.round(usable*.305),170,570);
         guideAction=clamp((int)Math.round(usable*.12),94,190);
     }
     public static TvLayout of(int widthDp,int heightDp){
-        return new TvLayout(Math.max(560,widthDp),Math.max(360,heightDp));
+        return of(widthDp,heightDp,"compact");
+    }
+    public static TvLayout of(int widthDp,int heightDp,String densityMode){
+        return new TvLayout(Math.max(560,widthDp),Math.max(360,heightDp),densityMode);
     }
     public int contentWidth(){return Math.max(300,widthDp-2*marginX-columnGap-12);}
     public int guideWidth(){return guideChannel+guideNow+guideNext+guideAction+16;}
