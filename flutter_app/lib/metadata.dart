@@ -21,6 +21,7 @@ class TmdbClient {
  String apiKey='';
  final Map<String,MovieMeta> _mem={};
  final Map<String,List<String>> _trending={};
+ final Map<String,Map<String,List<String>>> _weekly={};
  static const genres={
   28:'Action',12:'Adventure',16:'Animation',35:'Comedy',80:'Crime',
   99:'Documentary',18:'Drama',10751:'Family',14:'Fantasy',36:'History',
@@ -33,6 +34,7 @@ class TmdbClient {
  }
  Future<void> saveKey(String key) async {
    apiKey=key.trim();_mem.clear();_trending.clear();
+   _weekly.clear();
    (await SharedPreferences.getInstance()).setString('tmdb.key',apiKey);
  }
  Future<List<String>> trending(MediaKind kind) async {
@@ -62,6 +64,52 @@ class TmdbClient {
      _trending[cacheKey]=titles;
      return titles;
    }catch(_){return [];}
+ }
+ /// English-language TMDB trending titles grouped by actual TMDB genres.
+ /// Fetch three weekly pages once per week and store only compact title lists.
+ /// Lists are matched against the subscribed IPTV library before being displayed.
+ Future<Map<String,List<String>>> weeklyGenres(MediaKind kind) async {
+   if(apiKey.isEmpty)return {};
+   final media=kind==MediaKind.movie?'movie':'tv';
+   final monday=DateTime.now().toUtc().subtract(Duration(days:DateTime.now().toUtc().weekday-1));
+   final week='${monday.year}-${monday.month}-${monday.day}';
+   final cacheKey='tmdb.weekly.v2.$media.$week';
+   if(_weekly.containsKey(cacheKey))return _weekly[cacheKey]!;
+   final prefs=await SharedPreferences.getInstance();
+   final saved=prefs.getString(cacheKey);
+   if(saved!=null){
+     try{
+       final raw=jsonDecode(saved) as Map<String,dynamic>;
+       final parsed=raw.map((k,v)=>MapEntry(k,(v as List).cast<String>()));
+       _weekly[cacheKey]=parsed;return parsed;
+     }catch(_){}
+   }
+   final result=<String,List<String>>{};
+   try {
+     for(var page=1;page<=3;page++){
+       final response=await _client.get(Uri.https('api.themoviedb.org',
+         '/3/trending/$media/week',{'api_key':apiKey,'language':'en-US','page':'$page'}))
+         .timeout(const Duration(seconds:8));
+       if(response.statusCode!=200)break;
+       final data=jsonDecode(response.body) as Map<String,dynamic>;
+       for(final entry in (data['results'] as List? ?? [])){
+         if(entry is! Map||entry['original_language']!='en')continue;
+         final title=entry[media=='movie'?'title':'name']?.toString()??'';
+         if(title.isEmpty)continue;
+         for(final id in entry['genre_ids'] as List? ?? []){
+           final name=genres[id];
+           if(name==null||name=='TV Movie')continue;
+           final titles=result.putIfAbsent(name,()=>[]);
+           if(!titles.contains(title)&&titles.length<30)titles.add(title);
+         }
+       }
+     }
+     if(result.isNotEmpty){
+       await prefs.setString(cacheKey,jsonEncode(result));
+       _weekly[cacheKey]=result;
+     }
+   }catch(_){}
+   return result;
  }
  Future<MovieMeta> details(MediaEntry item) async {
    if(apiKey.isEmpty||item.kind==MediaKind.live)return const MovieMeta();
