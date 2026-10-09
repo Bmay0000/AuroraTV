@@ -930,7 +930,7 @@ class _GuideScreenState extends State<GuideScreen>{
                      maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:12)))),
                ]),
              ),
-           ));
+           );
          })),
        ])),
      ])),
