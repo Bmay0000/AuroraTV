@@ -12,8 +12,8 @@ public final class TvLayoutTest {
     {1920,1080},{2560,1440},{3840,2160}
   }){
    TvLayout layout=TvLayout.of(device[0],device[1]);
-   verify(layout.marginX>=16 && layout.marginX<=58,"Safe left margin "+device[0]);
-   verify(layout.marginY>=10 && layout.marginY<=28,"Safe vertical margin "+device[1]);
+   verify(layout.marginX>=10 && layout.marginX<=34,"Safe left margin "+device[0]);
+   verify(layout.marginY>=6 && layout.marginY<=17,"Safe vertical margin "+device[1]);
    verify(layout.sidebar==0,"Full-width top navigation "+device[0]);
    verify(layout.contentWidth()>=320,"Browse area is too narrow "+device[0]);
    verify(layout.posterWidth>=90 && layout.posterWidth<=165,"Compact poster tiles bounded");
