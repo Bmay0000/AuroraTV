@@ -24,6 +24,7 @@ import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  ImageView cinematicBackdrop,cinematicIncoming,cinematicPoster; TextView cinematicOverview,cinematicMeta; LibraryCore.Item cinematicFocused;
  FrameLayout cinematicTrailerLayer; android.webkit.WebView cinematicTrailerView;
+ FrameLayout cinemaStage; ImageView cinemaBackground; View cinemaVeil;
  int featurePriority=0;
  Runnable pendingTrailer; boolean trailerRunning=false;
  final ExecutorService trailerLookupIO=Executors.newSingleThreadExecutor();
@@ -180,7 +181,18 @@ public class MainActivity extends Activity {
   root.setPadding(dp(metrics.marginX),dp(metrics.marginY),
                   dp(metrics.marginX),dp(metrics.marginY));
   root.setBackground(gradient(0xff050a16,0xff123b42,0));
-  setContentView(root);
+  // Screen-sized artwork stage: navigation, hero and shelves float over ONE background.
+  cinemaStage=new FrameLayout(this);
+  cinemaStage.setBackgroundColor(0xff05080d);
+  cinemaBackground=new ImageView(this);
+  cinemaBackground.setScaleType(ImageView.ScaleType.CENTER_CROP);
+  cinemaStage.addView(cinemaBackground,new FrameLayout.LayoutParams(-1,-1));
+  cinemaVeil=new View(this);
+  cinemaVeil.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+      new int[]{0xf906090e,0xd9091017,0x83091118,0x21091119}));
+  cinemaStage.addView(cinemaVeil,new FrameLayout.LayoutParams(-1,-1));
+  cinemaStage.addView(root,new FrameLayout.LayoutParams(-1,-1));
+  setContentView(cinemaStage);
   LinearLayout card=column();
   card.setGravity(Gravity.CENTER);
   card.setPadding(dp(28),dp(25),dp(28),dp(25));
@@ -344,7 +356,7 @@ public class MainActivity extends Activity {
   TvLayout metrics=tv();
   root=column();
   root.setClipChildren(true);root.setClipToPadding(true);
-  root.setBackground(gradient(0xff070b15,0xff0b1723,0));
+  root.setBackgroundColor(Color.TRANSPARENT);
   root.setPadding(dp(Math.max(6,metrics.marginX-4)),dp(2),
     dp(Math.max(6,metrics.marginX-4)),dp(2));
   setContentView(root);
@@ -399,7 +411,7 @@ public class MainActivity extends Activity {
   top.addView(settings,gear);
   subtitle=text("",12);
   subtitle.setVisibility(View.GONE);
-  View edge=new View(this);edge.setBackgroundColor(0xff1e3944);
+  View edge=new View(this);edge.setBackgroundColor(0x221c343d);
   root.addView(edge,new LinearLayout.LayoutParams(-1,dp(1)));
   body=column();
   body.setClipChildren(true);body.setClipToPadding(true);
@@ -657,7 +669,7 @@ public class MainActivity extends Activity {
   TvLayout dim=tv();
   FrameLayout hero=new FrameLayout(this);
   hero.setBackground(rounded(0xff11313c,16,0xff254653));
-  hero.setClipToOutline(true);
+  hero.setClipToOutline(false);
   hero.setLayoutParams(new LinearLayout.LayoutParams(-1,dp(dim.heroHeight)));
   if(feature!=null && feature.artwork!=null && feature.artwork.startsWith("http")){
    ImageView backdrop=new ImageView(this);
@@ -1276,6 +1288,8 @@ public class MainActivity extends Activity {
   cinematicTrailerLayer=null;featurePriority=0;
   pendingCinematic=null;cinematicBackdrop=null;cinematicIncoming=null;cinematicPoster=null;cinematicFocused=null;
   cinematicArtwork=null;cinematicTitle=null;cinematicSubtitle=null;cinematicOverview=null;cinematicMeta=null;
+  if(cinemaBackground!=null){cinemaBackground.setImageDrawable(null);cinemaBackground.setVisibility(View.GONE);}
+  if(cinemaVeil!=null)cinemaVeil.setVisibility(View.GONE);
  }
  /** A visible full-width cinematic discovery navigation row, not a modal menu. */
  void addDiscoveryShortcuts(LinearLayout feed){
@@ -1300,7 +1314,7 @@ public class MainActivity extends Activity {
  void addCinematicPanel(LinearLayout feed){
   TvLayout m=tv();
   FrameLayout hero=new FrameLayout(this);
-  hero.setBackground(rounded(0xff0c1b2b,12,0xff203746));
+  hero.setBackgroundColor(Color.TRANSPARENT);
   hero.setClipToOutline(true);
   LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-1,
     dp(TvLayout.clamp(m.heightDp*27/100,132,205)));
@@ -1309,7 +1323,7 @@ public class MainActivity extends Activity {
   cinematicArtwork=hero;
   cinematicBackdrop=new ImageView(this);
   cinematicBackdrop.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-  cinematicBackdrop.setAlpha(.85f);
+  cinematicBackdrop.setAlpha(0f);
   hero.addView(cinematicBackdrop,new FrameLayout.LayoutParams(-1,-1));
   cinematicTrailerLayer=new FrameLayout(this);
   cinematicTrailerLayer.setVisibility(View.GONE);
@@ -1327,8 +1341,10 @@ public class MainActivity extends Activity {
        dp(TvLayout.clamp(m.contentWidth()/6,85,160)),-1,Gravity.RIGHT|Gravity.CENTER_VERTICAL);
   posterSpace.rightMargin=dp(20);
   hero.addView(cinematicPoster,posterSpace);
+  if(cinemaBackground!=null)cinemaBackground.setVisibility(View.VISIBLE);
+  if(cinemaVeil!=null)cinemaVeil.setVisibility(View.VISIBLE);
   LinearLayout info=column();info.setGravity(Gravity.CENTER_VERTICAL);
-  info.setPadding(dp(15),dp(3),dp(8),dp(3));
+  info.setPadding(dp(24),dp(3),dp(8),dp(3));
   hero.addView(info,new FrameLayout.LayoutParams(
       dp(TvLayout.clamp(m.contentWidth()*3/5,265,780)),-1,Gravity.LEFT));
   TextView eyebrow=kicker("AURORATV   /   CINEMA");eyebrow.setTextSize(10);
@@ -1490,9 +1506,15 @@ public class MainActivity extends Activity {
    if(child instanceof ImageView&&child!=old&&child!=cinematicPoster)parent.removeView(child);
   }
   if(url==null||url.isEmpty()){
+   if(cinemaBackground!=null)cinemaBackground.setImageDrawable(null);
    if(cinematicPoster!=null)cinematicPoster.setVisibility(View.VISIBLE);
    if(old!=null)old.animate().alpha(0f).setDuration(160).start();
    return;
+  }
+  if(cinemaBackground!=null){
+   cinemaBackground.setAlpha(.12f);
+   posters.bind(cinemaBackground,url);
+   cinemaBackground.animate().alpha(1f).setDuration(400).start();
   }
   ImageView incoming=new ImageView(this);
   incoming.setScaleType(ImageView.ScaleType.CENTER_CROP);
