@@ -1549,7 +1549,8 @@ public class MainActivity extends Activity {
      Button info=button("⋯ CHANNEL OPTIONS",()->{
       if(focused[0]!=null)moreGuide(focused[0]);
      });
-     previewPanel.addView(info,new LinearLayout.LayoutParams(-1,dp(34)));
+     if(metrics.heightDp>=480)
+      previewPanel.addView(info,new LinearLayout.LayoutParams(-1,dp(34)));
      listing.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
       @Override public void onItemSelected(AdapterView<?> parent,View v,int position,long id){
        if(position<0||position>=channels.size())return;
