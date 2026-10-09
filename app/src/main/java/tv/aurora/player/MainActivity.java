@@ -47,7 +47,8 @@ public class MainActivity extends Activity {
  TvLayout tv(){
    android.util.DisplayMetrics dm=getResources().getDisplayMetrics();
    float density=Math.max(.5f,dm.density);
-   return TvLayout.of((int)(dm.widthPixels/density),(int)(dm.heightPixels/density));
+   return TvLayout.of((int)(dm.widthPixels/density),(int)(dm.heightPixels/density),
+      prefs==null?"compact":prefs.getString("display.density","compact"));
  }
  LinearLayout column(){
    LinearLayout l=new LinearLayout(this);
@@ -2071,12 +2072,13 @@ public class MainActivity extends Activity {
 
  void connect(){
   new AlertDialog.Builder(this).setTitle("MANAGE YOUR CONNECTION")
-   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Smart EPG settings","Playback diagnostics","Library status & import speed","Disconnect and clear this device"},(d,n)->{
+   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Smart EPG settings","Playback diagnostics","Library status & import speed","Display density / poster size","Disconnect and clear this device"},(d,n)->{
     if(n==0){loginScreen(false);return;}
     if(n==1){refresh();return;}
     if(n==2){guideSettings();return;}
     if(n==3){showPlaybackDiagnostics();return;}
     if(n==4){showLibraryStatus();return;}
+    if(n==5){chooseDisplayDensity();return;}
     new AlertDialog.Builder(this).setTitle("Remove connected provider?")
      .setMessage("This deletes the imported library, saved login and filters from this device.")
      .setPositiveButton("Disconnect",(a,b)->{
@@ -2087,6 +2089,28 @@ public class MainActivity extends Activity {
       page=0;category="All";query="";loginScreen(false);
      }).setNegativeButton("Cancel",null).show();
    }).show();
+ }
+
+ void chooseDisplayDensity(){
+  final String[] values={"comfortable","compact","dense"};
+  final String[] labels={
+   "Comfortable · larger posters",
+   "Compact · recommended (more titles)",
+   "Extra compact · maximum titles on screen"
+  };
+  String current=prefs.getString("display.density","compact");
+  int active=1;
+  for(int i=0;i<values.length;i++)if(values[i].equals(current))active=i;
+  new AlertDialog.Builder(this).setTitle("AuroraTV · Display Density")
+   .setSingleChoiceItems(labels,active,(dialog,index)->{
+    prefs.edit().putString("display.density",values[index]).apply();
+    dialog.dismiss();
+    String previous=screen;
+    shell();
+    if("guide".equals(previous))tvGuide();
+    else if("browse".equals(previous))browse();
+    else home();
+   }).setNegativeButton("CANCEL",null).show();
  }
 
  void showLibraryStatus(){
