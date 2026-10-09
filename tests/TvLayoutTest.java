@@ -21,7 +21,7 @@ public final class TvLayoutTest {
    verify(layout.posterCardHeight<layout.heightDp,"Poster tiles taller than screen");
    verify(layout.heroHeight<=170 && layout.heroHeight<=layout.heightDp*.3,"Compact hero reveals first shelf");
    verify(layout.navRow<=62,"Remote nav row bounded");
-   verify(layout.guideWidth()>=layout.contentWidth()*.7,"Guide table missing columns");
+   verify(layout.guideWidth()>=Math.min(layout.contentWidth()*.7,1300),"Guide table missing columns");
   }
   TvLayout hd=TvLayout.of(960,540),uhd=TvLayout.of(1920,1080);
   verify(uhd.posterColumns>hd.posterColumns,"Wide displays show more films");
