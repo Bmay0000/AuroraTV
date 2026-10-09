@@ -1043,6 +1043,7 @@ public class MainActivity extends Activity {
  }
  void tvGuide(){
   stopGuidePreview();
+  pauseCatalogForVideo();
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="guide";section="live";refreshSidebar();
   final int token=++browseToken;
@@ -2011,6 +2012,23 @@ public class MainActivity extends Activity {
   * Stop memory-heavy EPG/short-guide downloads while decoding video.
   * Interrupted XMLTV imports roll back their DB transaction and retry later.
   */
+ void pauseCatalogForVideo(){
+  if(loading&&!prefs.getString("import.pending","").isEmpty()){
+   generation++;
+   importIO.shutdownNow();
+   importIO=Executors.newSingleThreadExecutor();
+   loading=false;
+   subtitle.setText("Catalog paused while video is playing");
+  }
+ }
+ void scheduleCatalogResume(){
+  if(!prefs.getString("import.pending","").isEmpty()&&!loading){
+   uiHandler.postDelayed(()->{
+    if(!isDestroyed() && playbackScreen==null && guidePreview==null
+      && !loading && store.hasLibrary())continueCatalogImport(generation);
+   },12000L);
+  }
+ }
  void pauseBackgroundGuidesForPlayback(){
   epgRefreshIO.shutdownNow();
   shortEpgIO.shutdownNow();
@@ -2020,6 +2038,7 @@ public class MainActivity extends Activity {
  }
  void play(LibraryCore.Item media){
   stopGuidePreview();
+  pauseCatalogForVideo();
   if(media==null||media.url==null||media.url.isEmpty()){
    toast("No playable stream URL is available");return;
   }
@@ -2045,6 +2064,7 @@ public class MainActivity extends Activity {
   if(previous.equals("guide"))tvGuide();
   else if(previous.equals("home"))home();
   else browse();
+  scheduleCatalogResume();
  }
  void release(){
   if(playbackScreen!=null){
@@ -2078,6 +2098,7 @@ public class MainActivity extends Activity {
  }
  @Override protected void onStop(){
   stopGuidePreview();
+  pauseCatalogForVideo();
   if(livePreview!=null){livePreview.dismiss();livePreview=null;}
   // Never keep a hardware video decoder or wake lock running in background.
   if(playbackScreen!=null){
