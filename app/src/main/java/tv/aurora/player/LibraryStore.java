@@ -40,6 +40,34 @@ public final class LibraryStore extends SQLiteOpenHelper {
     private final SharedPreferences preferences;
     private SecretKey localKey;
 
+    // A small bounded per-session UI result cache. It avoids re-scanning tens
+    // of thousands of channels/movies every time the user taps another tab.
+    // Cache keys depend on a revision; every import or user filter change
+    // invalidates results. Large "All Streams" collections are never cached.
+    private final java.util.LinkedHashMap<String,Object> uiCache=
+        new java.util.LinkedHashMap<String,Object>(36,.75f,true){
+            @Override protected boolean removeEldestEntry(java.util.Map.Entry<String,Object> oldest){
+                return size()>32;
+            }
+        };
+    private volatile int cacheRevision;
+
+    public void invalidateBrowseCache(){
+        synchronized(uiCache){cacheRevision++;uiCache.clear();}
+    }
+    private int revision(){return cacheRevision;}
+    @SuppressWarnings("unchecked")
+    private <T> T cached(String key){
+        synchronized(uiCache){return (T)uiCache.get(cacheRevision+":"+key);}
+    }
+    private void cache(String key,Object value,int revision){
+        if(value==null)return;
+        synchronized(uiCache){
+            if(cacheRevision==revision)uiCache.put(revision+":"+key,value);
+        }
+    }
+
+
     public LibraryStore(Context context) {
         super(context, DATABASE, null, VERSION);
         this.context = context.getApplicationContext();
@@ -72,6 +100,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
     }
 
     public void clear() {
+        invalidateBrowseCache();
         close();
         context.deleteDatabase(DATABASE);
         preferences.edit().remove("catalog_ready").remove("wrapped_key").apply();
@@ -583,6 +612,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
             database.endTransaction();
             committed = true;
             closed = true;
+            invalidateBrowseCache();
             insert.close();
             if (!preferences.edit().putBoolean("catalog_ready", true).commit())
                 throw new IllegalStateException("Could not mark library as ready");
