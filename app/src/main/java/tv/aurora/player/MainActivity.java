@@ -1861,20 +1861,20 @@ public class MainActivity extends Activity {
     report.append("\nLive channels: ").append(store.count("live"));
     report.append("\nMovies: ").append(store.count("movie"));
     report.append("\nSeries: ").append(store.count("series"));
-    report.append("\nStill importing: ").append(loading?"yes":"no");
+    report.append("\nUpdating catalog: ").append(loading?"yes":"no");
     String pending=prefs.getString("import.pending","");
-    report.append("\nPending catalog types: ").append(pending.isEmpty()?"none":pending);
-    long liveMs=prefs.getLong("import.live_ms",0);
-    if(liveMs>0)report.append("\nFirst Live TV readiness: ").append(liveMs/1000d).append(" seconds");
+    report.append("\nPrevious incomplete import: ").append(pending.isEmpty()?"none":pending+" (repair on next startup)");
+    long liveMs=prefs.getLong("import.stage.live.ms",0);
+    if(liveMs>0)report.append("\nLive TV processing: ").append(liveMs/1000d).append(" seconds");
     long totalMs=prefs.getLong("import.total_ms",0);
     if(totalMs>0)report.append("\nFull catalog import: ").append(totalMs/1000d).append(" seconds");
-    report.append("\n\nSubsequent launches use the saved SQLite catalog. A first import depends on provider response size and connection speed. Playing video pauses unfinished imports.");
+    report.append("\n\nNew imports complete Live TV, Movies and TV Shows together in an atomic update. Subsequent launches use the saved SQLite catalog. Provider network latency is outside the app's control.");
    }catch(Exception e){report.append("Catalog diagnostics unavailable: "+e.getClass().getSimpleName());}
    runOnUiThread(()->{
     if(isDestroyed())return;
     new AlertDialog.Builder(this).setTitle("AuroraTV · Library Status")
       .setMessage(report.toString())
-      .setPositiveButton("CONTINUE IMPORT",(d,n)->continueCatalogImport(generation))
+      .setPositiveButton("REFRESH ALL MEDIA",(d,n)->refresh())
       .setNegativeButton("CLOSE",null).show();
    });
   });
