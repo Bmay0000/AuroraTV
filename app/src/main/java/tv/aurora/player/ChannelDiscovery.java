@@ -185,7 +185,8 @@ public final class ChannelDiscovery {
     public static boolean eventFeed(LibraryCore.Item item){
         if(item==null)return false;
         String name=canonicalName(item.name);
-        return name.matches(".*(?:ESPN|SPORTS|SPORT|FOX SPORTS|PPV|EVENT|GAME|MATCH|FEED|MULTIVIEW|EXTRA|ALT)\\s*\\+?\\s*[0-9]{1,5}.*")
+        return (name.startsWith("ESPN ") && satelliteNumber(item)==0)
+            || name.matches(".*(?:ESPN|SPORTS|SPORT|FOX SPORTS|PPV|EVENT|GAME|MATCH|FEED|MULTIVIEW|EXTRA|ALT)\\s*\\+?\\s*[0-9]{1,5}.*")
             || name.matches(".*(?:PPV|EVENT|MATCH|GAME|BACKUP|TEST|FEED|MULTIVIEW|EXTRA|ALTERNATE)(?:\\s|$).*");
     }
 
@@ -196,7 +197,8 @@ public final class ChannelDiscovery {
                                                 String section,boolean searchActive){
         if(source==null||source.isEmpty())return new ArrayList<>();
         if(searchActive||"All".equals(section)||"International".equals(section)
-                ||"Other".equals(section)||"More North America".equals(section)){
+                ||"Other".equals(section)||"My Channels".equals(section)
+                ||"More North America".equals(section)){
             List<LibraryCore.Item> all=new ArrayList<>(source);
             // One normalization pass rather than recomputing dozens of regex
             // matches during O(N log N) sorting of 10k+ provider streams.
@@ -235,7 +237,7 @@ public final class ChannelDiscovery {
                 if(satelliteNumber(item)>0||localNetwork(canonicalName(item.name))){
                     result.add(item);continue;
                 }
-                if(additional++<100)result.add(item);
+                if(additional++<45)result.add(item);
             }
             return result;
         }
