@@ -22,7 +22,7 @@ import androidx.media3.common.*;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
- ImageView cinematicBackdrop; TextView cinematicTitle,cinematicSubtitle;
+ ImageView cinematicBackdrop,cinematicIncoming; TextView cinematicTitle,cinematicSubtitle; FrameLayout cinematicArtwork; Runnable pendingCinematic; int cinematicRevision=0;
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
  LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false,browseAll=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";String guideSelectedId="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();final Map<String,GuideEngine.Slot> guideSlotCache=new java.util.concurrent.ConcurrentHashMap<>();final ExecutorService guideDirectoryIO=Executors.newSingleThreadExecutor();int guideCategorySequence=0;long guideSlotCacheAt=0;String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;long navigationStartedAt;int navigationMarkedToken=-1;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
@@ -402,7 +402,7 @@ public class MainActivity extends Activity {
 
  boolean visible(LibraryCore.Item i){return LibraryCore.visible(i,hidden,categories,favorites,allowed,hideUnknown,shown,shownCategories);}
  void home(){
-  cinematicBackdrop=null;cinematicTitle=null;cinematicSubtitle=null;
+  clearCinematic();
   stopGuidePreview();
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="home";refreshSidebar();
@@ -1049,7 +1049,7 @@ public class MainActivity extends Activity {
   *  then unverified titles, then international. The complete grid is one
   *  action away, rather than immediately dumping alphabetically sorted VOD. */
  void catalogLanding(String type){
-  cinematicBackdrop=null;cinematicTitle=null;cinematicSubtitle=null;
+  clearCinematic();
   stopGuidePreview();
   screen="discover";section=type;refreshSidebar();
   final int token=beginNavigationRead();
@@ -1167,42 +1167,85 @@ public class MainActivity extends Activity {
  }
 
 
+ void clearCinematic(){
+  cinematicRevision++;
+  if(pendingCinematic!=null)uiHandler.removeCallbacks(pendingCinematic);
+  pendingCinematic=null;cinematicBackdrop=null;cinematicIncoming=null;
+  cinematicArtwork=null;cinematicTitle=null;cinematicSubtitle=null;
+ }
  void addCinematicPanel(LinearLayout feed){
   TvLayout m=tv();
-  FrameLayout panel=new FrameLayout(this);
-  panel.setBackground(rounded(0xff112b39,12,0xff244354));
-  panel.setClipToOutline(true);
-  LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-1,dp(TvLayout.clamp(m.heightDp/4,105,180)));
-  size.bottomMargin=dp(5);feed.addView(panel,size);
+  FrameLayout hero=new FrameLayout(this);
+  hero.setBackground(rounded(0xff0c1b2b,12,0xff203746));
+  hero.setClipToOutline(true);
+  LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-1,
+    dp(TvLayout.clamp(m.heightDp/3,155,245)));
+  size.bottomMargin=dp(9);
+  feed.addView(hero,size);
+  cinematicArtwork=hero;
   cinematicBackdrop=new ImageView(this);
   cinematicBackdrop.setScaleType(ImageView.ScaleType.CENTER_CROP);
-  cinematicBackdrop.setAlpha(.4f);
-  panel.addView(cinematicBackdrop,new FrameLayout.LayoutParams(-1,-1));
+  cinematicBackdrop.setAlpha(.52f);
+  hero.addView(cinematicBackdrop,new FrameLayout.LayoutParams(-1,-1));
   View shade=new View(this);
   shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-     new int[]{0xff0b1827,0xdb0b1827,0x4a0b1827}));
-  panel.addView(shade,new FrameLayout.LayoutParams(-1,-1));
+    new int[]{0xff081321,0xf0081423,0x87081524,0x240b1724}));
+  hero.addView(shade,new FrameLayout.LayoutParams(-1,-1));
   LinearLayout info=column();info.setGravity(Gravity.CENTER_VERTICAL);
-  info.setPadding(dp(13),dp(3),dp(8),dp(3));
-  panel.addView(info,new FrameLayout.LayoutParams(dp(TvLayout.clamp(m.contentWidth()*2/3,250,760)),-1,Gravity.LEFT));
-  TextView kicker=kicker("FEATURED IN YOUR LIBRARY");kicker.setTextSize(10);info.addView(kicker);
-  cinematicTitle=headline("Explore your library",TvLayout.clamp(m.headingSize()+1,20,28),Color.WHITE);
-  cinematicTitle.setMaxLines(2);info.addView(cinematicTitle);
-  cinematicSubtitle=text("Highlight a movie or series to preview",12);
-  cinematicSubtitle.setTextColor(MUTED);cinematicSubtitle.setMaxLines(1);info.addView(cinematicSubtitle);
+  info.setPadding(dp(22),dp(6),dp(8),dp(6));
+  hero.addView(info,new FrameLayout.LayoutParams(
+      dp(TvLayout.clamp(m.contentWidth()*3/5,265,780)),-1,Gravity.LEFT));
+  TextView eyebrow=kicker("AURORATV   /   CINEMA");eyebrow.setTextSize(10);
+  info.addView(eyebrow);
+  cinematicTitle=headline("Discover something great",
+    TvLayout.clamp(m.headingSize()+7,26,41),Color.WHITE);
+  cinematicTitle.setMaxLines(2);
+  cinematicTitle.setEllipsize(TextUtils.TruncateAt.END);
+  info.addView(cinematicTitle);
+  cinematicSubtitle=text("Move between titles to explore your collection",13);
+  cinematicSubtitle.setTextColor(0xffd1dce7);
+  cinematicSubtitle.setMaxLines(2);
+  cinematicSubtitle.setEllipsize(TextUtils.TruncateAt.END);
+  info.addView(cinematicSubtitle);
  }
  void updateCinematicPanel(LibraryCore.Item item){
-  if(cinematicBackdrop==null||cinematicTitle==null||item==null)return;
-  cinematicTitle.animate().cancel();
-  cinematicTitle.setAlpha(.3f);cinematicTitle.setText(item.name);
-  cinematicTitle.animate().alpha(1f).setDuration(180).start();
-  cinematicSubtitle.setText((item.releaseYear>0?item.releaseYear+"  ·  ":"")+item.category);
-  cinematicBackdrop.animate().cancel();
-  cinematicBackdrop.setAlpha(.16f);
-  posters.bind(cinematicBackdrop,item.artwork);
-  cinematicBackdrop.animate().alpha(.4f).setDuration(240).start();
+  if(cinematicArtwork==null||cinematicTitle==null||item==null)return;
+  if(pendingCinematic!=null)uiHandler.removeCallbacks(pendingCinematic);
+  final int revision=++cinematicRevision;
+  // Debounce D-pad movement so quick browsing never launches dozens of image requests.
+  pendingCinematic=()->{
+   if(revision!=cinematicRevision||cinematicArtwork==null||
+      cinematicTitle==null||isDestroyed())return;
+   cinematicTitle.animate().cancel();
+   cinematicTitle.animate().alpha(0.15f).setDuration(75)
+     .withEndAction(()->{
+      if(revision!=cinematicRevision||cinematicTitle==null)return;
+      cinematicTitle.setText(item.name);
+      cinematicTitle.animate().alpha(1f).setDuration(210).start();
+     }).start();
+   String descriptor=(item.releaseYear>0?item.releaseYear+"  •  ":"")
+      +("series".equals(item.type)?"TV SERIES":"MOVIE")
+      +(item.category.isEmpty()?"":"  •  "+item.category);
+   cinematicSubtitle.setText(descriptor);
+   if(item.artwork==null||!item.artwork.startsWith("http"))return;
+   final FrameLayout parent=cinematicArtwork;
+   final ImageView old=cinematicBackdrop;
+   ImageView next=new ImageView(this);
+   next.setScaleType(ImageView.ScaleType.CENTER_CROP);
+   next.setAlpha(0f);
+   // Keep transitions behind the metadata gradient and foreground labels.
+   parent.addView(next,0,new FrameLayout.LayoutParams(-1,-1));
+   posters.bind(next,item.artwork);
+   next.animate().alpha(.54f).setDuration(350).withEndAction(()->{
+    if(revision!=cinematicRevision||cinematicArtwork!=parent){
+     parent.removeView(next);return;
+    }
+    if(old!=null&&old.getParent()==parent)parent.removeView(old);
+    cinematicBackdrop=next;
+   }).start();
+  };
+  uiHandler.postDelayed(pendingCinematic,155);
  }
-
  void fetchSeriesCategories(int token,LinearLayout target,
        Set<String> h,Set<String> hc,Set<String> fav,Set<String> langs,boolean strict,
        Set<String> manual,Set<String> groups){
