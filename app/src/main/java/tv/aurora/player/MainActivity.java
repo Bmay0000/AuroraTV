@@ -933,9 +933,11 @@ public class MainActivity extends Activity {
   TvLayout dim=tv();
   android.app.Dialog dialog=new android.app.Dialog(this);
   LinearLayout panel=column();
-  panel.setBackground(gradient(0xff18283d,0xff071321,20));
-  panel.setPadding(dp(23),dp(19),dp(23),dp(23));
-  panel.addView(brand(24));
+  panel.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+       new int[]{0xf9081424,0xf00b1827,0xba102a32}));
+  panel.setPadding(dp(24),dp(14),dp(24),dp(19));
+  TextView detailKicker=kicker("AURORATV  /  NOW SHOWING");
+  detailKicker.setTextSize(11);panel.addView(detailKicker);
   LinearLayout layout=new LinearLayout(this);
   layout.setGravity(Gravity.CENTER_VERTICAL);
   LinearLayout.LayoutParams gap=new LinearLayout.LayoutParams(-1,-2);gap.topMargin=dp(14);
@@ -977,7 +979,17 @@ public class MainActivity extends Activity {
   Button close=button("✕  CLOSE",dialog::dismiss);
   LinearLayout.LayoutParams closeBounds=new LinearLayout.LayoutParams(-1,dp(43));
   closeBounds.topMargin=dp(10);panel.addView(close,closeBounds);
-  dialog.setContentView(panel);
+  // The details view is a cinematic canvas, not an opaque form dialog.
+  FrameLayout canvas=new FrameLayout(this);
+  canvas.setBackground(rounded(0xff0a1726,18,0xff28464e));
+  canvas.setClipToOutline(true);
+  ImageView landscape=new ImageView(this);
+  landscape.setScaleType(ImageView.ScaleType.CENTER_CROP);
+  landscape.setAlpha(.55f);
+  canvas.addView(landscape,new FrameLayout.LayoutParams(-1,-1));
+  posters.bind(landscape,item.artwork);
+  canvas.addView(panel,new FrameLayout.LayoutParams(-1,-2,Gravity.CENTER_VERTICAL));
+  dialog.setContentView(canvas);
   android.view.Window window=dialog.getWindow();
   if(window!=null){
    window.setBackgroundDrawableResource(android.R.color.transparent);
