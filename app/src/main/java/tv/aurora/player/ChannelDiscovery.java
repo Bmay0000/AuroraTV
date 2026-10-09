@@ -15,34 +15,54 @@ public final class ChannelDiscovery {
     // DIRECTV via Satellite English-channel table (effective July 29, 2026).
     // Only the user's own provider entries can ever appear.
     private static final String[][] NATIONAL = {
+        {"77","METV"},{"80","COZI TV"},{"81","GRIT"},{"82","BOUNCE TV"},
+        {"84","START TV"},{"85","TRUE CRIME"},{"88","ION MYSTERY"},
         {"200","NEWS MIX"},{"202","CNN"},{"204","HLN"},{"206","ESPN"},
         {"207","ESPNEWS"},{"208","ESPNU"},{"209","ESPN2"},
         {"211","NFL REDZONE"},{"212","NFL NETWORK"},{"213","MLB NETWORK"},
-        {"215","NHL NETWORK"},{"216","NBA TV"},{"217","TENNIS CHANNEL"},
+        {"214","RACER NETWORK"},{"215","NHL NETWORK"},{"216","NBA TV"},{"217","TENNIS CHANNEL"},
         {"218","GOLF CHANNEL"},{"219","FS1"},{"221","CBS SPORTS NETWORK"},
         {"229","HGTV"},{"230","MAGNOLIA NETWORK"},{"231","FOOD NETWORK"},
         {"232","COOKING CHANNEL"},{"233","GAME SHOW NETWORK"},
-        {"236","E!"},{"237","BRAVO"},{"239","SUNDANCE TV"},
+        {"235","TASTEMADE"},{"236","E!"},{"237","BRAVO"},{"238","REELZ"},
+        {"239","SUNDANCE TV"},{"240","HSN"},
         {"241","PARAMOUNT NETWORK"},{"242","USA NETWORK"},
         {"244","SYFY"},{"245","TNT"},{"246","TRUTV"},{"247","TBS"},
         {"248","FX"},{"249","COMEDY CENTRAL"},{"251","OXYGEN"},
         {"252","LIFETIME"},{"253","LMN"},{"254","AMC"},{"256","TCM"},
         {"258","FXM"},{"259","FXX"},{"260","WE TV"},{"264","BBC AMERICA"},
-        {"265","A&E"},{"269","HISTORY"},{"276","NATIONAL GEOGRAPHIC"},
+        {"265","A&E"},{"269","HISTORY"},{"271","VICE"},
+        {"272","LOGO"},{"274","OVATION"},{"275","QVC"},
+        {"276","NATIONAL GEOGRAPHIC"},
         {"277","TRAVEL CHANNEL"},{"278","DISCOVERY"},{"280","TLC"},
         {"282","ANIMAL PLANET"},{"283","NAT GEO WILD"},
         {"284","SCIENCE CHANNEL"},{"285","INVESTIGATION DISCOVERY"},
+        {"287","AMERICAN HEROES CHANNEL"},
         {"288","PBS KIDS"},{"289","DISNEY JUNIOR"},{"290","DISNEY CHANNEL"},
-        {"292","DISNEY XD"},{"296","CARTOON NETWORK"},
-        {"299","NICKELODEON"},{"301","NICK JR"},{"302","NICKTOONS"},
+        {"292","DISNEY XD"},{"293","BABYFIRST"},{"294","DISCOVERY FAMILY"},
+        {"296","CARTOON NETWORK"},
+        {"299","NICKELODEON"},{"300","NICKELODEON WEST"},
+        {"301","NICK JR"},{"302","NICKTOONS"},
         {"304","TV LAND"},{"305","ION"},{"307","NEWSNATION"},
         {"311","FREEFORM"},{"312","HALLMARK CHANNEL"},
-        {"327","CMT"},{"329","BET"},{"331","MTV"},{"333","IFC"},
-        {"335","VH1"},{"346","BBC NEWS"},{"349","NEWSMAX"},
+        {"314","FMC"},{"317","QVC3"},
+        {"323","FETV"},{"326","GREAT AMERICAN FAMILY"},
+        {"327","CMT"},{"328","TV ONE"},{"329","BET"},{"330","BET HER"},
+        {"331","MTV"},{"333","IFC"},
+        {"335","VH1"},{"340","AXS TV"},{"342","THEGRIO"},
+        {"343","I24 NEWS"},{"344","SONLIFE BROADCASTING NETWORK"},
+        {"346","BBC NEWS"},{"347","THE FIRST"},{"348","FREE SPEECH TV"},
+        {"349","NEWSMAX"},
         {"350","C-SPAN"},{"351","C-SPAN2"},{"353","BLOOMBERG"},
-        {"355","CNBC"},{"356","MS NOW"},{"359","FOX BUSINESS"},
+        {"354","CHEDDAR NEWS"},
+        {"355","CNBC"},{"356","MS NOW"},{"357","CNBC WORLD"},
+        {"358","CNN INTERNATIONAL"},{"359","FOX BUSINESS"},
         {"360","FOX NEWS"},{"361","ACCUWEATHER"},{"362","WEATHER CHANNEL"},
-        {"363","FOX WEATHER"},{"501","HBO"},{"515","CINEMAX"},
+        {"363","FOX WEATHER"},{"364","INSP"},{"369","DAYSTAR"},
+        {"370","EWTN"},{"371","TBN INSPIRE"},{"372","TBN"},
+        {"373","THE WORD NETWORK"},{"374","BYUTV"},{"381","ASPIRE"},
+        {"385","HEROES AND ICONS"},{"388","JBS"},
+        {"501","HBO"},{"515","CINEMAX"},
         {"525","STARZ"},{"545","SHOWTIME"},
         {"610","BIG TEN NETWORK"},{"611","SEC NETWORK"},
         {"612","ACC NETWORK"},{"618","FS2"}
@@ -88,6 +108,18 @@ public final class ChannelDiscovery {
         if(c.equals("NATIONAL GEOGRAPHIC CHANNEL"))c="NATIONAL GEOGRAPHIC";
         if(c.equals("SCIENCE"))c="SCIENCE CHANNEL";
         if(c.equals("FX MOVIE CHANNEL"))c="FXM";
+        if(c.equals("SYFYHD"))c="SYFY";
+        if(c.equals("CSPAN"))c="C-SPAN";
+        if(c.equals("CSPAN 2"))c="C-SPAN2";
+        if(c.equals("BLOOMBERG TV"))c="BLOOMBERG";
+        if(c.equals("NEWSMAX TV"))c="NEWSMAX";
+        if(c.equals("THE WEATHER CHANNEL"))c="WEATHER CHANNEL";
+        if(c.equals("THE HISTORY CHANNEL"))c="HISTORY";
+        if(c.equals("HOME SHOPPING NETWORK"))c="HSN";
+        if(c.equals("BET HER TV"))c="BET HER";
+        if(c.equals("REELZ CHANNEL")||c.equals("REELZCHANNEL"))c="REELZ";
+        if(c.equals("FOX SPORTS ONE"))c="FS1";
+        if(c.equals("FOX SPORTS TWO"))c="FS2";
         if(c.equals("ESPN 2"))c="ESPN2";
         if(c.equals("ESPN NEWS"))c="ESPNEWS";
         if(c.equals("ESPN U"))c="ESPNU";
