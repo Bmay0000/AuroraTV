@@ -817,7 +817,7 @@ public class MainActivity extends Activity {
   LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(dp(w),dp(h));
   layout.rightMargin=dp(9);tile.setLayoutParams(layout);
   tile.setClipToOutline(true);
-  tile.setBackground(rounded(0xff142a38,13,0xff1c3c46));
+  tile.setBackground(rounded(0xff11202b,12,0));
   ImageView picture=new ImageView(this);
   picture.setScaleType(ImageView.ScaleType.CENTER_CROP);
   tile.addView(picture,new FrameLayout.LayoutParams(-1,-1));
@@ -853,7 +853,7 @@ public class MainActivity extends Activity {
   tile.setOnClickListener(v->showMediaDetails(item));
   tile.setOnFocusChangeListener((v,focus)->{
    if(focus){featurePriority=4;updateCinematicPanel(item);}
-   tile.setBackground(rounded(focus?0xff1c5c5b:0xff142a38,13,focus?ACCENT:0xff1c3c46));
+   tile.setBackground(rounded(focus?0xff164c47:0xff11202b,12,focus?ACCENT:0));
    tile.animate().scaleX(focus?1.035f:1f).scaleY(focus?1.035f:1f)
       .setDuration(150).start();
   });
@@ -1317,7 +1317,7 @@ public class MainActivity extends Activity {
   hero.setBackgroundColor(Color.TRANSPARENT);
   hero.setClipToOutline(true);
   LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-1,
-    dp(TvLayout.clamp(m.heightDp*27/100,132,205)));
+    dp(TvLayout.clamp(m.heightDp*46/100,210,350)));
   size.bottomMargin=dp(9);
   feed.addView(hero,size);
   cinematicArtwork=hero;
@@ -1347,10 +1347,10 @@ public class MainActivity extends Activity {
   info.setPadding(dp(24),dp(3),dp(8),dp(3));
   hero.addView(info,new FrameLayout.LayoutParams(
       dp(TvLayout.clamp(m.contentWidth()*3/5,265,780)),-1,Gravity.LEFT));
-  TextView eyebrow=kicker("AURORATV   /   CINEMA");eyebrow.setTextSize(10);
+  TextView eyebrow=kicker("✦   FEATURED  /  DISCOVER");eyebrow.setTextSize(12);
   info.addView(eyebrow);
   cinematicTitle=headline("Explore your library",
-    TvLayout.clamp(m.headingSize()+2,21,31),Color.WHITE);
+    TvLayout.clamp(m.headingSize()+13,28,48),Color.WHITE);
   cinematicTitle.setMaxLines(2);
   cinematicTitle.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicTitle);
@@ -1364,11 +1364,11 @@ public class MainActivity extends Activity {
   cinematicOverview=text("",TvLayout.clamp(m.bodySize(),12,16));
   cinematicOverview.setTextColor(0xffd6e4e9);
   cinematicOverview.setMaxLines(2);
-  if(m.heightDp<620)cinematicOverview.setVisibility(View.GONE);
+  if(m.heightDp<490)cinematicOverview.setVisibility(View.GONE);
   cinematicOverview.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicOverview);
   LinearLayout controls=new LinearLayout(this);
-  LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(40));
+  LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(45));
   actions.topMargin=dp(m.heightDp<620?3:9);info.addView(controls,actions);
   Button watch=button("▶  WATCH NOW",()->{
    if(cinematicFocused!=null)showMediaDetails(cinematicFocused);
