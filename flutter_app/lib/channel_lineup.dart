@@ -382,13 +382,22 @@ class ChannelLineup {
       RegExp(r'\s+(?:US|USA|CA|CANADA|UK|EAST COAST|WEST COAST)$'),'');
     return _byKey[_key(clean)];
   }
+  // DIRECTV is a U.S. lineup: a US/NA stream must outrank Canadian
+  // simulcasts even if the Canadian stream advertises higher resolution.
   static int _quality(MediaEntry item){
-    final title=item.title.toUpperCase();
-    var points=item.likelyEnglish?10:0;
-    if(title.contains('FHD')||title.contains('1080'))points+=6;
-    if(title.contains(' HD'))points+=4;
+    final title=item.title.toUpperCase().trim();
+    final group=item.category.toUpperCase();
+    final us=RegExp(r'^(?:[|\[(]\s*)?(?:US|USA|NA|NORTH AMERICA)\s*(?:[|\])]|[:\-])')
+      .hasMatch(title)||RegExp(r'USA|UNITED STATES|NORTH AMERICA|\bUS\b|\bNA\b').hasMatch(group);
+    final ca=RegExp(r'^(?:[|\[(]\s*)?(?:CA|CAN|CANADA)\s*(?:[|\])]|[:\-])')
+      .hasMatch(title)||RegExp(r'CANADA|CANADIAN|\bCA\b').hasMatch(group);
+    final other=RegExp(r'^(?:[|\[(]\s*)?(?:UK|AU|NZ|FR|DE|ES|IN)\s*(?:[|\])]|[:\-])').hasMatch(title);
+    var points=us?1200:ca?-180:other?-300:100;
+    if(item.likelyEnglish)points+=12;
+    if(title.contains('FHD')||title.contains('1080'))points+=8;
+    if(title.contains(' HD'))points+=5;
     if(item.artwork.startsWith('http'))points+=2;
-    if(item.epgId.isNotEmpty)points+=3;
+    if(item.epgId.isNotEmpty)points+=9;
     return points;
   }
   static Map<int,MediaEntry> matched(List<MediaEntry> all){
