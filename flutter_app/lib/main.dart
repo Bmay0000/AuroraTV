@@ -194,21 +194,10 @@ class _AuroraShellState extends State<AuroraShell>{
       final used=curated.map((e)=>e.id).toSet();
       final extras=all.where((e)=>!used.contains(e.id)&&e.likelyEnglish).toList()
         ..sort((a,b)=>a.cleanTitle.compareTo(b.cleanTitle));
-      final byNumber=<int,MediaEntry>{
-        for(final station in curated)
-          if(ChannelLineup.referenceNumber(station)!=null)
-            ChannelLineup.referenceNumber(station)!:station,
-      };
-      final numbered=ChannelLineup.reference.entries.toList()
-        ..sort((a,b)=>a.value.compareTo(b.value));
-      final slots=<MediaEntry>[];
-      for(final entry in numbered){
-        final station=byNumber[entry.value];
-        slots.add(station??MediaEntry(
-          id:'lineup:${entry.value}',title:entry.key,kind:MediaKind.live,
-          category:'Unavailable from provider'));
-      }
-      loaded=[...slots,...extras];
+      // The main Guide displays only real, playable provider stations.
+      // DIRECTV numbers are reference positions assigned after a safe match.
+      // Do not invent a stream when the provider doesn't have the station.
+      loaded=[...curated,...extras];
       if(loaded.isEmpty)loaded=all.take(350).toList();
     }else{
       loaded=await db.list(MediaKind.live,category:group=='Favorites'?'All':group,
@@ -913,7 +902,7 @@ class _GuideScreenState extends State<GuideScreen>{
          Text(_currentProgram(selected,now)?.title??'Live channels · programme information as available',
            maxLines:1,overflow:TextOverflow.ellipsis,
            style:const TextStyle(fontSize:16,color:C.ink)),
-         Text(selected?.id.startsWith('lineup:')==true?'This reference channel is not included in your provider':(_currentProgram(selected,now)?.description??'Navigate with your remote. Select a channel to watch.'),
+         Text(_currentProgram(selected,now)?.description??'Navigate with your remote. Select a channel to watch.',
            maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:12,color:C.secondary)),
        ])),
        const SizedBox(width:16),
@@ -932,7 +921,7 @@ class _GuideScreenState extends State<GuideScreen>{
      Row(children:[
        TextButton(onPressed:widget.refreshEpg,child:const Text('↻ Refresh EPG')),
        const Spacer(),
-       Text('${channels.where((v)=>!v.id.startsWith('lineup:')).length} PLAYABLE · ${channels.length} GUIDE SLOTS',style:const TextStyle(color:C.secondary,fontSize:12)),
+       Text('${channels.length} PLAYABLE CHANNELS',style:const TextStyle(color:C.secondary,fontSize:12)),
        const SizedBox(width:10),
        IconButton(onPressed:(){setState(()=>anchor=anchor.subtract(const Duration(hours:1)));_loadForAnchor();},
          icon:const Icon(Icons.chevron_left)),
