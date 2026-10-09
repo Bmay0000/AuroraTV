@@ -14,17 +14,19 @@ public final class TvLayoutTest {
    TvLayout layout=TvLayout.of(device[0],device[1]);
    verify(layout.marginX>=16 && layout.marginX<=58,"Safe left margin "+device[0]);
    verify(layout.marginY>=10 && layout.marginY<=28,"Safe vertical margin "+device[1]);
-   verify(layout.sidebar>120 && layout.sidebar<device[0]/2,"Sidebar size "+device[0]);
+   verify(layout.sidebar==0,"Full-width top navigation "+device[0]);
    verify(layout.contentWidth()>=320,"Browse area is too narrow "+device[0]);
-   verify(layout.posterWidth>=138 && layout.posterWidth<=290,"Poster tiles bounded");
+   verify(layout.posterWidth>=90 && layout.posterWidth<=165,"Compact poster tiles bounded");
+   verify(layout.posterColumns>=4 && layout.posterColumns<=12,"Reasonable number of visible posters");
    verify(layout.posterCardHeight<layout.heightDp,"Poster tiles taller than screen");
-   verify(layout.heroHeight<layout.heightDp*.6,"Hero prevents scrolling");
+   verify(layout.heroHeight<=170 && layout.heroHeight<=layout.heightDp*.3,"Compact hero reveals first shelf");
    verify(layout.navRow<=62,"Remote nav row bounded");
    verify(layout.guideWidth()>=layout.contentWidth()*.7,"Guide table missing columns");
   }
   TvLayout hd=TvLayout.of(960,540),uhd=TvLayout.of(1920,1080);
-  verify(uhd.sidebar>hd.sidebar,"Large displays deserve wider navigation");
-  verify(uhd.posterWidth>=hd.posterWidth,"Poster scale should not shrink");
+  verify(uhd.posterColumns>hd.posterColumns,"Wide displays show more films");
+  verify(uhd.posterWidth>=hd.posterWidth,"Poster clarity should not shrink");
+  verify(hd.posterColumns>=7,"Typical Fire TV width should show at least seven posters");
   verify(uhd.headerHeight()>=hd.headerHeight(),"Header should scale responsibly");
   System.out.println(cases+" responsive Fire TV layout tests passed");
  }
