@@ -142,11 +142,92 @@ public final class ChannelDiscovery {
         return ca.compareTo(cb);
     }
 
+    /** Stable identity shared by duplicate HD, FHD, and 4K renditions.
+     * Different networks (ESPN vs ESPN2) and local affiliates stay separate. */
+    public static String lineupIdentity(LibraryCore.Item item) {
+        if(item==null)return "";
+        int network=satelliteNumber(item);
+        if(network>0)return "network:"+network;
+        String name=canonicalName(item.name);
+        if(name.isEmpty())return "";
+        if(localNetwork(name))return "local:"+name;
+        return "other:"+name;
+    }
+
+    /** Provider quality affects primary choice, not availability of alternates. */
+    public static int renditionScore(LibraryCore.Item item){
+        if(item==null)return Integer.MIN_VALUE;
+        String name=item.name==null?"":item.name.toUpperCase(Locale.ROOT);
+        String category=item.category==null?"":item.category;
+        int quality=0;
+        if(NA_CATEGORY.matcher(category).find())quality+=25;
+        if("en".equals(LibraryCore.language(item)))quality+=20;
+        if(item.epgId!=null&&!item.epgId.trim().isEmpty())quality+=15;
+        if(name.matches(".*(?:FHD|1080P|1080I).*"))quality+=20;
+        else if(name.matches(".*(?:UHD|4K).*"))quality+=12;
+        else if(name.matches(".*(?:^|[^A-Z])HD(?:$|[^A-Z]).*"))quality+=11;
+        if(name.matches(".*(?:BACKUP|BKP|TEST|ALT|DUMMY|OFFLINE).*"))quality-=80;
+        if(name.matches(".*(?:HEVC|H265).*"))quality-=5;
+        return quality;
+    }
+
+    /** Numbered event feeds are not the ordinary ESPN/FOX/other networks.
+     * Keep all of them under All Streams, not in the primary satellite row. */
+    public static boolean eventFeed(LibraryCore.Item item){
+        if(item==null)return false;
+        String name=canonicalName(item.name);
+        return name.matches(".*(?:ESPN|SPORTS|SPORT|FOX SPORTS|PPV|EVENT|GAME|MATCH|FEED|MULTIVIEW|EXTRA|ALT)\\s*\\+?\\s*[0-9]{1,5}.*")
+            || name.matches(".*(?:PPV|EVENT|MATCH|GAME|BACKUP|TEST|FEED|MULTIVIEW|EXTRA|ALTERNATE)(?:\\s|$).*");
+    }
+
+    /** Deduplicate network renditions for the default guide and genre tabs,
+     * without deleting provider entries. All Streams and explicit search keep
+     * every option available. */
+    public static List<LibraryCore.Item> curate(List<LibraryCore.Item> source,
+                                                String section,boolean searchActive){
+        if(source==null||source.isEmpty())return new ArrayList<>();
+        if(searchActive||"All".equals(section)||"International".equals(section)
+                ||"Other".equals(section)||"More North America".equals(section)){
+            List<LibraryCore.Item> all=new ArrayList<>(source);
+            all.sort(ChannelDiscovery::compare);
+            return all;
+        }
+        Map<String,LibraryCore.Item> primary=new LinkedHashMap<>();
+        for(LibraryCore.Item item:source){
+            int directv=satelliteNumber(item);
+            boolean local=localNetwork(canonicalName(item.name));
+            if(eventFeed(item) && directv==0 && !local)continue;
+            String key=lineupIdentity(item);
+            if(key.isEmpty())continue;
+            LibraryCore.Item previous=primary.get(key);
+            if(previous==null||renditionScore(item)>renditionScore(previous))
+                primary.put(key,item);
+        }
+        List<LibraryCore.Item> sorted=new ArrayList<>(primary.values());
+        sorted.sort(ChannelDiscovery::compare);
+        if("North America".equals(section)){
+            // Lead with the curated lineup; only then show distinct regional
+            // networks. Excess and all alternate sources remain in the
+            // separate More North America / All Streams views.
+            List<LibraryCore.Item> result=new ArrayList<>();
+            int additional=0;
+            for(LibraryCore.Item item:sorted){
+                if(satelliteNumber(item)>0||localNetwork(canonicalName(item.name))){
+                    result.add(item);continue;
+                }
+                if(additional++<100)result.add(item);
+            }
+            return result;
+        }
+        return sorted;
+    }
+
     public static boolean matchesGuideSection(LibraryCore.Item item,String section){
         if(item==null)return false;
         if(section==null||section.equals("All"))return true;
         switch(section){
             case "North America":return group(item).equals("North America");
+            case "More North America":return group(item).equals("North America")&&satelliteNumber(item)==0;
             case "English":return LibraryCore.language(item).equals("en");
             case "International":return group(item).equals("International");
             case "Other":return group(item).equals("Other / Unverified");
