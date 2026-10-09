@@ -24,6 +24,7 @@ import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  ImageView cinematicBackdrop,cinematicIncoming,cinematicPoster; LibraryCore.Item cinematicFocused;
  FrameLayout cinematicTrailerLayer; android.webkit.WebView cinematicTrailerView;
+ int featurePriority=0;
  Runnable pendingTrailer; boolean trailerRunning=false;
  final ExecutorService trailerLookupIO=Executors.newSingleThreadExecutor();
  final ExecutorService trendingIO=Executors.newSingleThreadExecutor();
@@ -485,7 +486,7 @@ public class MainActivity extends Activity {
      recentArea.removeAllViews();
      if(!result.english.isEmpty()&&cinematicTitle!=null
         &&"Explore your library".contentEquals(cinematicTitle.getText()))
-       updateCinematicPanel(result.english.get(0));
+       featureFromLibrary(result.english,1);
      if(!result.english.isEmpty())
       homeShelf(recentArea,"NEW & RECENT • ENGLISH MOVIES","movie",result.english);
      // No speculative "New" label on films lacking an actual release year.
@@ -518,7 +519,7 @@ public class MainActivity extends Activity {
      if(matches.isEmpty())return;
      if("discover".equals(screen)&&cinematicTitle!=null
          &&"Explore your library".contentEquals(cinematicTitle.getText()))
-       updateCinematicPanel(matches.get(0));
+       featureFromLibrary(matches,2);
      if("discover".equals(screen))markLoad(type,token);
      homeShelf(target,label,type,matches);
     });
@@ -836,7 +837,7 @@ public class MainActivity extends Activity {
    if(live)open(item);else showMediaDetails(item);
   });
   card.setOnFocusChangeListener((v,focus)->{
-   if(focus&&!live)updateCinematicPanel(item);
+   if(focus&&!live){featurePriority=4;updateCinematicPanel(item);}
    card.setBackground(rounded(focus?0xff153c3d:0xff0f1b2a,11,focus?ACCENT:0xff203343));
    card.animate().scaleX(focus?1.025f:1f).scaleY(focus?1.025f:1f)
     .setDuration(100).start();
@@ -1176,6 +1177,9 @@ public class MainActivity extends Activity {
       if(isDestroyed()||token!=browseToken
           ||!("home".equals(screen)||"discover".equals(screen)))return;
       target.removeAllViews();
+      if("home".equals(screen)&&"movie".equals(type)&&!matches.isEmpty()&&featurePriority<3){
+       featurePriority=3;updateCinematicPanel(matches.get(0));
+      }
       if(!matches.isEmpty())homeShelf(target,
           "TOP 20 "+("movie".equals(type)?"MOVIES":"TV SHOWS")+" TODAY · IN YOUR LIBRARY",
           type,matches);
@@ -1211,7 +1215,7 @@ public class MainActivity extends Activity {
     ((ViewGroup)cinematicTrailerView.getParent()).removeView(cinematicTrailerView);
    cinematicTrailerView.destroy();cinematicTrailerView=null;
   }
-  cinematicTrailerLayer=null;
+  cinematicTrailerLayer=null;featurePriority=0;
   pendingCinematic=null;cinematicBackdrop=null;cinematicIncoming=null;cinematicPoster=null;cinematicFocused=null;
   cinematicArtwork=null;cinematicTitle=null;cinematicSubtitle=null;
  }
@@ -1305,6 +1309,22 @@ public class MainActivity extends Activity {
   name=name.replaceFirst("(?i)^(?:VOD|MOVIE|FILM|SERIES)\\s*[-|:]\\s*","");
   name=name.replaceFirst("(?i)\\s*\\b(?:FHD|UHD|4K|1080P|720P)\\s*$","");
   return name.isEmpty()?item.name:name;
+ }
+ void featureFromLibrary(List<LibraryCore.Item> movies,int priority){
+  if(movies==null||movies.isEmpty()||priority<featurePriority)return;
+  LibraryCore.Item chosen=null;double top=-999999;
+  for(LibraryCore.Item item:movies){
+   if(!MediaDiscovery.confirmedEnglish(item))continue;
+   double score=Math.min(10,Math.max(0,item.rating))*14;
+   if(item.artwork!=null&&item.artwork.startsWith("http"))score+=35;
+   if(item.releaseYear>=MediaDiscovery.currentYear()-4)score+=12;
+   if(!MediaDiscovery.genre(item.category).isEmpty())score+=22;
+   String group=item.category.toUpperCase(Locale.ROOT);
+   if(group.contains("AFRICAN")||group.contains("INTERNATIONAL"))score-=35;
+   if(group.contains("NEW")&&!group.contains("MOVIE"))score-=8;
+   if(score>top){top=score;chosen=item;}
+  }
+  if(chosen!=null){featurePriority=priority;updateCinematicPanel(chosen);}
  }
  void updateCinematicPanel(LibraryCore.Item item){
   if(cinematicArtwork==null||cinematicTitle==null||item==null)return;
