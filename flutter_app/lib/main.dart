@@ -53,6 +53,7 @@ class _AuroraShellState extends State<AuroraShell>{
   final db=CatalogDatabase(),provider=ProviderClient(),tmdb=TmdbClient(),epg=XmltvService();
   IptvSource? source;
   int page=0,focusRevision=0;
+  final ValueNotifier<int> heroVersion=ValueNotifier<int>(0);
   bool ready=false,loading=false,showLogin=false,trailers=false,previewOn=false;
   String status='',epgUrl='';
   MediaEntry? featured;
@@ -115,9 +116,14 @@ class _AuroraShellState extends State<AuroraShell>{
   }
   void _feature(MediaEntry item){
     final id=++focusRevision;
-    if(mounted)setState((){featured=item;meta=const MovieMeta();});
+    if(!mounted)return;
+    featured=item;meta=const MovieMeta();
+    heroVersion.value++;
     tmdb.details(item).then((result){
-      if(mounted&&id==focusRevision)setState(()=>meta=result);
+      if(mounted&&id==focusRevision){
+        meta=result;
+        heroVersion.value++;
+      }
     });
   }
   Future<void> _connect(IptvSource next)async{
@@ -289,6 +295,7 @@ class _AuroraShellState extends State<AuroraShell>{
   }
   @override void dispose(){
     db.close();provider.dispose();tmdb.dispose();epg.dispose();
+    heroVersion.dispose();
     super.dispose();
   }
 
@@ -299,7 +306,8 @@ class _AuroraShellState extends State<AuroraShell>{
     final media=MediaQuery.sizeOf(context);
     final isCinema=page==0||page==2||page==3;
     return Scaffold(body:Stack(children:[
-      Positioned.fill(child:AnimatedSwitcher(duration:const Duration(milliseconds:350),
+      Positioned.fill(child:ValueListenableBuilder<int>(valueListenable:heroVersion,
+        builder:(_,__,___)=>AnimatedSwitcher(duration:const Duration(milliseconds:350),
         child:Container(key:ValueKey(isCinema?(meta.backdrop.isNotEmpty?meta.backdrop:featured?.artwork??''):'empty'),
           color:C.canvas,
           child:isCinema&&featured!=null
@@ -307,7 +315,7 @@ class _AuroraShellState extends State<AuroraShell>{
             ?artwork(meta.backdrop,fit:BoxFit.cover)
             :ImageFiltered(imageFilter:ui.ImageFilter.blur(sigmaX:27,sigmaY:27),
               child:artwork(featured!.artwork,fit:BoxFit.cover))
-          :const SizedBox.shrink()))),
+          :const SizedBox.shrink())))),
       if(isCinema)Positioned.fill(child:DecoratedBox(decoration:BoxDecoration(
         gradient:LinearGradient(begin:Alignment.centerLeft,end:Alignment.centerRight,
           colors:[Colors.black.withValues(alpha:.95),Colors.black.withValues(alpha:.70),
@@ -367,7 +375,8 @@ class _AuroraShellState extends State<AuroraShell>{
       final available=c.maxHeight;
       final heroHeight=(available*.64).clamp(245.0,540.0);
       return ListView(padding:EdgeInsets.zero,children:[
-        SizedBox(height:heroHeight,child:Stack(children:[
+        SizedBox(height:heroHeight,child:ValueListenableBuilder<int>(valueListenable:heroVersion,
+          builder:(_,__,___)=>Stack(children:[
           if(meta.backdrop.isEmpty && featured?.artwork.isNotEmpty==true)
             Positioned(right:36,top:12,bottom:12,width:heroHeight*.52,
               child:Opacity(opacity:.95,child:artwork(featured!.artwork,fit:BoxFit.contain))),
@@ -376,7 +385,7 @@ class _AuroraShellState extends State<AuroraShell>{
               child:ConstrainedBox(
                 constraints:BoxConstraints(maxWidth:math.min(c.maxWidth*.49,680)),
                 child:_heroText()))),
-        ])),
+        ]))),
         if(!home)Padding(padding:const EdgeInsets.fromLTRB(30,0,30,12),
           child:Row(children:[
             Text('EXPLORE ${kind==MediaKind.movie?'MOVIES':'TV SHOWS'}',
