@@ -566,10 +566,38 @@ class LoginScreen extends StatefulWidget{
 class _LoginScreenState extends State<LoginScreen>{
   final server=TextEditingController(),user=TextEditingController(),
     pass=TextEditingController(),playlist=TextEditingController();
+  final serverFocus=FocusNode(debugLabel:'Server URL'),
+    userFocus=FocusNode(debugLabel:'Username'),
+    passFocus=FocusNode(debugLabel:'Password'),
+    playlistFocus=FocusNode(debugLabel:'M3U Playlist'),
+    connectFocus=FocusNode(debugLabel:'Connect');
+  final formScroll=ScrollController();
   bool m3u=false;
+
+  void _next(FocusNode focus){
+    // Fire TV software keyboards typically send Done rather than Next.
+    // Explicitly transfer focus, rather than returning to the first form field.
+    focus.requestFocus();
+  }
+  void _submit(){
+    if(widget.loading)return;
+    widget.connect(m3u?
+      IptvSource(kind:'m3u',playlist:playlist.text.trim()):
+      IptvSource(kind:'xtream',server:server.text.trim(),
+        username:user.text.trim(),password:pass.text));
+  }
+  @override void dispose(){
+    server.dispose();user.dispose();pass.dispose();playlist.dispose();
+    serverFocus.dispose();userFocus.dispose();passFocus.dispose();
+    playlistFocus.dispose();connectFocus.dispose();formScroll.dispose();
+    super.dispose();
+  }
   @override Widget build(BuildContext context)=>Scaffold(body:Center(
     child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:610),
-      child:SingleChildScrollView(padding:const EdgeInsets.all(30),child:Column(
+      child:FocusTraversalGroup(policy:OrderedTraversalPolicy(),
+        child:SingleChildScrollView(controller:formScroll,
+          keyboardDismissBehavior:ScrollViewKeyboardDismissBehavior.manual,
+          padding:const EdgeInsets.all(30),child:Column(
         crossAxisAlignment:CrossAxisAlignment.start,children:[
         const Text('AuroraTV',style:TextStyle(fontSize:40,fontWeight:FontWeight.w800,color:C.aqua)),
         const SizedBox(height:8),
@@ -581,21 +609,52 @@ class _LoginScreenState extends State<LoginScreen>{
         ],selected:{m3u},onSelectionChanged:(s)=>setState(()=>m3u=s.first)),
         const SizedBox(height:18),
         if(!m3u)...[
-          TextField(controller:server,decoration:const InputDecoration(labelText:'Server URL, including port')),
-          TextField(controller:user,decoration:const InputDecoration(labelText:'Username')),
-          TextField(controller:pass,obscureText:true,decoration:const InputDecoration(labelText:'Password')),
-        ]else TextField(controller:playlist,maxLines:3,
-          decoration:const InputDecoration(labelText:'Playlist URL or pasted #EXTM3U data')),
+          FocusTraversalOrder(order:const NumericFocusOrder(1),
+            child:TextField(
+              key:const ValueKey('server-url'),
+              controller:server,focusNode:serverFocus,
+              keyboardType:TextInputType.url,textInputAction:TextInputAction.next,
+              onEditingComplete:()=>_next(userFocus),
+              onSubmitted:(_)=>_next(userFocus),
+              decoration:const InputDecoration(labelText:'Server URL, including port',
+                hintText:'http://provider.example:8080'))),
+          const SizedBox(height:10),
+          FocusTraversalOrder(order:const NumericFocusOrder(2),
+            child:TextField(
+              key:const ValueKey('xtream-username'),
+              controller:user,focusNode:userFocus,
+              textInputAction:TextInputAction.next,
+              onEditingComplete:()=>_next(passFocus),
+              onSubmitted:(_)=>_next(passFocus),
+              decoration:const InputDecoration(labelText:'Username'))),
+          const SizedBox(height:10),
+          FocusTraversalOrder(order:const NumericFocusOrder(3),
+            child:TextField(
+              key:const ValueKey('xtream-password'),
+              controller:pass,focusNode:passFocus,obscureText:true,
+              textInputAction:TextInputAction.done,
+              onEditingComplete:()=>_next(connectFocus),
+              onSubmitted:(_)=>_next(connectFocus),
+              decoration:const InputDecoration(labelText:'Password'))),
+        ]else FocusTraversalOrder(order:const NumericFocusOrder(1),
+          child:TextField(
+            key:const ValueKey('playlist-url'),controller:playlist,
+            focusNode:playlistFocus,maxLines:3,
+            textInputAction:TextInputAction.done,
+            onEditingComplete:()=>_next(connectFocus),
+            onSubmitted:(_)=>_next(connectFocus),
+            decoration:const InputDecoration(
+              labelText:'Playlist URL or pasted #EXTM3U data'))),
         const SizedBox(height:22),
-        FilledButton(onPressed:widget.loading?null:()=>widget.connect(m3u?
-          IptvSource(kind:'m3u',playlist:playlist.text.trim()):
-          IptvSource(kind:'xtream',server:server.text.trim(),username:user.text.trim(),
-            password:pass.text)),
-          child:Text(widget.loading?'Importing…':'Connect and Import Library')),
+        FocusTraversalOrder(order:const NumericFocusOrder(4),
+          child:FilledButton(
+            focusNode:connectFocus,
+            onPressed:widget.loading?null:_submit,
+            child:Text(widget.loading?'Importing…':'Connect and Import Library'))),
         if(widget.loading)const Padding(padding:EdgeInsets.all(12),child:LinearProgressIndicator()),
         if(widget.status.isNotEmpty)Padding(padding:const EdgeInsets.only(top:13),
           child:Text(widget.status,style:const TextStyle(color:C.secondary))),
-      ]))),
+      ])))),
   ));
 }
 
