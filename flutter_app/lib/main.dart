@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -158,6 +159,11 @@ class _AuroraShellState extends State<AuroraShell>{
     if(page==index)return;
     setState(()=>page=index);
     if(index==1)_loadLive();
+    if(index==2||index==3){
+      final kind=index==2?MediaKind.movie:MediaKind.series;
+      final items=trends[kind]?.isNotEmpty==true?trends[kind]!:shelves[kind]??[];
+      if(items.isNotEmpty)_feature(items.first);
+    }
   }
   Future<void> _loadLive({String group='All'}) async{
     final loaded=await db.list(MediaKind.live,category:group=='Favorites'?'All':group,
@@ -275,7 +281,10 @@ class _AuroraShellState extends State<AuroraShell>{
         child:Container(key:ValueKey(isCinema?(meta.backdrop.isNotEmpty?meta.backdrop:featured?.artwork??''):'empty'),
           color:C.canvas,
           child:isCinema&&featured!=null
-          ?artwork(meta.backdrop.isNotEmpty?meta.backdrop:featured!.artwork,fit:BoxFit.cover)
+          ?meta.backdrop.isNotEmpty
+            ?artwork(meta.backdrop,fit:BoxFit.cover)
+            :ImageFiltered(imageFilter:ui.ImageFilter.blur(sigmaX:27,sigmaY:27),
+              child:artwork(featured!.artwork,fit:BoxFit.cover))
           :const SizedBox.shrink()))),
       if(isCinema)Positioned.fill(child:DecoratedBox(decoration:BoxDecoration(
         gradient:LinearGradient(begin:Alignment.centerLeft,end:Alignment.centerRight,
@@ -336,10 +345,16 @@ class _AuroraShellState extends State<AuroraShell>{
       final available=c.maxHeight;
       final heroHeight=(available*.64).clamp(245.0,540.0);
       return ListView(padding:EdgeInsets.zero,children:[
-        SizedBox(height:heroHeight,child:Align(alignment:Alignment.centerLeft,
-          child:Padding(padding:const EdgeInsets.fromLTRB(34,12,0,6),child:ConstrainedBox(
-            constraints:BoxConstraints(maxWidth:math.min(c.maxWidth*.49,680)),
-            child:_heroText())))),
+        SizedBox(height:heroHeight,child:Stack(children:[
+          if(meta.backdrop.isEmpty && featured?.artwork.isNotEmpty==true)
+            Positioned(right:36,top:12,bottom:12,width:heroHeight*.52,
+              child:Opacity(opacity:.95,child:artwork(featured!.artwork,fit:BoxFit.contain))),
+          Align(alignment:Alignment.centerLeft,
+            child:Padding(padding:const EdgeInsets.fromLTRB(34,12,0,6),
+              child:ConstrainedBox(
+                constraints:BoxConstraints(maxWidth:math.min(c.maxWidth*.49,680)),
+                child:_heroText()))),
+        ])),
         if(!home)Padding(padding:const EdgeInsets.fromLTRB(30,0,30,12),
           child:Row(children:[
             Text('EXPLORE ${kind==MediaKind.movie?'MOVIES':'TV SHOWS'}',
