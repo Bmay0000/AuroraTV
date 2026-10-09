@@ -57,8 +57,10 @@ public final class LibraryStore extends SQLiteOpenHelper {
     }
     private int revision(){return cacheRevision;}
     @SuppressWarnings("unchecked")
-    private <T> T cached(String key){
-        synchronized(uiCache){return (T)uiCache.get(cacheRevision+":"+key);}
+    private <T> T cached(String key,int revision){
+        synchronized(uiCache){
+            return revision==cacheRevision?(T)uiCache.get(revision+":"+key):null;
+        }
     }
     private void cache(String key,Object value,int revision){
         if(value==null)return;
@@ -198,6 +200,13 @@ public final class LibraryStore extends SQLiteOpenHelper {
                      Set<String> favorites, Set<String> allowed, boolean hideUnknown,
                      Set<String> visibleItems, Set<String> visibleCategories,
                      int offset, int limit) throws Exception {
+        final int rev=revision();
+        final String pageKey="page:"+type+"|"+category+"|"+query+"|"+
+            hiddenOnly+"|"+favoritesOnly+"|"+offset+"|"+limit;
+        if(offset<=400&&limit<=200){
+            Page prior=cached(pageKey,rev);
+            if(prior!=null)return prior;
+        }
         StringBuilder sql = new StringBuilder("SELECT ").append(FIELDS)
                 .append(" FROM entries WHERE type=?");
         List<String> args = new ArrayList<>();
@@ -224,11 +233,18 @@ public final class LibraryStore extends SQLiteOpenHelper {
                 if (hiddenOnly ? isVisible : !isVisible) continue;
                 if (favoritesOnly && !favorites.contains(current.id)) continue;
                 if (matches++ < offset) continue;
-                if (result.size() == limit) return new Page(result, true);
+                if (result.size() == limit){
+                    Page data=new Page(result,true);
+                    if(offset<=400&&limit<=200)cache(pageKey,data,rev);
+                    return data;
+                }
                 result.add(current);
             }
         }
-        return new Page(result, false);
+        Page data=new Page(result,false);
+        if(offset<=400&&limit<=200&&!Thread.currentThread().isInterrupted())
+            cache(pageKey,data,rev);
+        return data;
     }
 
     /**
@@ -328,7 +344,10 @@ public final class LibraryStore extends SQLiteOpenHelper {
     public RecentMovies recentMovies(Set<String> hidden,Set<String> hiddenCategories,
             Set<String> favorites,Set<String> allowed,boolean hideUnknown,
             Set<String> visibleItems,Set<String> visibleCategories){
-        final int year=MediaDiscovery.currentYear();
+        final int year=MediaDiscovery.currentYear(),rev=revision();
+        final String cacheKey="recent:"+year;
+        RecentMovies prior=cached(cacheKey,rev);
+        if(prior!=null)return prior;
         StringBuilder sql=new StringBuilder("SELECT ").append(FIELDS)
             .append(" FROM entries WHERE type='movie' AND (release_year>=?");
         ArrayList<String> arguments=new ArrayList<>();
@@ -381,7 +400,9 @@ public final class LibraryStore extends SQLiteOpenHelper {
         if(english.size()>24)english=new ArrayList<>(english.subList(0,24));
         if(unknown.size()>24)unknown=new ArrayList<>(unknown.subList(0,24));
         if(international.size()>24)international=new ArrayList<>(international.subList(0,24));
-        return new RecentMovies(english,unknown,international);
+        RecentMovies data=new RecentMovies(english,unknown,international);
+        if(!Thread.currentThread().isInterrupted())cache(cacheKey,data,rev);
+        return data;
     }
 
     public static final class GenreCategory {
@@ -396,6 +417,9 @@ public final class LibraryStore extends SQLiteOpenHelper {
 
     /** User's actual provider genres, not imaginary generic category links. */
     public List<GenreCategory> movieGenres(){
+        final int rev=revision();
+        List<GenreCategory> old=cached("genres",rev);
+        if(old!=null)return old;
         List<GenreCategory> categories=new ArrayList<>();
         try(Cursor cursor=getReadableDatabase().rawQuery(
              "SELECT category,COUNT(*) FROM entries WHERE type='movie' " +
@@ -415,6 +439,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
             int en=Boolean.compare(b.verifiedEnglishCategory,a.verifiedEnglishCategory);
             return en!=0?en:Integer.compare(b.count,a.count);
         });
+        if(!Thread.currentThread().isInterrupted())cache("genres",categories,rev);
         return categories;
     }
 
@@ -462,6 +487,10 @@ public final class LibraryStore extends SQLiteOpenHelper {
           Set<String> hidden,Set<String> hiddenCategories,Set<String> favorites,
           Set<String> allowed,boolean hideUnknown,Set<String> manual,
           Set<String> restoredCategories){
+        final int rev=revision();
+        String key="featured.en:"+type+":"+max;
+        List<LibraryCore.Item> prior=cached(key,rev);
+        if(prior!=null)return prior;
         List<LibraryCore.Item> results=new ArrayList<>();
         String sql="SELECT "+FIELDS+" FROM entries WHERE type=? "+
             "ORDER BY release_year DESC,added_at DESC,row_id DESC";
@@ -476,6 +505,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
                 if(results.size()>=max)break;
             }
         }
+        if(!Thread.currentThread().isInterrupted())cache(key,results,rev);
         return results;
     }
 
@@ -483,6 +513,10 @@ public final class LibraryStore extends SQLiteOpenHelper {
           Set<String> hidden,Set<String> hiddenCategories,Set<String> favorites,
           Set<String> allowed,boolean hideUnknown,Set<String> manual,
           Set<String> restoredCategories){
+        final int rev=revision();
+        String key="featured.foreign:"+type+":"+max;
+        List<LibraryCore.Item> prior=cached(key,rev);
+        if(prior!=null)return prior;
         List<LibraryCore.Item> results=new ArrayList<>();
         try(Cursor cursor=getReadableDatabase().rawQuery(
             "SELECT "+FIELDS+" FROM entries WHERE type=? ORDER BY release_year DESC,added_at DESC,row_id DESC",
@@ -497,6 +531,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
                 if(results.size()>=max)break;
             }
         }
+        if(!Thread.currentThread().isInterrupted())cache(key,results,rev);
         return results;
     }
 
