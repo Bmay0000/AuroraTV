@@ -453,7 +453,7 @@ public class MainActivity extends Activity {
   body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
   LinearLayout feed=column();
   feed.setClipChildren(true);feed.setClipToPadding(true);
-  feed.setPadding(dp(3),dp(1),dp(4),dp(12));
+  feed.setPadding(dp(5),dp(0),dp(5),dp(12));
   scroll.addView(feed,new ScrollView.LayoutParams(-1,-2));
 
   // Everything above the international divider has positive English or
@@ -776,7 +776,7 @@ public class MainActivity extends Activity {
   TvLayout dim=tv();
   LinearLayout line=new LinearLayout(this);
   line.setGravity(Gravity.CENTER_VERTICAL);
-  LinearLayout.LayoutParams spacing=new LinearLayout.LayoutParams(-1,dp(33));
+  LinearLayout.LayoutParams spacing=new LinearLayout.LayoutParams(-1,dp(36));
   spacing.topMargin=dp(5);feed.addView(line,spacing);
   TextView title=headline(heading,TvLayout.clamp(dim.headingSize()-5,16,23),Color.WHITE);
   title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);
@@ -1329,7 +1329,7 @@ public class MainActivity extends Activity {
   TvLayout m=tv();
   FrameLayout hero=new FrameLayout(this);
   hero.setBackgroundColor(Color.TRANSPARENT);
-  hero.setClipToOutline(true);
+  hero.setClipToOutline(false);
   LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-1,
     dp(TvLayout.clamp(m.heightDp*46/100,210,350)));
   size.bottomMargin=dp(9);
@@ -1361,7 +1361,7 @@ public class MainActivity extends Activity {
   info.setPadding(dp(24),dp(3),dp(8),dp(3));
   hero.addView(info,new FrameLayout.LayoutParams(
       dp(TvLayout.clamp(m.contentWidth()*3/5,265,780)),-1,Gravity.LEFT));
-  TextView eyebrow=kicker("✦   FEATURED  /  DISCOVER");eyebrow.setTextSize(12);
+  TextView eyebrow=kicker("AURORATV    •    FEATURED FOR YOU");eyebrow.setTextSize(11);
   info.addView(eyebrow);
   cinematicTitle=headline("Explore your library",
     TvLayout.clamp(m.headingSize()+13,28,48),Color.WHITE);
@@ -1373,28 +1373,29 @@ public class MainActivity extends Activity {
   cinematicSubtitle.setMaxLines(2);
   cinematicSubtitle.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicSubtitle);
-  cinematicMeta=text("",12);cinematicMeta.setTextColor(0xffe7ce84);
+  cinematicMeta=text("",13);cinematicMeta.setTextColor(0xffefc665);
   cinematicMeta.setMaxLines(1);info.addView(cinematicMeta);
   cinematicOverview=text("",TvLayout.clamp(m.bodySize(),12,16));
   cinematicOverview.setTextColor(0xffd6e4e9);
-  cinematicOverview.setMaxLines(2);
+  cinematicOverview.setMaxLines(3);
   if(m.heightDp<490)cinematicOverview.setVisibility(View.GONE);
   cinematicOverview.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicOverview);
   LinearLayout controls=new LinearLayout(this);
   LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(45));
   actions.topMargin=dp(m.heightDp<620?3:9);info.addView(controls,actions);
-  Button watch=button("▶  WATCH NOW",()->{
+  Button watch=button("▶   Play",()->{
    if(cinematicFocused!=null)showMediaDetails(cinematicFocused);
   });
   watch.setTextSize(12);
-  watch.setBackground(rounded(0xff127c74,8,ACCENT));
+  watch.setBackground(rounded(0xfff1f5f4,9,0xffe0eeed));
+  watch.setTextColor(0xff0a1015);
   controls.addView(watch,new LinearLayout.LayoutParams(0,-1,1));
-  Button browseButton=button("BROWSE LIBRARY  →",()->{
-   section="series".equals(section)?"series":"movie";
-   category="All";query="";page=0;browseAll=true;browse();
+  Button browseButton=button("ⓘ   More Info",()->{
+   if(cinematicFocused!=null)showMediaDetails(cinematicFocused);
   });
-  browseButton.setTextSize(11);
+  browseButton.setTextSize(12);
+  browseButton.setBackground(rounded(0x9919232e,9,0x55677886));
   LinearLayout.LayoutParams browsePos=new LinearLayout.LayoutParams(0,-1,1);
   browsePos.leftMargin=dp(8);controls.addView(browseButton,browsePos);
  }
