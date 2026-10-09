@@ -27,6 +27,20 @@ public class ChannelDiscoveryTest{
   check(ChannelDiscovery.satelliteNumber(espn2)==209,"ESPN2 not ESPN");
   check(ChannelDiscovery.satelliteNumber(nba)==216,"NBA TV network preserved");
   check(ChannelDiscovery.satelliteNumber(fox)==360,"FOX News reference");
+
+  check(ChannelDiscovery.satelliteNumber(channel("QVC HD","US Entertainment","en"))==317,
+        "QVC uses 317, not the old inaccurate 275");
+  check(ChannelDiscovery.satelliteNumber(channel("MeTV Toons HD","US Kids","en"))==295,
+        "MeTV Toons included from published lineup");
+  check(ChannelDiscovery.satelliteNumber(channel("Hallmark Mystery FHD","US Movies","en"))==565,
+        "Movie pack reference");
+  check(ChannelDiscovery.satelliteNumber(channel("NESN HD","US Sports","en"))==628,
+        "Regional sports reference");
+  check(ChannelDiscovery.satelliteNumber(channel("Comedy Central HD","US Entertainment","en"))==249,
+        "Comedy Central exact satellite number");
+  check(ChannelDiscovery.satelliteNumber(channel("FS2 HD","US Sports","en"))==618,
+        "Sports pack channel");
+
   check(ChannelDiscovery.satelliteNumber(persian)==0,"No invented satellite number");
   check(ChannelDiscovery.group(cnn).equals("North America"),"North America primary");
   check(ChannelDiscovery.group(other).equals("North America"),"NA regional add-on");
