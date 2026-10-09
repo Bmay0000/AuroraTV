@@ -1897,7 +1897,8 @@ public class MainActivity extends Activity {
       status("Making Live TV available…");
       live.commit();
      }
-     prefs.edit().putLong("import.live_ms",SystemClock.elapsedRealtime()-importStart).apply();
+     long liveDuration=SystemClock.elapsedRealtime()-importStart;
+     prefs.edit().putLong("import.live_ms",liveDuration).putLong("import.active_ms",liveDuration).apply();
      if(token!=generation||Thread.currentThread().isInterrupted())return;
      if(!prefs.edit().putString("mode",mode).putString("url",sealedUrl)
          .putString("user",sealedUser).putString("pass",sealedPass)
@@ -1970,6 +1971,7 @@ public class MainActivity extends Activity {
    for(String kind:new String[]{"vod","series"}){
     if(Thread.currentThread().isInterrupted()||token!=generation)return;
     if(!Arrays.asList(prefs.getString("import.pending","").split(",")).contains(kind))continue;
+    long stageStart=SystemClock.elapsedRealtime();
     try(LibraryStore.Writer writer=store.appendWriter()){
      int count=Provider.xtreamStreamKinds(host,username,password,writer,
         (stage,total)->runOnUiThread(()->{
@@ -1979,7 +1981,10 @@ public class MainActivity extends Activity {
         }),kind);
      if(count>0)writer.commit();
     }
-    prefs.edit().putString("import.pending",kind.equals("vod")?"series":"").commit();
+    long completedMs=prefs.getLong("import.active_ms",0)+
+       (SystemClock.elapsedRealtime()-stageStart);
+    prefs.edit().putLong("import.active_ms",completedMs).putLong("import.total_ms",completedMs)
+      .putString("import.pending",kind.equals("vod")?"series":"").commit();
     runOnUiThread(()->{
      if(token!=generation||isDestroyed())return;
      if("home".equals(screen))home();
