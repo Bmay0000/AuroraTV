@@ -512,8 +512,8 @@ public class MainActivity extends Activity {
   catalogReadIO.execute(()->{
    try{
     List<LibraryCore.Item> matches=international?
-      store.featuredInternational(type,24,h,hc,fav,lang,strict,manual,groups):
-      store.featuredEnglish(type,24,h,hc,fav,lang,strict,manual,groups);
+      store.featuredInternational(type,12,h,hc,fav,lang,strict,manual,groups):
+      store.featuredEnglish(type,12,h,hc,fav,lang,strict,manual,groups);
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||(!"home".equals(screen)&&!"discover".equals(screen)))return;
      if(matches.isEmpty())return;
@@ -785,7 +785,9 @@ public class MainActivity extends Activity {
    return;
   }
   boolean ranked=heading.startsWith("TOP 20 ");
-  for(int position=0;position<rows.size();position++){
+  // Cap constructed cards; avoid blocking the TV thread building 150+ tiles.
+  final int renderCount=cinematicRail?Math.min(12,rows.size()):rows.size();
+  for(int position=0;position<renderCount;position++){
    LibraryCore.Item item=rows.get(position);
    cards.addView(cinematicRail?
       landscapeCard(item,ranked?position+1:0,position<6&&
