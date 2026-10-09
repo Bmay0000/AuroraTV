@@ -1,5 +1,7 @@
 # AuroraTV — Android TV & Fire TV IPTV Player
 
+**Fire TV Downloader code: `6700987`** · [Installation instructions](HOW_TO_GET_APK.md)
+
 Modern dark navy/teal Fire TV design. Single source, no profiles. Java 17, Android Views, Media3 ExoPlayer 1.9.3. Minimum Android 6 / API 23; Fire OS devices only, not non-Android Vega OS devices.
 
 ## Implemented
