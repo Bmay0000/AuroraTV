@@ -393,7 +393,7 @@ public class MainActivity extends Activity {
   ScrollView scroller=new ScrollView(this);
   scroller.setVerticalScrollBarEnabled(false);
   scroller.setFillViewport(false);
-  scroller.setClipToPadding(false);scroller.setClipChildren(false);
+  scroller.setClipToPadding(true);scroller.setClipChildren(true);
   body.addView(scroller,new LinearLayout.LayoutParams(-1,-1));
   LinearLayout feed=column();feed.setPadding(dp(6),0,dp(9),dp(24));
   scroller.addView(feed,new ScrollView.LayoutParams(-1,-2));
@@ -401,8 +401,19 @@ public class MainActivity extends Activity {
   feed.addView(heroHolder,new LinearLayout.LayoutParams(-1,dp(tv().heroHeight)));
   heroHolder.addView(homeHero(null),new FrameLayout.LayoutParams(-1,-1));
   quickCategories(feed);
-  LinearLayout liveArea=column(),movieArea=column(),seriesArea=column();
+  LinearLayout recentArea=column(),liveArea=column(),movieArea=column(),
+      seriesArea=column(),listArea=column();
+  feed.addView(recentArea);
   feed.addView(liveArea);feed.addView(movieArea);feed.addView(seriesArea);
+  feed.addView(listArea);
+  List<String> recentIds=Arrays.asList(prefs.getString("recent.items","").split(","));
+  List<String> favoritesIds=new ArrayList<>(fav);
+  if(!recentIds.isEmpty()&&!recentIds.get(0).isEmpty())
+   fetchPersonalShelf(token,"CONTINUE WATCHING",recentArea,recentIds,
+     h,cats,fav,langs,strict,manual,groups);
+  if(!favoritesIds.isEmpty())
+   fetchPersonalShelf(token,"MY LIST",listArea,favoritesIds,
+     h,cats,fav,langs,strict,manual,groups);
   showShelfPlaceholder(liveArea,"LIVE RIGHT NOW");
   showShelfPlaceholder(movieArea,"MOVIES TO EXPLORE");
   showShelfPlaceholder(seriesArea,"YOUR NEXT TV OBSESSION");
@@ -420,6 +431,25 @@ public class MainActivity extends Activity {
     scheduleGuideSync(false,true);
   };
   uiHandler.postDelayed(pendingGuideUpdate,90000L);
+ }
+ void fetchPersonalShelf(int token,String title,LinearLayout target,
+      List<String> ids,Set<String> h,Set<String> c,Set<String> fav,
+      Set<String> languages,boolean strict,Set<String> restore,Set<String> groups){
+  catalogReadIO.execute(()->{
+   try{
+    List<LibraryCore.Item> all=store.lookupByIds(ids);
+    List<LibraryCore.Item> shownRows=new ArrayList<>();
+    for(LibraryCore.Item item:all){
+     if(LibraryCore.visible(item,h,c,fav,languages,strict,restore,groups))
+      shownRows.add(item);
+    }
+    runOnUiThread(()->{
+     if(isDestroyed()||token!=browseToken||!"home".equals(screen))return;
+     target.removeAllViews();
+     if(!shownRows.isEmpty())homeShelf(target,title,"personal",shownRows);
+    });
+   }catch(Exception ignored){}
+  });
  }
  void showShelfPlaceholder(LinearLayout area,String title){
   area.addView(headline(title,20,Color.WHITE));
@@ -553,7 +583,10 @@ public class MainActivity extends Activity {
     type.equals("movie")?"Discover cinema from your collection":
     "Your next binge starts here",12);
   detail.setTextColor(MUTED);lhs.addView(detail);
-  Button seeAll=button("VIEW ALL  →",()->{
+  Button seeAll=button(type.equals("personal")?"MY LIST  →":"VIEW ALL  →",()->{
+   if(type.equals("personal")){
+    favOnly=true;hiddenOnly=false;editing=false;page=0;browse();return;
+   }
    section=type;page=0;category="All";query="";
    favOnly=false;hiddenOnly=false;editing=false;browse();
   });
@@ -572,7 +605,7 @@ public class MainActivity extends Activity {
    empty.setTextColor(MUTED);cards.addView(empty);
    return;
   }
-  for(LibraryCore.Item item:rows)cards.addView(mediaCard(item,type));
+  for(LibraryCore.Item item:rows)cards.addView(mediaCard(item,type.equals("personal")?item.type:type));
  }
  View mediaCard(LibraryCore.Item item,String type){
   TvLayout dim=tv();
@@ -2085,8 +2118,21 @@ public class MainActivity extends Activity {
    PlaybackScreen active=playbackScreen;
    playbackScreen=null;
    long position=active.close();
-   if(playing!=null&&!playing.type.equals("live"))
-    prefs.edit().putLong("resume."+playing.id,position).apply();
+   if(playing!=null&&!playing.type.equals("live")){
+    String recentId=playing.id;
+    if("episode".equals(playing.type)&&recentId.contains("|"))
+     recentId=recentId.substring(0,recentId.indexOf('|'));
+    if(recentId.matches("[0-9a-f]{64}")){
+     LinkedHashSet<String> recent=new LinkedHashSet<>();
+     recent.add(recentId);
+     for(String id:prefs.getString("recent.items","").split(",")){
+      if(id.matches("[0-9a-f]{64}")&&!id.equals(recentId)&&recent.size()<14)
+       recent.add(id);
+     }
+     prefs.edit().putLong("resume."+playing.id,position)
+       .putString("recent.items",android.text.TextUtils.join(",",recent)).apply();
+    }else prefs.edit().putLong("resume."+playing.id,position).apply();
+   }
   }
   playing=null;
  }
