@@ -421,6 +421,7 @@ public class MainActivity extends Activity {
   feed.setPadding(dp(3),dp(1),dp(4),dp(12));
   scroll.addView(feed,new ScrollView.LayoutParams(-1,-2));
   addCinematicPanel(feed);
+  addDiscoveryShortcuts(feed);
 
   // Everything above the international divider has positive English or
   // North American evidence; unknown-language titles never become the hero.
@@ -741,7 +742,7 @@ public class MainActivity extends Activity {
   TvLayout dim=tv();
   LinearLayout line=new LinearLayout(this);
   line.setGravity(Gravity.CENTER_VERTICAL);
-  LinearLayout.LayoutParams spacing=new LinearLayout.LayoutParams(-1,dp(38));
+  LinearLayout.LayoutParams spacing=new LinearLayout.LayoutParams(-1,dp(33));
   spacing.topMargin=dp(5);feed.addView(line,spacing);
   TextView title=headline(heading,TvLayout.clamp(dim.headingSize()-5,16,23),Color.WHITE);
   title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);
@@ -790,7 +791,7 @@ public class MainActivity extends Activity {
   int artHeight=live?dim.liveCardHeight-40:dim.posterHeight;
   int height=live?dim.liveCardHeight:dim.posterCardHeight;
   LinearLayout card=column();
-  card.setPadding(dp(3),dp(3),dp(3),dp(3));
+  card.setPadding(dp(1),dp(1),dp(1),dp(1));
   LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(dp(width),dp(height));
   size.rightMargin=dp(dim.columnGap);card.setLayoutParams(size);
   card.setBackground(rounded(0xff0b1422,11,0xff182a38));
@@ -804,7 +805,7 @@ public class MainActivity extends Activity {
   art.addView(initial,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
   displayArtwork(art,item.artwork);
   boolean recent=MediaDiscovery.recent(item.releaseYear,MediaDiscovery.currentYear());
-  if(live||recent||rank>0){
+  if(live||rank>0){
    TextView marker=kicker(rank>0?String.format(Locale.US,"%02d",rank):
        live?"●  LIVE":Integer.toString(item.releaseYear));
    marker.setTextSize(9);marker.setPadding(dp(5),dp(2),dp(5),dp(2));
@@ -823,7 +824,7 @@ public class MainActivity extends Activity {
   details.setTextColor(MUTED);details.setSingleLine(true);
   details.setEllipsize(TextUtils.TruncateAt.END);
   details.setPadding(dp(4),0,dp(4),0);
-  card.addView(details,new LinearLayout.LayoutParams(-1,dp(15)));
+  details.setVisibility(View.GONE);
   card.setFocusable(true);card.setClickable(true);
   card.setOnClickListener(v->{
    if(live)open(item);else showMediaDetails(item);
@@ -1088,7 +1089,7 @@ public class MainActivity extends Activity {
   LinearLayout toolbar=new LinearLayout(this);
   toolbar.setGravity(Gravity.CENTER_VERTICAL);
   body.addView(toolbar,new LinearLayout.LayoutParams(-1,dp(38)));
-  TextView heading=headline(type.equals("movie")?"MOVIES":"TV SHOWS",
+  TextView heading=headline(type.equals("movie")?"EXPLORE MOVIES":"EXPLORE SERIES",
       TvLayout.clamp(tv().bodySize()+4,17,23),Color.WHITE);
   toolbar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
   Button search=textAction("⌕ FIND",()->{
@@ -1113,6 +1114,7 @@ public class MainActivity extends Activity {
   feed.setClipChildren(true);feed.setClipToPadding(true);
   scroller.addView(feed,new ScrollView.LayoutParams(-1,-2));
   addCinematicPanel(feed);
+  addDiscoveryShortcuts(feed);
   LinearLayout recent=column(),english=column(),genres=column(),unknown=column(),
       international=column();
   LinearLayout trending=column();feed.addView(trending);
@@ -1199,6 +1201,26 @@ public class MainActivity extends Activity {
   if(pendingCinematic!=null)uiHandler.removeCallbacks(pendingCinematic);
   pendingCinematic=null;cinematicBackdrop=null;cinematicIncoming=null;
   cinematicArtwork=null;cinematicTitle=null;cinematicSubtitle=null;
+ }
+ /** A visible full-width cinematic discovery navigation row, not a modal menu. */
+ void addDiscoveryShortcuts(LinearLayout feed){
+  LinearLayout bar=new LinearLayout(this);
+  bar.setGravity(Gravity.CENTER_VERTICAL);
+  LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(42));
+  lp.bottomMargin=dp(9);feed.addView(bar,lp);
+  String[][] shortcuts={{"DISCOVER MOVIES","movie"},{"EXPLORE SERIES","series"},
+      {"LIVE CHANNELS","live"}};
+  for(String[] item:shortcuts){
+   Button control=button(item[0],()->{
+    if("live".equals(item[1])){guideFilter="North America";guideQuery="";tvGuide();}
+    else{section=item[1];browseAll=false;category="All";query="";page=0;
+     favOnly=false;editing=false;hiddenOnly=false;browse();}
+   });
+   control.setAllCaps(false);control.setTextSize(12);
+   control.setBackground(rounded(0xff102b36,9,0xff315664));
+   LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-1,1);
+   cell.rightMargin=dp(8);bar.addView(control,cell);
+  }
  }
  void addCinematicPanel(LinearLayout feed){
   TvLayout m=tv();
