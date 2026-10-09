@@ -9,8 +9,8 @@ import 'provider.dart';
 /// Only exact normalized matches are accepted: ESPN2 is never ESPN.
 class GuideNames {
  static String canonical(String raw) => raw.toUpperCase()
-   .replaceFirst(RegExp(r'^(?:US|USA|CA|CAN|CANADA|UK|NZ|AU|EN|ENG|NA)\\s*[-|:]\\s*'),'')
-   .replaceAll(RegExp(r'\\b(?:FHD|UHD|4K|HD|SD|HEVC|H265|1080P|720P|EAST|WEST)\\b'),'')
+   .replaceFirst(RegExp(r'^(?:US|USA|CA|CAN|CANADA|UK|NZ|AU|EN|ENG|NA)\s*[-|:]\s*'),'')
+   .replaceAll(RegExp(r'\b(?:FHD|UHD|4K|HD|SD|HEVC|H265|1080P|720P|EAST|WEST)\b'),'')
    .replaceAll(RegExp(r'[^A-Z0-9]+'),'')
    .trim();
 }
@@ -40,21 +40,21 @@ class XmltvService {
 List<TvProgramme> _parseXmltv(String raw){
  final result=<TvProgramme>[];
  final aliases=<String,String>{};
- final channelTags=RegExp(r'<channel\\s+([^>]+)>([\\s\\S]*?)</channel>',caseSensitive:false);
- final idPattern=RegExp(r'id=["\\']([^"\\']+)["\\']');
- final displayPattern=RegExp(r'<display-name[^>]*>([\\s\\S]*?)</display-name>',caseSensitive:false);
+ final channelTags=RegExp(r'<channel\s+([^>]+)>([\s\S]*?)</channel>',caseSensitive:false);
+ final idPattern=RegExp(r'id="([^"]+)"');
+ final displayPattern=RegExp(r'<display-name[^>]*>([\s\S]*?)</display-name>',caseSensitive:false);
  for(final entry in channelTags.allMatches(raw)){
    final id=idPattern.firstMatch(entry.group(1)??'')?.group(1)??'';
    final display=displayPattern.firstMatch(entry.group(2)??'')?.group(1)??'';
    final key=GuideNames.canonical(_decodeEntities(display.replaceAll(RegExp(r'<[^>]+>'),'')));
    if(id.isNotEmpty&&key.length>=2)aliases[id]='name:$key';
  }
- final pattern=RegExp(r'<programme\\s+([^>]+)>([\\s\\S]*?)</programme>',caseSensitive:false);
- final channel=RegExp(r'channel=["\\']([^"\\']+)["\\']');
- final from=RegExp(r'start=["\\']([^"\\']+)["\\']');
- final until=RegExp(r'stop=["\\']([^"\\']+)["\\']');
- final title=RegExp(r'<title[^>]*>([\\s\\S]*?)</title>',caseSensitive:false);
- final desc=RegExp(r'<desc[^>]*>([\\s\\S]*?)</desc>',caseSensitive:false);
+ final pattern=RegExp(r'<programme\s+([^>]+)>([\s\S]*?)</programme>',caseSensitive:false);
+ final channel=RegExp(r'channel="([^"]+)"');
+ final from=RegExp(r'start="([^"]+)"');
+ final until=RegExp(r'stop="([^"]+)"');
+ final title=RegExp(r'<title[^>]*>([\s\S]*?)</title>',caseSensitive:false);
+ final desc=RegExp(r'<desc[^>]*>([\s\S]*?)</desc>',caseSensitive:false);
  final now=DateTime.now();
  for(final match in pattern.allMatches(raw)){
    if(result.length>=180000)break;
