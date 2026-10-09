@@ -23,7 +23,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV3",false)){
     // Prior versions auto-enabled strict mode for English-only libraries,
@@ -104,13 +104,10 @@ public class MainActivity extends Activity {
 
  void start(){
   if(store.hasLibrary()){
-   loadingScreen("WELCOME BACK","Preparing your entertainment library");
-   io.execute(()->{
-    try{
-     int total=store.count("live")+store.count("movie")+store.count("series");
-     runOnUiThread(()->{if(!isDestroyed()){shell();home();}});
-    }catch(Exception e){runOnUiThread(()->{if(!isDestroyed()){toast("Catalog needs refreshing");restoreAccountOrLogin();}});}
-   });
+   // The local catalog is already indexed. Never block startup on a network
+   // EPG refresh or COUNT(*) across a six-figure provider collection.
+   shell();
+   home();
   }else restoreAccountOrLogin();
  }
  void restoreAccountOrLogin(){
@@ -345,55 +342,87 @@ public class MainActivity extends Activity {
  void home(){
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="home";refreshSidebar();
-  scheduleGuideSync(false,true);
   final int token=++browseToken;
-  body.removeAllViews();
-  body.addView(kicker("PREPARING YOUR DISCOVER PAGE"));
-  final Set<String> h=new HashSet<>(hidden),c=new HashSet<>(categories),
+  final Set<String> h=new HashSet<>(hidden),cats=new HashSet<>(categories),
       fav=new HashSet<>(favorites),langs=new HashSet<>(allowed),
-      manual=new HashSet<>(shown),manualGroups=new HashSet<>(shownCategories);
+      manual=new HashSet<>(shown),groups=new HashSet<>(shownCategories);
   final boolean strict=hideUnknown;
+  body.removeAllViews();
+  subtitle.setText("●  READY TO BROWSE");
+  // Render the entire interactive shell immediately. Catalog data is
+  // filled asynchronously shelf-by-shelf; no provider API calls on launch.
+  ScrollView scroller=new ScrollView(this);
+  scroller.setVerticalScrollBarEnabled(false);
+  scroller.setFillViewport(false);
+  scroller.setClipToPadding(false);scroller.setClipChildren(false);
+  body.addView(scroller,new LinearLayout.LayoutParams(-1,-1));
+  LinearLayout feed=column();feed.setPadding(dp(6),0,dp(9),dp(24));
+  scroller.addView(feed,new ScrollView.LayoutParams(-1,-2));
+  FrameLayout heroHolder=new FrameLayout(this);
+  feed.addView(heroHolder,new LinearLayout.LayoutParams(-1,dp(tv().heroHeight)));
+  heroHolder.addView(homeHero(null),new FrameLayout.LayoutParams(-1,-1));
+  quickCategories(feed);
+  LinearLayout liveArea=column(),movieArea=column(),seriesArea=column();
+  feed.addView(liveArea);feed.addView(movieArea);feed.addView(seriesArea);
+  showShelfPlaceholder(liveArea,"LIVE RIGHT NOW");
+  showShelfPlaceholder(movieArea,"MOVIES TO EXPLORE");
+  showShelfPlaceholder(seriesArea,"YOUR NEXT TV OBSESSION");
+  // Queue the smallest useful catalog queries first, not a full import.
+  fetchHomeShelf(token,"live","LIVE RIGHT NOW",liveArea,
+      h,cats,fav,langs,strict,manual,groups,null);
+  fetchHomeShelf(token,"movie","MOVIES TO EXPLORE",movieArea,
+      h,cats,fav,langs,strict,manual,groups,heroHolder);
+  fetchHomeShelf(token,"series","YOUR NEXT TV OBSESSION",seriesArea,
+      h,cats,fav,langs,strict,manual,groups,null);
+  // Only after the UI is usable may EPG refresh start. One debounce per Activity.
+  if(pendingGuideUpdate!=null)uiHandler.removeCallbacks(pendingGuideUpdate);
+  pendingGuideUpdate=()->{
+   if(!isDestroyed() && "home".equals(screen) && !loading && playbackScreen==null)
+    scheduleGuideSync(false,true);
+  };
+  uiHandler.postDelayed(pendingGuideUpdate,90000L);
+ }
+ void showShelfPlaceholder(LinearLayout area,String title){
+  area.addView(headline(title,20,Color.WHITE));
+  TextView status=text("Opening your collection…",14);
+  status.setTextColor(MUTED);area.addView(status);
+ }
+ void fetchHomeShelf(int token,String type,String title,LinearLayout target,
+                     Set<String> h,Set<String> categoriesSnapshot,
+                     Set<String> favoritesSnapshot,Set<String> languagesSnapshot,
+                     boolean strict,Set<String> restored,Set<String> restoredGroups,
+                     FrameLayout hero){
   io.execute(()->{
+   if(token!=browseToken || isDestroyed())return;
    try{
-    LibraryStore.Page live=store.page("live","All","",false,false,h,c,fav,langs,strict,
-       manual,manualGroups,0,12);
-    LibraryStore.Page movies=store.page("movie","All","",false,false,h,c,fav,langs,strict,
-       manual,manualGroups,0,12);
-    LibraryStore.Page series=store.page("series","All","",false,false,h,c,fav,langs,strict,
-       manual,manualGroups,0,12);
+    LibraryStore.Page page=store.page(type,"All","",false,false,h,categoriesSnapshot,
+      favoritesSnapshot,languagesSnapshot,strict,restored,restoredGroups,0,12);
     runOnUiThread(()->{
-     if(isDestroyed()||token!=browseToken||!screen.equals("home"))return;
-     body.removeAllViews();
-     subtitle.setText("●  YOUR LIBRARY IS READY");
-     ScrollView scroller=new ScrollView(this);
-     scroller.setVerticalScrollBarEnabled(false);
-     scroller.setFillViewport(false);
-     scroller.setClipToPadding(false);scroller.setClipChildren(false);
-     body.addView(scroller,new LinearLayout.LayoutParams(-1,-1));
-     LinearLayout feed=column();feed.setPadding(dp(6),0,dp(9),dp(24));
-     scroller.addView(feed,new ScrollView.LayoutParams(-1,-2));
-     LibraryCore.Item featured=null;
-     for(LibraryCore.Item i:movies.rows){
-      if(i.artwork!=null&&i.artwork.startsWith("http")){featured=i;break;}
+     if(isDestroyed() || token!=browseToken || !"home".equals(screen))return;
+     target.removeAllViews();
+     homeShelf(target,title,type,page.rows);
+     if(hero!=null && !page.rows.isEmpty()){
+      LibraryCore.Item feature=page.rows.get(0);
+      for(LibraryCore.Item item:page.rows){
+       if(item.artwork!=null && item.artwork.startsWith("http")){
+        feature=item;break;
+       }
+      }
+      hero.removeAllViews();
+      hero.addView(homeHero(feature),new FrameLayout.LayoutParams(-1,-1));
      }
-     if(featured==null&&!movies.rows.isEmpty())featured=movies.rows.get(0);
-     feed.addView(homeHero(featured));
-     quickCategories(feed);
-     homeShelf(feed,"LIVE RIGHT NOW","live",live.rows);
-     homeShelf(feed,"MOVIES TO EXPLORE","movie",movies.rows);
-     homeShelf(feed,"YOUR NEXT TV OBSESSION","series",series.rows);
     });
-   }catch(Exception e){
+   }catch(Exception error){
     runOnUiThread(()->{
-     if(isDestroyed()||token!=browseToken)return;
-     body.removeAllViews();
-     body.addView(headline("Your library could not load.",24,Color.WHITE));
-     body.addView(text("Please try refreshing the connection.",16));
-     body.addView(button("RETRY",this::home));
+     if(isDestroyed() || token!=browseToken || !"home".equals(screen))return;
+     target.removeAllViews();
+     target.addView(text(title+" is temporarily unavailable.",16));
+     target.addView(button("RETRY",this::home));
     });
    }
   });
  }
+
  View homeHero(LibraryCore.Item selectedFeature){
   final LibraryCore.Item feature=selectedFeature;
   TvLayout dim=tv();
@@ -1870,6 +1899,7 @@ public class MainActivity extends Activity {
  }
  @Override protected void onDestroy(){
   generation++;browseToken++;
+  if(pendingGuideUpdate!=null)uiHandler.removeCallbacks(pendingGuideUpdate);
   release();io.shutdownNow();posters.close();epgRefreshIO.shutdownNow();shortEpgIO.shutdownNow();store.close();epg.close();
   super.onDestroy();
  }
