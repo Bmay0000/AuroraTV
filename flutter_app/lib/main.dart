@@ -263,11 +263,20 @@ class _AuroraShellState extends State<AuroraShell>{
     if(src==null)return;
     if(item.kind==MediaKind.series&&!item.id.startsWith('xtream:episode:')){
       try{
-        final episodes=await provider.episodes(src,item);
+        // A title can have several provider series IDs. The highest-ranked
+        // rendition sometimes has an empty episode listing, so try alternates.
+        final candidates=await db.seriesCandidates(item.cleanTitle,max:8);
+        final attempts=<MediaEntry>[item,...candidates.where((e)=>e.id!=item.id)];
+        for(final candidate in attempts){
+          List<MediaEntry> episodes;
+          try{episodes=await provider.episodes(src,candidate);}
+          catch(_){continue;}
+          if(!mounted)return;
+          if(episodes.isNotEmpty){_episodes(candidate,episodes);return;}
+        }
         if(!mounted)return;
-        if(episodes.isNotEmpty){_episodes(item,episodes);return;}
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content:Text('No episodes returned by your IPTV provider for this series.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content:Text('No playable episodes found across ${attempts.length} matching IPTV series entries.')));
       }catch(_){
         if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content:Text('Unable to load episodes from your IPTV provider.')));
