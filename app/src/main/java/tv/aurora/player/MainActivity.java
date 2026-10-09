@@ -56,6 +56,7 @@ public class MainActivity extends Activity {
  int beginNavigationRead(){
   int current=++browseToken;
   navigationStartedAt=SystemClock.elapsedRealtime();
+  if(posters!=null)posters.beginSection();
   ExecutorService obsolete=catalogReadIO;
   catalogReadIO=Executors.newFixedThreadPool(2);
   obsolete.shutdownNow();
