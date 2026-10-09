@@ -1325,7 +1325,7 @@ public class MainActivity extends Activity {
   final ImageView old=cinematicBackdrop;
   for(int i=parent.getChildCount()-1;i>=0;i--){
    View child=parent.getChildAt(i);
-   if(child instanceof ImageView&&child!=old)parent.removeView(child);
+   if(child instanceof ImageView&&child!=old&&child!=cinematicPoster)parent.removeView(child);
   }
   if(url==null||url.isEmpty()){
    if(old!=null)old.animate().alpha(0f).setDuration(160).start();
@@ -2612,15 +2612,27 @@ public class MainActivity extends Activity {
 
  EditText field(LinearLayout form,String hint,boolean secret){EditText e=new EditText(this);e.setHint(hint);e.setTextColor(Color.WHITE);e.setHintTextColor(0xff9caebe);e.setBackgroundTintList(ColorStateList.valueOf(ACCENT));e.setSingleLine();if(secret)e.setInputType(129);form.addView(e);return e;}
 
+ void trailerSettings(){
+  final String[] choices={"Off (best performance)","On · after 3 seconds of focus"};
+  int which=prefs.getBoolean("cinema.trailers",false)?1:0;
+  new AlertDialog.Builder(this).setTitle("CINEMATIC TRAILER PREVIEWS")
+   .setSingleChoiceItems(choices,which,(dialog,index)->{
+    prefs.edit().putBoolean("cinema.trailers",index==1).apply();
+    if(index==0)stopCinematicTrailer();
+    dialog.dismiss();
+   }).setNegativeButton("CANCEL",null).show();
+ }
  void connect(){
   new AlertDialog.Builder(this).setTitle("MANAGE YOUR CONNECTION")
-   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Smart EPG settings","Playback diagnostics","Library status & import speed","Display density / poster size","Daily Top 20 / TMDB key","Disconnect and clear this device"},(d,n)->{
+   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Smart EPG settings","Playback diagnostics","Library status & import speed","Display density / poster size","Daily Top 20 / TMDB key","Cinematic trailer previews","Disconnect and clear this device"},(d,n)->{
     if(n==0){loginScreen(false);return;}
     if(n==1){refresh();return;}
     if(n==2){guideSettings();return;}
     if(n==3){showPlaybackDiagnostics();return;}
     if(n==4){showLibraryStatus();return;}
     if(n==5){chooseDisplayDensity();return;}
+    if(n==6){trendingSettings();return;}
+    if(n==7){trailerSettings();return;}
     new AlertDialog.Builder(this).setTitle("Remove connected provider?")
      .setMessage("This deletes the imported library, saved login and filters from this device.")
      .setPositiveButton("Disconnect",(a,b)->{
