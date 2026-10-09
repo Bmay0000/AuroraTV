@@ -18,7 +18,7 @@ public final class BackdropCatalog {
   if(key==null||key.trim().isEmpty()||title==null||title.isEmpty())return "";
   String clean=title.replaceFirst("(?i)^(?:EN|ENG|US|UK|AU|NZ)\\s*[-|:]\\s*","")
      .replaceFirst("(?i)\\s*\\(\\d{4}\\)\\s*$","");
-  String id=LibraryCore.key((series?"tv":"movie")+"|"+clean+"|"+year);
+  String id=LibraryCore.key((series?"tv":"movie")+"|"+clean+"|"+year+"|"+apiKey);
   SharedPreferences prefs=ctx.getSharedPreferences("aurora_backdrops",Context.MODE_PRIVATE);
   String cached=prefs.getString(id,null);
   if(cached!=null)return cached;
