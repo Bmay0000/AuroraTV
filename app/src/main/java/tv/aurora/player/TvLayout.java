@@ -19,7 +19,8 @@ public final class TvLayout {
         columnGap=clamp((int)Math.round(w*.006),5,11);
         sidebar=0; // Top navigation uses the full usable screen width.
         int usable=Math.max(300,w-2*marginX-columnGap-12);
-        posterColumns=w<650?4:w<850?5:w<1050?7:w<1450?8:w<1900?10:12;
+        int nominal=w<650?4:w<850?5:w<1050?7:w<1450?8:w<1900?10:12;
+        posterColumns=h<470?Math.min(12,nominal+1):nominal;
         posterWidth=clamp((usable-(posterColumns+1)*columnGap)/posterColumns,90,165);
         posterHeight=(int)Math.round(posterWidth*1.34);
         posterCardHeight=posterHeight+44;
