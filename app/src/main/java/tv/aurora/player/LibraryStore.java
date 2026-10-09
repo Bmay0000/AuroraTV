@@ -25,13 +25,15 @@ import javax.crypto.spec.SecretKeySpec;
  */
 public final class LibraryStore extends SQLiteOpenHelper {
     private static final String DATABASE = "aurora_catalog.db";
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
     private static final String COLUMNS =
             "(row_id INTEGER PRIMARY KEY, item_id TEXT NOT NULL UNIQUE, " +
             "name TEXT NOT NULL, category TEXT NOT NULL, type TEXT NOT NULL, " +
-            "epg TEXT, language TEXT, url BLOB NOT NULL, artwork TEXT)";
+            "epg TEXT, language TEXT, url BLOB NOT NULL, artwork TEXT, " +
+            "release_year INTEGER NOT NULL DEFAULT 0, added_at INTEGER NOT NULL DEFAULT 0, " +
+            "rating REAL NOT NULL DEFAULT 0)";
     private static final String FIELDS =
-            "item_id,name,category,type,epg,language,artwork";
+            "item_id,name,category,type,epg,language,artwork,release_year,added_at,rating";
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final Context context;
@@ -50,11 +52,18 @@ public final class LibraryStore extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE entries " + COLUMNS);
         db.execSQL("CREATE INDEX entry_type_row ON entries(type, row_id)");
         db.execSQL("CREATE INDEX entry_type_category ON entries(type,category,row_id)");
+        db.execSQL("CREATE INDEX entry_type_release ON entries(type,release_year DESC,added_at DESC)");
     }
 
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // A future migration must preserve the user's imported library.
-        throw new IllegalStateException("Unsupported catalog version");
+        // Add lightweight metadata, preserving existing libraries and logins.
+        // Old titles can additionally infer a year from an explicit title tag.
+        if(oldVersion<2){
+            db.execSQL("ALTER TABLE entries ADD COLUMN release_year INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE entries ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE entries ADD COLUMN rating REAL NOT NULL DEFAULT 0");
+            db.execSQL("CREATE INDEX IF NOT EXISTS entry_type_release ON entries(type,release_year DESC,added_at DESC)");
+        }
     }
 
     public boolean hasLibrary() {
@@ -118,6 +127,11 @@ public final class LibraryStore extends SQLiteOpenHelper {
                 c.getString(0), c.getString(1), c.getString(2), "",
                 c.getString(3), c.getString(4), c.getString(5));
         value.artwork = c.isNull(6) ? "" : c.getString(6);
+        value.releaseYear=c.getInt(7);
+        value.addedAt=c.getLong(8);
+        value.rating=c.getDouble(9);
+        if(value.releaseYear==0 && ("movie".equals(value.type)||"series".equals(value.type)))
+            value.releaseYear=MediaDiscovery.yearFromTitle(value.name,MediaDiscovery.currentYear());
         return value;
     }
 
@@ -313,8 +327,8 @@ public final class LibraryStore extends SQLiteOpenHelper {
                 }
                 insert=database.compileStatement(
                     "INSERT OR REPLACE INTO "+(append?"entries":"staging")+
-                    "(item_id,name,category,type,epg,language,url,artwork)" +
-                    " VALUES (?,?,?,?,?,?,?,?)");
+                    "(item_id,name,category,type,epg,language,url,artwork,release_year,added_at,rating)" +
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?)");
             } catch(Exception error) {
                 database.endTransaction();
                 throw error;
@@ -352,6 +366,12 @@ public final class LibraryStore extends SQLiteOpenHelper {
             insert.bindBlob(7,XtreamReference.isReference(value)?
                 value.getBytes(StandardCharsets.UTF_8):encryptedUrl(value));
             bind(8, item.artwork);
+            int year=item.releaseYear;
+            if(year==0 && ("movie".equals(item.type)||"series".equals(item.type)))
+                year=MediaDiscovery.yearFromTitle(item.name,MediaDiscovery.currentYear());
+            insert.bindLong(9,year);
+            insert.bindLong(10,Math.max(0,item.addedAt));
+            insert.bindDouble(11,item.rating);
             insert.executeInsert();
             count++;
         }
@@ -365,6 +385,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
                 database.execSQL("ALTER TABLE staging RENAME TO entries");
                 database.execSQL("CREATE INDEX entry_type_row ON entries(type,row_id)");
                 database.execSQL("CREATE INDEX entry_type_category ON entries(type,category,row_id)");
+                database.execSQL("CREATE INDEX entry_type_release ON entries(type,release_year DESC,added_at DESC)");
             }
             database.setTransactionSuccessful();
             database.endTransaction();
