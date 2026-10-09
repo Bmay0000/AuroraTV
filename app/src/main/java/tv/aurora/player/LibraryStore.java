@@ -304,12 +304,14 @@ public final class LibraryStore extends SQLiteOpenHelper {
         sql.append(" OR (release_year=0 AND (");
         for(int y=year;y>=year-2;y--){
             if(y!=year)sql.append(" OR ");
-            sql.append("name LIKE ? OR name LIKE ? OR name LIKE ? OR name LIKE ?");
+            sql.append("name LIKE ? OR name LIKE ? OR name LIKE ? OR name LIKE ? OR name LIKE ? OR name LIKE ?");
             String str=Integer.toString(y);
             arguments.add("% ("+str+")");
             arguments.add("% ["+str+"]");
+            arguments.add("% "+str);
             arguments.add("% ("+str+") HD");
             arguments.add("% ["+str+"] HD");
+            arguments.add("% "+str+" HD");
         }
         sql.append("))) ORDER BY release_year DESC,rating DESC,added_at DESC,row_id DESC LIMIT 900");
         List<LibraryCore.Item> english=new ArrayList<>();
