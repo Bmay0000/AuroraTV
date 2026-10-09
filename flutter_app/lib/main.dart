@@ -863,7 +863,7 @@ class _GuideScreenState extends State<GuideScreen>{
    if(focused?.id==item.id)return;
    setState(()=>focused=item);
    debounce?.cancel();preview?.dispose();preview=null;
-   if(!previewEnabled||widget.source==null)return;
+   if(!previewEnabled||widget.source==null||item.id.startsWith('lineup:'))return;
    debounce=Timer(const Duration(milliseconds:1400),()async{
      try{
        final video=VideoPlayerController.networkUrl(Uri.parse(widget.source!.playback(item)));
@@ -889,7 +889,7 @@ class _GuideScreenState extends State<GuideScreen>{
          Text(_currentProgram(selected,now)?.title??'Live channels · programme information as available',
            maxLines:1,overflow:TextOverflow.ellipsis,
            style:const TextStyle(fontSize:16,color:C.ink)),
-         Text(_currentProgram(selected,now)?.description??'Navigate with your remote. Select a channel to watch.',
+         Text(selected?.id.startsWith('lineup:')==true?'This reference channel is not included in your provider':(_currentProgram(selected,now)?.description??'Navigate with your remote. Select a channel to watch.'),
            maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:12,color:C.secondary)),
        ])),
        const SizedBox(width:16),
