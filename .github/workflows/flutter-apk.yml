@@ -42,7 +42,14 @@ jobs:
           text=text.replace('<application', '<uses-feature android:name="android.software.leanback" android:required="false" />\n    <application',1)
           text=text.replace('android:label="aurora_tv"',
             'android:label="AuroraTV Flutter 2.0"')
+          text=text.replace('<activity', '<activity android:supportsPictureInPicture="true" android:resizeableActivity="true"',1)
           p.write_text(text)
+          # Keep platform bridge source versioned instead of generated.
+          native=Path('native/MainActivity.kt')
+          if native.exists():
+              target=Path('android/app/src/main/kotlin/tv/aurora/aurora_tv/MainActivity.kt')
+              target.parent.mkdir(parents=True,exist_ok=True)
+              target.write_bytes(native.read_bytes())
           # Separate app ID until migration is validated on a real Fire TV.
           import re
           gradle=Path('android/app/build.gradle.kts')
