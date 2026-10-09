@@ -22,7 +22,7 @@ import androidx.media3.common.*;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
- ImageView cinematicBackdrop,cinematicIncoming; TextView cinematicTitle,cinematicSubtitle; FrameLayout cinematicArtwork; Runnable pendingCinematic; int cinematicRevision=0;
+ ImageView cinematicBackdrop,cinematicIncoming,cinematicPoster; LibraryCore.Item cinematicFocused; TextView cinematicTitle,cinematicSubtitle; FrameLayout cinematicArtwork; Runnable pendingCinematic; int cinematicRevision=0;
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
  LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false,browseAll=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";String guideSelectedId="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();final Map<String,GuideEngine.Slot> guideSlotCache=new java.util.concurrent.ConcurrentHashMap<>();final ExecutorService guideDirectoryIO=Executors.newSingleThreadExecutor();int guideCategorySequence=0;long guideSlotCacheAt=0;String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;long navigationStartedAt;int navigationMarkedToken=-1;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
@@ -1199,7 +1199,7 @@ public class MainActivity extends Activity {
  void clearCinematic(){
   cinematicRevision++;
   if(pendingCinematic!=null)uiHandler.removeCallbacks(pendingCinematic);
-  pendingCinematic=null;cinematicBackdrop=null;cinematicIncoming=null;
+  pendingCinematic=null;cinematicBackdrop=null;cinematicIncoming=null;cinematicPoster=null;cinematicFocused=null;
   cinematicArtwork=null;cinematicTitle=null;cinematicSubtitle=null;
  }
  /** A visible full-width cinematic discovery navigation row, not a modal menu. */
@@ -1228,18 +1228,26 @@ public class MainActivity extends Activity {
   hero.setBackground(rounded(0xff0c1b2b,12,0xff203746));
   hero.setClipToOutline(true);
   LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-1,
-    dp(TvLayout.clamp(m.heightDp/3,155,245)));
+    dp(TvLayout.clamp(m.heightDp*42/100,190,330)));
   size.bottomMargin=dp(9);
   feed.addView(hero,size);
   cinematicArtwork=hero;
   cinematicBackdrop=new ImageView(this);
   cinematicBackdrop.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-  cinematicBackdrop.setAlpha(.52f);
+  cinematicBackdrop.setAlpha(.85f);
   hero.addView(cinematicBackdrop,new FrameLayout.LayoutParams(-1,-1));
   View shade=new View(this);
   shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
     new int[]{0xff081321,0xf0081423,0x87081524,0x240b1724}));
   hero.addView(shade,new FrameLayout.LayoutParams(-1,-1));
+  // Portrait artwork remains portrait-sized on the right when a wide backdrop
+  // is missing; no giant cropped faces pretending to be film backdrops.
+  cinematicPoster=new ImageView(this);
+  cinematicPoster.setScaleType(ImageView.ScaleType.FIT_CENTER);
+  FrameLayout.LayoutParams posterSpace=new FrameLayout.LayoutParams(
+       dp(TvLayout.clamp(m.contentWidth()/4,120,245)),-1,Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+  posterSpace.rightMargin=dp(20);
+  hero.addView(cinematicPoster,posterSpace);
   LinearLayout info=column();info.setGravity(Gravity.CENTER_VERTICAL);
   info.setPadding(dp(22),dp(6),dp(8),dp(6));
   hero.addView(info,new FrameLayout.LayoutParams(
@@ -1256,6 +1264,22 @@ public class MainActivity extends Activity {
   cinematicSubtitle.setMaxLines(2);
   cinematicSubtitle.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicSubtitle);
+  LinearLayout controls=new LinearLayout(this);
+  LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(40));
+  actions.topMargin=dp(12);info.addView(controls,actions);
+  Button watch=button("▶  WATCH NOW",()->{
+   if(cinematicFocused!=null)showMediaDetails(cinematicFocused);
+  });
+  watch.setTextSize(12);
+  watch.setBackground(rounded(0xff127c74,8,ACCENT));
+  controls.addView(watch,new LinearLayout.LayoutParams(0,-1,1));
+  Button browseButton=button("BROWSE LIBRARY  →",()->{
+   section="series".equals(section)?"series":"movie";
+   category="All";query="";page=0;browseAll=true;browse();
+  });
+  browseButton.setTextSize(11);
+  LinearLayout.LayoutParams browsePos=new LinearLayout.LayoutParams(0,-1,1);
+  browsePos.leftMargin=dp(8);controls.addView(browseButton,browsePos);
  }
  /** Keep provider prefixes and stream quality tags out of customer-facing VOD labels. */
  String displayMediaName(LibraryCore.Item item){
@@ -1275,6 +1299,8 @@ public class MainActivity extends Activity {
    cinematicTitle.setText(displayMediaName(item));
    cinematicTitle.setAlpha(.45f);
    cinematicTitle.animate().alpha(1f).setDuration(200).start();
+   cinematicFocused=item;
+   if(cinematicPoster!=null)posters.bind(cinematicPoster,item.artwork);
    cinematicSubtitle.setText((item.releaseYear>0?item.releaseYear+"  •  ":"")+
         ("series".equals(item.type)?"SERIES":"MOVIE")+"  •  YOUR LIBRARY");
    // A portrait poster must not be enlarged into a fake landscape backdrop.
