@@ -8,6 +8,9 @@ import java.security.MessageDigest;
 public final class LibraryCore {
  public static class Item {
   public String id,name,category,url,type,epgId,language,artwork="";
+   public int releaseYear;
+   public long addedAt;
+   public double rating;
   public Item(String id,String name,String category,String url,String type,String epgId,String language){
    this.id=id;this.name=name;this.category=category;this.url=url;this.type=type;this.epgId=epgId;this.language=language;
   }
