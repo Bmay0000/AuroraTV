@@ -17,7 +17,7 @@ public final class TvLayout {
         sidebar=clamp((int)Math.round(w*.155),136,232);
         navRow=clamp((int)Math.round(h*.081),43,62);
         columnGap=clamp((int)Math.round(w*.011),9,20);
-        int usable=Math.max(300,w-2*marginX-sidebar-columnGap-18);
+        int usable=Math.max(300,w-2*marginX-columnGap-18);
         posterWidth=clamp((int)Math.round(usable*.215),138,290);
         posterHeight=(int)Math.round(posterWidth*1.36);
         posterCardHeight=posterHeight+66;
@@ -32,7 +32,7 @@ public final class TvLayout {
     public static TvLayout of(int widthDp,int heightDp){
         return new TvLayout(Math.max(560,widthDp),Math.max(360,heightDp));
     }
-    public int contentWidth(){return Math.max(280,widthDp-2*marginX-sidebar-columnGap-18);}
+    public int contentWidth(){return Math.max(300,widthDp-2*marginX-columnGap-18);}
     public int guideWidth(){return guideChannel+guideNow+guideNext+guideAction+16;}
     public int headerHeight(){return clamp((int)Math.round(heightDp*.087),52,78);}
     public int headingSize(){return clamp((int)Math.round(widthDp*.031),25,39);}
