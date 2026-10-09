@@ -62,6 +62,7 @@ class _AuroraShellState extends State<AuroraShell>{
   final Map<MediaKind,List<String>> groups={};
   final Map<MediaKind,List<MediaEntry>> favorites={};
   List<MediaEntry> live=[];
+  List<MediaEntry> recentHistory=[];
   String channelGroup='North America';
   int selectedCategory=0;
   bool englishFirst=true;
@@ -90,6 +91,8 @@ class _AuroraShellState extends State<AuroraShell>{
       favorites[kind]=await db.list(kind,favorites:true,limit:60);
     }
     live=shelves[MediaKind.live]??[];
+    final prefs=await SharedPreferences.getInstance();
+    recentHistory=await db.byIds(prefs.getStringList('recent.ids')??[]);
     final picks=trends[MediaKind.movie]??[];
     final movies=shelves[MediaKind.movie]??[];
     final ranked=movies.where((e)=>e.likelyEnglish&&e.rating>=6.0&&e.artwork.isNotEmpty).toList()
@@ -183,7 +186,17 @@ class _AuroraShellState extends State<AuroraShell>{
     await db.mark(item.id,favorite:hide?null:!item.favorite,hidden:hide?true:null);
     await _reload();if(mounted)setState((){});
   }
+  Future<void> _recordHistory(MediaEntry item) async {
+    if(item.kind==MediaKind.live||item.id.startsWith('xtream:episode:'))return;
+    final prefs=await SharedPreferences.getInstance();
+    final ids=prefs.getStringList('recent.ids')??[];
+    ids.remove(item.id);ids.insert(0,item.id);
+    await prefs.setStringList('recent.ids',ids.take(60).toList());
+    recentHistory=await db.byIds(ids.take(60).toList());
+    if(mounted)setState((){});
+  }
   void _open(MediaEntry item) async{
+    await _recordHistory(item);
     final src=source;
     if(src==null)return;
     if(item.kind==MediaKind.series&&!item.id.startsWith('xtream:episode:')){
@@ -380,7 +393,9 @@ class _AuroraShellState extends State<AuroraShell>{
             recent,mainKind),
         if(home)_shelf('TV SERIES FOR YOU',
           shelves[MediaKind.series]??[],MediaKind.series),
-        if(home)_shelf('CONTINUE WATCHING / MY LIST',
+        if(home&&recentHistory.isNotEmpty)_shelf('CONTINUE WATCHING',
+          recentHistory,MediaKind.movie),
+        if(home)_shelf('MY LIST',
           [...?favorites[MediaKind.movie],...?favorites[MediaKind.series]],MediaKind.movie),
         if(!home)for(final genre in (groups[mainKind]??[]).take(8))
           _genreShelf(mainKind,genre),
