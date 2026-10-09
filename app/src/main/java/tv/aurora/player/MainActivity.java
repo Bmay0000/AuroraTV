@@ -23,7 +23,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false,browseAll=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";String guideSelectedId="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false,browseAll=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";String guideSelectedId="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;long navigationStartedAt;int navigationMarkedToken=-1;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV3",false)){
     // Prior versions auto-enabled strict mode for English-only libraries,
@@ -55,10 +55,17 @@ public class MainActivity extends Activity {
   * their cursors. Playback, provider import and EPG have separate executors. */
  int beginNavigationRead(){
   int current=++browseToken;
+  navigationStartedAt=SystemClock.elapsedRealtime();
   ExecutorService obsolete=catalogReadIO;
   catalogReadIO=Executors.newFixedThreadPool(2);
   obsolete.shutdownNow();
   return current;
+ }
+ void markLoad(String sectionName,int token){
+  if(token!=browseToken||navigationMarkedToken==token)return;
+  navigationMarkedToken=token;
+  long elapsed=Math.max(0,SystemClock.elapsedRealtime()-navigationStartedAt);
+  prefs.edit().putLong("nav.last."+sectionName+".ms",elapsed).apply();
  }
  int dp(int v){return (int)(v*getResources().getDisplayMetrics().density);}
  TvLayout tv(){
@@ -460,6 +467,7 @@ public class MainActivity extends Activity {
     LibraryStore.RecentMovies result=store.recentMovies(h,hc,fav,langs,strict,manual,groups);
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||(!"home".equals(screen)&&!"discover".equals(screen)))return;
+     markLoad("home".equals(screen)?"home":"movie",token);
      recentArea.removeAllViews();
      if(!result.english.isEmpty())
       homeShelf(recentArea,"NEW & RECENT • ENGLISH MOVIES","movie",result.english);
@@ -491,6 +499,7 @@ public class MainActivity extends Activity {
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||(!"home".equals(screen)&&!"discover".equals(screen)))return;
      if(matches.isEmpty())return;
+     if("discover".equals(screen))markLoad(type,token);
      homeShelf(target,label,type,matches);
     });
    }catch(Exception ignored){}
@@ -1154,6 +1163,7 @@ public class MainActivity extends Activity {
     }
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||!screen.equals("browse"))return;
+     markLoad(type,token);
      items=result.rows;guideSummary=brief;
      body.removeAllViews();
      LinearLayout heading=new LinearLayout(this);
@@ -1424,6 +1434,7 @@ public class MainActivity extends Activity {
         filter,search,h,hc,fav,langs,strict,manual,groups);
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||!screen.equals("guide"))return;
+     markLoad("guide",token);
      TvLayout metrics=tv();
      body.removeAllViews();
      // One compact toolbar, no separate hero/selection area or pagination.
@@ -2366,7 +2377,15 @@ public class MainActivity extends Activity {
     }
     long totalMs=prefs.getLong("import.total_ms",0);
     if(totalMs>0)report.append("\nFull catalog import: ").append(totalMs/1000d).append(" seconds");
-    report.append("\n\nNew imports complete Live TV, Movies and TV Shows together in an atomic update. Subsequent launches use the saved SQLite catalog. Provider network latency is outside the app's control.");
+    report.append("\n\nSection opening (most recent successful load):");
+    for(String destination:new String[]{"home","guide","movie","series","live"}){
+     long elapsed=prefs.getLong("nav.last."+destination+".ms",-1);
+     if(elapsed>=0)
+      report.append("\n").append(destination.toUpperCase(Locale.ROOT))
+        .append(": ").append(elapsed).append(" ms");
+    }
+    report.append("\n").append(store.cacheDiagnostics());
+    report.append("\n\nScreen timings measure catalog data availability; posters and the optional live preview load separately. Importing is only necessary when changing or refreshing the provider.");
    }catch(Exception e){report.append("Catalog diagnostics unavailable: "+e.getClass().getSimpleName());}
    runOnUiThread(()->{
     if(isDestroyed())return;
