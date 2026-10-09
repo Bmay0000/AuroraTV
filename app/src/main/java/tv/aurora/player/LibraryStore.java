@@ -282,9 +282,12 @@ public final class LibraryStore extends SQLiteOpenHelper {
     public static final class RecentMovies {
         public final List<LibraryCore.Item> english;
         public final List<LibraryCore.Item> unverified;
-        RecentMovies(List<LibraryCore.Item> english,List<LibraryCore.Item> unverified){
+        public final List<LibraryCore.Item> international;
+        RecentMovies(List<LibraryCore.Item> english,List<LibraryCore.Item> unverified,
+                List<LibraryCore.Item> international){
             this.english=english;
             this.unverified=unverified;
+            this.international=international;
         }
     }
 
@@ -316,6 +319,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
         sql.append("))) ORDER BY release_year DESC,rating DESC,added_at DESC,row_id DESC LIMIT 900");
         List<LibraryCore.Item> english=new ArrayList<>();
         List<LibraryCore.Item> unknown=new ArrayList<>();
+        List<LibraryCore.Item> international=new ArrayList<>();
         try(Cursor cursor=getReadableDatabase().rawQuery(sql.toString(),
                   arguments.toArray(new String[0]))){
             while(cursor.moveToNext()){
@@ -325,7 +329,8 @@ public final class LibraryStore extends SQLiteOpenHelper {
                 if(!LibraryCore.visible(candidate,hidden,hiddenCategories,favorites,
                         allowed,hideUnknown,visibleItems,visibleCategories))continue;
                 if(MediaDiscovery.confirmedEnglish(candidate))english.add(candidate);
-                else if(!MediaDiscovery.knownForeign(candidate))unknown.add(candidate);
+                else if(MediaDiscovery.knownForeign(candidate))international.add(candidate);
+                else unknown.add(candidate);
             }
         }
         java.util.Comparator<LibraryCore.Item> ranking=(a,b)->{
@@ -342,9 +347,11 @@ public final class LibraryStore extends SQLiteOpenHelper {
         };
         english.sort(ranking);
         unknown.sort(ranking);
-        if(english.size()>18)english=new ArrayList<>(english.subList(0,18));
-        if(unknown.size()>18)unknown=new ArrayList<>(unknown.subList(0,18));
-        return new RecentMovies(english,unknown);
+        international.sort(ranking);
+        if(english.size()>24)english=new ArrayList<>(english.subList(0,24));
+        if(unknown.size()>24)unknown=new ArrayList<>(unknown.subList(0,24));
+        if(international.size()>24)international=new ArrayList<>(international.subList(0,24));
+        return new RecentMovies(english,unknown,international);
     }
 
     public static final class GenreCategory {
@@ -379,6 +386,88 @@ public final class LibraryStore extends SQLiteOpenHelper {
             return en!=0?en:Integer.compare(b.count,a.count);
         });
         return categories;
+    }
+
+    /** Streaming channel directory: one catalog scan; sort matched network
+     *  names in a familiar NA satellite order, then other provider channels.
+     *  The guide scrolls these rows without paging controls. */
+    public List<LibraryCore.Item> channelDirectory(String tab,String query,
+          Set<String> hidden,Set<String> hiddenCategories,Set<String> favorites,
+          Set<String> allowed,boolean hideUnknown,Set<String> manual,
+          Set<String> restoredCategories){
+        List<LibraryCore.Item> matches=new ArrayList<>();
+        String pattern=query==null?"":query.toLowerCase(java.util.Locale.ROOT).trim();
+        try(Cursor cursor=getReadableDatabase().rawQuery(
+                "SELECT "+FIELDS+" FROM entries WHERE type='live' ORDER BY row_id",null)){
+            while(cursor.moveToNext()){
+                if(Thread.currentThread().isInterrupted())break;
+                LibraryCore.Item channel=item(cursor);
+                if(!LibraryCore.visible(channel,hidden,hiddenCategories,favorites,
+                    allowed,hideUnknown,manual,restoredCategories))continue;
+                if("My Channels".equals(tab)&&!favorites.contains(channel.id))continue;
+                if(!"My Channels".equals(tab)&&!ChannelDiscovery.matchesGuideSection(channel,tab))continue;
+                if(!pattern.isEmpty()&&!channel.name.toLowerCase(java.util.Locale.ROOT).contains(pattern)
+                        &&!channel.category.toLowerCase(java.util.Locale.ROOT).contains(pattern))continue;
+                matches.add(channel);
+            }
+        }
+        // Cache expensive normalization and language decisions once per item.
+        java.util.HashMap<String,Integer> ranks=new java.util.HashMap<>(matches.size()*2+1);
+        java.util.HashMap<String,String> names=new java.util.HashMap<>(matches.size()*2+1);
+        for(LibraryCore.Item channel:matches){
+            ranks.put(channel.id,ChannelDiscovery.priority(channel));
+            names.put(channel.id,ChannelDiscovery.canonicalName(channel.name));
+        }
+        matches.sort((a,b)->{
+            int score=Integer.compare(ranks.get(a.id),ranks.get(b.id));
+            if(score!=0)return score;
+            return names.get(a.id).compareTo(names.get(b.id));
+        });
+        return matches;
+    }
+
+    /** Prioritize real English media; unknown is a separate lower-priority
+     *  shelf, never mislabeled as English. Ranked by provider year/rating/date. */
+    public List<LibraryCore.Item> featuredEnglish(String type,int max,
+          Set<String> hidden,Set<String> hiddenCategories,Set<String> favorites,
+          Set<String> allowed,boolean hideUnknown,Set<String> manual,
+          Set<String> restoredCategories){
+        List<LibraryCore.Item> results=new ArrayList<>();
+        String sql="SELECT "+FIELDS+" FROM entries WHERE type=? "+
+            "ORDER BY release_year DESC,added_at DESC,row_id DESC LIMIT 6500";
+        try(Cursor c=getReadableDatabase().rawQuery(sql,new String[]{type})){
+            while(c.moveToNext()){
+                if(Thread.currentThread().isInterrupted())break;
+                LibraryCore.Item entry=item(c);
+                if(!MediaDiscovery.confirmedEnglish(entry))continue;
+                if(!LibraryCore.visible(entry,hidden,hiddenCategories,favorites,
+                    allowed,hideUnknown,manual,restoredCategories))continue;
+                results.add(entry);
+                if(results.size()>=max)break;
+            }
+        }
+        return results;
+    }
+
+    public List<LibraryCore.Item> featuredInternational(String type,int max,
+          Set<String> hidden,Set<String> hiddenCategories,Set<String> favorites,
+          Set<String> allowed,boolean hideUnknown,Set<String> manual,
+          Set<String> restoredCategories){
+        List<LibraryCore.Item> results=new ArrayList<>();
+        try(Cursor cursor=getReadableDatabase().rawQuery(
+            "SELECT "+FIELDS+" FROM entries WHERE type=? ORDER BY release_year DESC,added_at DESC,row_id DESC LIMIT 8000",
+            new String[]{type})){
+            while(cursor.moveToNext()){
+                if(Thread.currentThread().isInterrupted())break;
+                LibraryCore.Item entry=item(cursor);
+                if(!MediaDiscovery.knownForeign(entry))continue;
+                if(!LibraryCore.visible(entry,hidden,hiddenCategories,favorites,
+                    allowed,hideUnknown,manual,restoredCategories))continue;
+                results.add(entry);
+                if(results.size()>=max)break;
+            }
+        }
+        return results;
     }
 
     /** URLs are only decrypted when a user actually opens a title. */
