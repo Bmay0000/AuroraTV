@@ -12,11 +12,22 @@ public final class LibraryCore {
    this.id=id;this.name=name;this.category=category;this.url=url;this.type=type;this.epgId=epgId;this.language=language;
   }
  }
- public static String key(String text){
-  try{
-   byte[] b=MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));
-   StringBuilder s=new StringBuilder();for(byte x:b)s.append(String.format("%02x",x));return s.toString();
-  }catch(Exception e){throw new IllegalStateException(e);}
+ public private static final char[] HEX="0123456789abcdef".toCharArray();
+ private static final ThreadLocal<MessageDigest> SHA256=ThreadLocal.withInitial(()->{
+  try{return MessageDigest.getInstance("SHA-256");}
+  catch(Exception e){throw new IllegalStateException(e);}
+ });
+ static String key(String text){
+  MessageDigest md=SHA256.get();
+  md.reset();
+  byte[] b=md.digest(text.getBytes(StandardCharsets.UTF_8));
+  char[] result=new char[b.length*2];
+  for(int n=0;n<b.length;n++){
+   int x=b[n]&0xff;
+   result[n*2]=HEX[x>>>4];
+   result[n*2+1]=HEX[x&15];
+  }
+  return new String(result);
  }
  static String attr(String line,String key){
   Matcher m=Pattern.compile("(?:^|\\s)"+Pattern.quote(key)+"=\"([^\"]*)\"").matcher(line);
