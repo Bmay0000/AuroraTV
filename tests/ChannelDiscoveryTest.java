@@ -51,6 +51,47 @@ public class ChannelDiscoveryTest{
   check(!ChannelDiscovery.matchesGuideSection(persian,"English"),"No foreign in English");
   check(LibraryCore.language(persian).equals("other"),"IR category/title detected as foreign");
   check(LibraryCore.language(channel("Movie","IR - MOVIES","")).equals("other"),"IR region clue");
+  // Stress an actual provider pattern: 1,200 numbered ESPN+ events mixed
+  // with multiple HD/FHD/4K renditions of the *same* ESPN network.
+  List<LibraryCore.Item> crowded=new ArrayList<>();
+  crowded.add(channel("USA | ESPN HD","USA SPORTS","en"));
+  LibraryCore.Item best=channel("USA | ESPN FHD","USA SPORTS","en");
+  best.epgId="espn.us";
+  crowded.add(best);
+  crowded.add(channel("[US] ESPN UHD/4K","US SPORTS","en"));
+  crowded.add(cnn);
+  crowded.add(espn2);
+  crowded.add(channel("ESPN 2 HD","USA SPORTS","en"));
+  crowded.add(fox);
+  crowded.add(nba);
+  crowded.add(other);
+  for(int number=1;number<=1200;number++){
+   crowded.add(channel("[US] ESPN+ "+number+" HD","USA SPORTS","en"));
+  }
+  List<LibraryCore.Item> curated=ChannelDiscovery.curate(crowded,"North America",false);
+  int primaryEspn=0,plusEvents=0,espn2Count=0;
+  for(LibraryCore.Item item:curated){
+   if(ChannelDiscovery.satelliteNumber(item)==206){
+    primaryEspn++;
+    check(item==best,"Prefer reliable FHD stream with EPG over 4K or HD duplicate");
+   }
+   if(ChannelDiscovery.satelliteNumber(item)==209)espn2Count++;
+   if(item.name.contains("ESPN+"))plusEvents++;
+  }
+  check(primaryEspn==1,"Exactly one primary ESPN channel");
+  check(espn2Count==1,"ESPN2 is separate but its HD duplicates are collapsed");
+  check(plusEvents==0,"Numbered ESPN+ event feeds not mixed into main lineup");
+  check(curated.size()<=90,"Default satellite guide is not thousands of provider event feeds");
+  List<LibraryCore.Item> allStreams=ChannelDiscovery.curate(crowded,"All",false);
+  check(allStreams.size()==crowded.size(),"All Streams preserves every alternate");
+  List<LibraryCore.Item> searched=ChannelDiscovery.curate(crowded,"North America",true);
+  check(searched.size()==crowded.size(),"Explicit search exposes alternates");
+  check(ChannelDiscovery.renditionScore(best)>
+    ChannelDiscovery.renditionScore(crowded.get(0)),"Stream quality and EPG affect default selection");
+  check(ChannelDiscovery.lineupIdentity(best).equals(
+    ChannelDiscovery.lineupIdentity(crowded.get(0))),"HD and FHD share one network identity");
+  check(!ChannelDiscovery.lineupIdentity(best).equals(
+    ChannelDiscovery.lineupIdentity(espn2)),"ESPN and ESPN2 never share identity");
   System.out.println(checks+" channel lineup/region ordering tests passed");
  }
 }
