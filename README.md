@@ -1,6 +1,6 @@
-# Aurora TV — first native Fire TV development build
+# AuroraTV — Android TV & Fire TV IPTV Player
 
-Original dark navy/teal design. Single source, no profiles. Java 17, Android Views, Media3 ExoPlayer 1.9.3. Minimum Android 6 / API 23; Fire OS devices only, not non-Android Vega OS devices.
+Modern dark navy/teal Fire TV design. Single source, no profiles. Java 17, Android Views, Media3 ExoPlayer 1.9.3. Minimum Android 6 / API 23; Fire OS devices only, not non-Android Vega OS devices.
 
 ## Implemented
 - Xtream Codes account authentication, live/movie/series catalogs and episode selection.
@@ -18,6 +18,16 @@ Open this folder in Android Studio, select JDK 17, install SDK 35 and sync Gradl
 Output: `app/build/outputs/apk/debug/app-debug.apk`.
 
 The project intentionally contains no account credentials. Enter your own provider account on the device. HTTP sources are supported for provider compatibility; use HTTPS when available.
+
+## Download AuroraTV on Fire TV
+
+**Downloader code: `6700987`**
+
+Open the **Downloader** app on your Fire TV, enter **6700987**, and follow the destination shown to download the AuroraTV APK. This code was supplied by the project owner; confirm that its destination points to the intended AuroraTV APK before installing.
+
+Alternatively, obtain the latest APK from [GitHub Actions](https://github.com/Bmay0000/AuroraTV/actions) by opening a successful **Build AuroraTV APK** workflow run and downloading the `AuroraTV-debug-APK` artifact (requires extracting the ZIP).
+
+Detailed instructions: [HOW_TO_GET_APK.md](HOW_TO_GET_APK.md).
 
 ## Install and smoke test
 Enable developer options and ADB debugging on an Android/Fire OS Fire TV. From a computer with Android platform-tools:
