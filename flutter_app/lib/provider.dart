@@ -180,6 +180,41 @@ class ProviderClient {
     return total;
   }
 
+  // Xtream short EPG is a useful fallback when xmltv.php is disabled.
+  // Data is fetched only for the stations being viewed, not thousands at once.
+  Future<List<TvProgramme>> shortEpg(IptvSource source,MediaEntry station)async{
+    if(source.kind!='xtream'||station.streamId.isEmpty)return [];
+    try{
+      final uri=source.action('get_short_epg',{
+        'stream_id':station.streamId,'limit':'8'});
+      final response=await _http.get(uri).timeout(const Duration(seconds:9));
+      if(response.statusCode!=200)return [];
+      final body=await compute(_decodeJson,response.body);
+      if(body is! Map||body['epg_listings'] is! List)return [];
+      final result=<TvProgramme>[];
+      for(final row in body['epg_listings'] as List){
+        if(row is! Map)continue;
+        final start=int.tryParse(_string(row['start_timestamp']));
+        final stop=int.tryParse(_string(row['stop_timestamp']));
+        if(start==null||stop==null||stop<=start)continue;
+        String title=_string(row['title']),description=_string(row['description']);
+        String decodeText(String value){
+          if(value.isEmpty)return '';
+          try{return utf8.decode(base64.decode(base64.normalize(value)),allowMalformed:true);}
+          catch(_){return value;}
+        }
+        title=decodeText(title);description=decodeText(description);
+        if(title.isEmpty)continue;
+        result.add(TvProgramme(
+          channelId:station.epgId.isNotEmpty?station.epgId:'stream:${station.streamId}',
+          title:title,description:description,
+          start:DateTime.fromMillisecondsSinceEpoch(start*1000),
+          end:DateTime.fromMillisecondsSinceEpoch(stop*1000)));
+      }
+      return result;
+    }catch(_){return [];}
+  }
+
   Future<List<MediaEntry>> episodes(IptvSource source,MediaEntry series) async {
     if(source.kind!='xtream')return [];
     final rows=await _http.get(source.action('get_series_info',{'series_id':series.streamId}))
