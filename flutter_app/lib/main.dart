@@ -840,7 +840,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
                 icon:const Icon(Icons.forward_10)),
               PopupMenuButton<double>(tooltip:'Playback speed',initialValue:playbackSpeed,
                 onSelected:(speed){playbackSpeed=speed;v.setPlaybackSpeed(speed);_showControls();},
-                itemBuilder:(_)=>[.5,1,1.25,1.5,2].map((speed)=>PopupMenuItem(
+                itemBuilder:(_)=><double>[.5,1,1.25,1.5,2].map((speed)=>PopupMenuItem<double>(
                   value:speed,child:Text('${speed}x'))).toList(),
                 child:Padding(padding:const EdgeInsets.all(9),child:Text('${playbackSpeed}x'))),
             ]else const Expanded(child:Text('LIVE',style:TextStyle(color:C.aqua,
