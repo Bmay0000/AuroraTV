@@ -3,7 +3,7 @@ android {
  namespace 'tv.aurora.player'
  compileSdk 35
  signingConfigs { debug { storeFile rootProject.file('debug.keystore'); storePassword 'android'; keyAlias 'androiddebugkey'; keyPassword 'android' } }
- defaultConfig { applicationId 'tv.aurora.player'; minSdk 23; targetSdk 35; versionCode 7; versionName '0.7.0' }
+ defaultConfig { applicationId 'tv.aurora.player'; minSdk 23; targetSdk 35; versionCode 8; versionName '0.8.0' }
  compileOptions { coreLibraryDesugaringEnabled true; sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
 dependencies {
