@@ -237,7 +237,17 @@ public final class LibraryStore extends SQLiteOpenHelper {
         try (Cursor c = getReadableDatabase().rawQuery(
                 "SELECT url FROM entries WHERE item_id=?", new String[]{item.id})) {
             if (!c.moveToFirst()) throw new IllegalStateException("Title no longer exists");
-            item.url = decrypt(c.getBlob(0));
+            byte[] stored=c.getBlob(0);
+            // Compact Xtream references contain no credentials; the saved
+            // server login is opened only when a user chooses this title.
+            String maybeReference=new String(stored,StandardCharsets.UTF_8);
+            if(XtreamReference.isReference(maybeReference)){
+                SharedPreferences source=context.getSharedPreferences("library",Context.MODE_PRIVATE);
+                item.url=XtreamReference.url(maybeReference,
+                    Vault.open(source.getString("url","")),
+                    Vault.open(source.getString("user","")),
+                    Vault.open(source.getString("pass","")));
+            }else item.url=decrypt(stored); // Previous encrypted imports and M3U.
             return item;
         }
     }
@@ -250,16 +260,16 @@ public final class LibraryStore extends SQLiteOpenHelper {
         private final SQLiteDatabase database;
         private final SQLiteStatement insert;
         private final boolean append;
-        private final Cipher writerCipher;
-        private final SecretKey writerKey;
+        private Cipher writerCipher;
+        private SecretKey writerKey;
         private int count;
         private boolean committed;
         private boolean closed;
 
         private Writer(boolean append) throws Exception {
             this.append=append;
-            writerKey=key();
-            writerCipher=Cipher.getInstance("AES/GCM/NoPadding");
+            // Most Xtream entries are lightweight credential-free references.
+            // Initialize AES only for non-Xtream URLs (M3U and fallbacks).
             database=getWritableDatabase();
             database.beginTransaction();
             try {
@@ -282,6 +292,10 @@ public final class LibraryStore extends SQLiteOpenHelper {
         }
 
         private byte[] encryptedUrl(String value) throws Exception {
+            if(writerCipher==null){
+                writerKey=key();
+                writerCipher=Cipher.getInstance("AES/GCM/NoPadding");
+            }
             byte[] iv=new byte[12];
             RANDOM.nextBytes(iv);
             writerCipher.init(Cipher.ENCRYPT_MODE,writerKey,new GCMParameterSpec(128,iv));
@@ -300,7 +314,9 @@ public final class LibraryStore extends SQLiteOpenHelper {
             bind(4, item.type);
             bind(5, item.epgId);
             bind(6, item.language);
-            insert.bindBlob(7, encryptedUrl(item.url == null ? "" : item.url));
+            String value=item.url==null?"":item.url;
+            insert.bindBlob(7,XtreamReference.isReference(value)?
+                value.getBytes(StandardCharsets.UTF_8):encryptedUrl(value));
             bind(8, item.artwork);
             insert.executeInsert();
             count++;
