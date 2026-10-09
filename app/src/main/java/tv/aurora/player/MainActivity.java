@@ -1705,7 +1705,7 @@ public class MainActivity extends Activity {
      LinearLayout toolbar=new LinearLayout(this);
      toolbar.setGravity(Gravity.CENTER_VERTICAL);
      body.addView(toolbar,new LinearLayout.LayoutParams(-1,dp(37)));
-     TextView heading=headline("LIVE TV · GUIDE",TvLayout.clamp(metrics.bodySize()+3,16,23),Color.WHITE);
+     TextView heading=headline("LIVE  /  CHANNEL GUIDE",TvLayout.clamp(metrics.bodySize()+3,16,23),Color.WHITE);
      toolbar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
      TextView total=text(channels.size()+("North America".equals(filter)?" NETWORKS":" CHANNELS"),11);
      total.setTextColor(MUTED);
@@ -1726,7 +1726,7 @@ public class MainActivity extends Activity {
      HorizontalScrollView chipsScroll=new HorizontalScrollView(this);
      chipsScroll.setHorizontalScrollBarEnabled(false);
      chipsScroll.setClipChildren(true);chipsScroll.setClipToPadding(true);
-     body.addView(chipsScroll,new LinearLayout.LayoutParams(-1,dp(38)));
+     body.addView(chipsScroll,new LinearLayout.LayoutParams(-1,dp(45)));
      LinearLayout chips=new LinearLayout(this);
      chips.setOrientation(LinearLayout.HORIZONTAL);
      chips.setGravity(Gravity.CENTER_VERTICAL);
@@ -1746,9 +1746,9 @@ public class MainActivity extends Activity {
        if(guideSwitcher[0]!=null)guideSwitcher[0].run();
       });
       chip.setTextSize(TvLayout.clamp(metrics.bodySize()-2,11,14));
-      chip.setPadding(dp(9),0,dp(9),0);
-      if(option.equals(filter))chip.setBackground(rounded(0xff20594e,9,ACCENT));
-      LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-2,dp(31));
+      chip.setPadding(dp(13),0,dp(13),0);
+      chip.setBackground(rounded(option.equals(filter)?0xff14534d:0xff111f31,12,option.equals(filter)?ACCENT:0xff234053));
+      LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-2,dp(36));
       size.rightMargin=dp(4);chips.addView(chip,size);
       guideChips.put(option,chip);
      }
@@ -1769,11 +1769,11 @@ public class MainActivity extends Activity {
      left.rightMargin=dp(7);main.addView(directory,left);
      LinearLayout columns=new LinearLayout(this);
      columns.setGravity(Gravity.CENTER_VERTICAL);
-     columns.setBackground(rounded(0xff12303b,8,0));
-     directory.addView(columns,new LinearLayout.LayoutParams(-1,dp(28)));
+     columns.setBackground(rounded(0xff102d36,5,0xff224955));
+     directory.addView(columns,new LinearLayout.LayoutParams(-1,dp(35)));
      int leftWidth=Math.max(380,metrics.contentWidth()-paneWidth-20);
      int channelW=(int)(leftWidth*.40),nowW=(int)(leftWidth*.36),nextW=leftWidth-channelW-nowW;
-     TextView channelHeader=text(metrics.widthDp>950?"CHANNEL · US REFERENCE ORDER":"CHANNEL",11);channelHeader.setTextColor(ACCENT);
+     TextView channelHeader=text(metrics.widthDp>950?"CHANNEL  /  REFERENCE LINEUP":"CHANNEL",11);channelHeader.setTextColor(ACCENT);
      columns.addView(channelHeader,new LinearLayout.LayoutParams(0,-2,.40f));
      TextView nowHeader=text("ON NOW",11);nowHeader.setTextColor(ACCENT);
      columns.addView(nowHeader,new LinearLayout.LayoutParams(0,-2,.36f));
@@ -1784,7 +1784,8 @@ public class MainActivity extends Activity {
      final Set<String> pending=java.util.concurrent.ConcurrentHashMap.newKeySet();
      final ListView listing=new ListView(this);
      listing.setVerticalScrollBarEnabled(false);
-     listing.setDividerHeight(dp(1));
+     listing.setDividerHeight(dp(3));
+      listing.setDivider(new android.graphics.drawable.ColorDrawable(0xff091322));
      listing.setCacheColorHint(Color.TRANSPARENT);
      listing.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
      listing.setSelector(selectionOutline());
@@ -1792,7 +1793,7 @@ public class MainActivity extends Activity {
      listing.setClipToPadding(true);
      listing.setPadding(dp(1),dp(2),dp(1),dp(2));
      directory.addView(listing,new LinearLayout.LayoutParams(-1,0,1));
-     final int lineHeight=TvLayout.clamp((int)(metrics.heightDp*.073),33,49);
+     final int lineHeight=TvLayout.clamp((int)(metrics.heightDp*.092),44,64);
      final BaseAdapter adapter=new BaseAdapter(){
       @Override public int getCount(){return channels.size();}
       @Override public Object getItem(int position){return channels.get(position);}
@@ -1832,7 +1833,7 @@ public class MainActivity extends Activity {
            available.now.title:"Programme information unavailable");
        holder.next.setText(available!=null&&available.next!=null?
            available.next.title:"—");
-       row.setBackground(rounded(position%2==0?0xff111e2d:0xff142334,7,0));
+       row.setBackground(rounded(position%2==0?0xff101e30:0xff152437,9,0xff203848));
        return row;
       }
      };
@@ -1843,6 +1844,8 @@ public class MainActivity extends Activity {
      }
 
      LinearLayout previewPanel=column();
+      previewPanel.setBackground(rounded(0xff0e2031,12,0xff24424d));
+      previewPanel.setPadding(dp(8),dp(8),dp(8),dp(8));
      previewPanel.setClipChildren(true);previewPanel.setClipToPadding(true);
      main.addView(previewPanel,new LinearLayout.LayoutParams(dp(paneWidth),-1));
      LinearLayout window=new LinearLayout(this);
