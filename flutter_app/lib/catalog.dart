@@ -174,9 +174,9 @@ class CatalogDatabase {
   static String matchKey(String title) {
     var value=title.toLowerCase().trim();
     value=value.replaceAll(RegExp(r'^(?:(?:usa?|uk|ca|au|nz|en|eng|4k|8k|uhd|fhd|hd|sd|hevc|h265|vod|movie|series)\s*[-|: ]\s*)+',caseSensitive:false),'');
-    value=value.replaceAll(RegExp(r'\s*\((?:19|20)\d{2}\)\s*\$'),'');
-    value=value.replaceAll(RegExp(r'\s*[-|:]\s*(?:19|20)\d{2}\s*\$'),'');
-    value=value.replaceAll(RegExp(r'\s+(?:4k|uhd|fhd|hd|sd|hevc|h265)\s*\$'),'');
+    value=value.replaceAll(RegExp(r'\s*\((?:19|20)\d{2}\)\s*$'),'');
+    value=value.replaceAll(RegExp(r'\s*[-|:]\s*(?:19|20)\d{2}\s*$'),'');
+    value=value.replaceAll(RegExp(r'\s+(?:4k|uhd|fhd|hd|sd|hevc|h265)\s*$'),'');
     return value.replaceAll(RegExp(r'[^a-z0-9]'),'');
   }
   Future<Map<String,MediaEntry>> matchTitleMap(MediaKind kind,List<String> titles) async {
