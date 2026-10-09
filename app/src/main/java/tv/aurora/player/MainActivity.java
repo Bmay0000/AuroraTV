@@ -517,8 +517,9 @@ public class MainActivity extends Activity {
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||(!"home".equals(screen)&&!"discover".equals(screen)))return;
      if(matches.isEmpty())return;
-     if("discover".equals(screen)&&cinematicTitle!=null
-         &&"Explore your library".contentEquals(cinematicTitle.getText()))
+     if(cinematicTitle!=null&&featurePriority<2&&
+         (("home".equals(screen)&&"movie".equals(type))||
+          ("discover".equals(screen)&&"Explore your library".contentEquals(cinematicTitle.getText()))))
        featureFromLibrary(matches,2);
      if("discover".equals(screen))markLoad(type,token);
      homeShelf(target,label,type,matches);
