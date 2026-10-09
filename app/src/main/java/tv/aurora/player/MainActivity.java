@@ -420,6 +420,7 @@ public class MainActivity extends Activity {
   feed.setClipChildren(true);feed.setClipToPadding(true);
   feed.setPadding(dp(3),dp(1),dp(4),dp(12));
   scroll.addView(feed,new ScrollView.LayoutParams(-1,-2));
+  addCinematicPanel(feed);
 
   // Everything above the international divider has positive English or
   // North American evidence; unknown-language titles never become the hero.
@@ -1242,7 +1243,13 @@ public class MainActivity extends Activity {
    next.setScaleType(ImageView.ScaleType.CENTER_CROP);
    next.setAlpha(0f);
    // Keep transitions behind the metadata gradient and foreground labels.
-   parent.addView(next,0,new FrameLayout.LayoutParams(-1,-1));
+   // Crossfade the incoming bitmap on top of the old image, beneath metadata.
+   for(int i=parent.getChildCount()-1;i>=0;i--){
+    View layer=parent.getChildAt(i);
+    if(layer instanceof ImageView && layer!=old)parent.removeView(layer);
+   }
+   parent.addView(next,old!=null&&old.getParent()==parent?1:0,
+      new FrameLayout.LayoutParams(-1,-1));
    posters.bind(next,item.artwork);
    next.animate().alpha(.54f).setDuration(350).withEndAction(()->{
     if(revision!=cinematicRevision||cinematicArtwork!=parent){
