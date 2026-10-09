@@ -2015,6 +2015,9 @@ public class MainActivity extends Activity {
     if("home".equals(screen))subtitle.setText("Live TV ready · Finish other media from Sources");
     toast("Some media is still importing. Live TV remains available.");
    });
+  }finally{
+   try{android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT);}
+   catch(Exception ignored){}
   }
  }
  void continueCatalogImport(int token){
