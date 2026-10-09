@@ -97,6 +97,17 @@ public class MainActivity extends Activity {
    b.setOnClickListener(v->action.run());
    return b;
  }
+ Button textAction(String title,Runnable action){
+  Button b=button(title,action);
+  b.setBackground(rounded(Color.TRANSPARENT,8,0));
+  b.setTextColor(0xffa8e4da);
+  b.setOnFocusChangeListener((v,focused)->{
+   b.setBackground(rounded(focused?0xff1a4143:Color.TRANSPARENT,8,
+     focused?ACCENT:0));
+   b.setTextColor(focused?ACCENT:0xffa8e4da);
+  });
+  return b;
+ }
  TextView kicker(String value){
    TextView t=text(value.toUpperCase(Locale.ROOT),12);
    t.setTextColor(ACCENT);t.setLetterSpacing(.13f);
@@ -696,7 +707,7 @@ public class MainActivity extends Activity {
   TextView title=headline(heading,TvLayout.clamp(dim.headingSize()-5,16,23),Color.WHITE);
   title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);
   line.addView(title,new LinearLayout.LayoutParams(0,-2,1));
-  Button more=button(type.equals("personal")?"MY LIST  →":"SEE ALL  →",()->{
+  Button more=textAction(type.equals("personal")?"MY LIST  →":"SEE ALL  →",()->{
    if(type.equals("personal")){
     favOnly=true;hiddenOnly=false;editing=false;page=0;browse();return;
    }
@@ -1019,15 +1030,15 @@ public class MainActivity extends Activity {
   TextView heading=headline(type.equals("movie")?"MOVIES":"TV SHOWS",
       TvLayout.clamp(tv().bodySize()+4,17,23),Color.WHITE);
   toolbar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
-  Button search=button("⌕ FIND",()->{
+  Button search=textAction("⌕ FIND",()->{
    section=type;focusSearchNext=true;browseAll=true;browse();
   });
   toolbar.addView(search,new LinearLayout.LayoutParams(dp(79),dp(32)));
-  Button groupsButton=button("GENRES ▾",()->{
+  Button groupsButton=textAction("GENRES ▾",()->{
    section=type;browseAll=true;chooseCategory();
   });
   toolbar.addView(groupsButton,new LinearLayout.LayoutParams(dp(104),dp(32)));
-  Button all=button("ALL TITLES →",()->{
+  Button all=textAction("ALL TITLES →",()->{
    section=type;category="All";browseAll=true;page=0;browse();
   });
   toolbar.addView(all,new LinearLayout.LayoutParams(dp(119),dp(32)));
@@ -1136,7 +1147,7 @@ public class MainActivity extends Activity {
        type.equals("live")?"LIVE TV":type.equals("movie")?"MOVIES":"TV SHOWS");
      heading.addView(headline(title,TvLayout.clamp(tv().headingSize(),compact?20:23,31),Color.WHITE),new LinearLayout.LayoutParams(0,-2,1));
      int actionsWidth=tv().contentWidth()<650?98:118;
-     Button filters=button("☷  FILTERS",this::smart);
+     Button filters=textAction("☷  FILTERS",this::smart);
      heading.addView(filters,new LinearLayout.LayoutParams(dp(actionsWidth),dp(actionHeight)));
 
      body.addView(heading,new LinearLayout.LayoutParams(-1,dp(compact?33:41)));
@@ -1173,7 +1184,7 @@ public class MainActivity extends Activity {
       }
       return false;
      });
-     Button go=button("SEARCH",applySearch);
+     Button go=textAction("SEARCH",applySearch);
      controls.addView(go,new LinearLayout.LayoutParams(dp(compact?76:104),dp(actionHeight)));
      if(!search.isEmpty()){
       controls.addView(button("✕",()->{query="";page=0;browse();}),
@@ -1407,14 +1418,14 @@ public class MainActivity extends Activity {
      TextView total=text(channels.size()+" CHANNELS",11);
      total.setTextColor(MUTED);
      toolbar.addView(total);
-     Button searchButton=button(search.isEmpty()?"⌕ SEARCH":"⌕ "+search,()->guideSearch());
+     Button searchButton=textAction(search.isEmpty()?"⌕ SEARCH":"⌕ "+search,()->guideSearch());
      searchButton.setSingleLine(true);searchButton.setEllipsize(TextUtils.TruncateAt.END);
      toolbar.addView(searchButton,new LinearLayout.LayoutParams(dp(
        TvLayout.clamp(metrics.widthDp/7,78,140)),dp(32)));
-     Button settings=button("⚙",this::guideSettings);
+     Button settings=textAction("⚙",this::guideSettings);
      settings.setContentDescription("TV Guide data and preview settings");
      toolbar.addView(settings,new LinearLayout.LayoutParams(dp(43),dp(32)));
-     Button refresh=button("⟳",()->{
+     Button refresh=textAction("⟳",()->{
       scheduleGuideSync(true,true);toast("Updating your guide in the background");
      });
      refresh.setContentDescription("Refresh TV programmes");
@@ -1431,7 +1442,7 @@ public class MainActivity extends Activity {
      final String[] filters={"North America","News","Sports","Entertainment",
        "Movies","Kids","English","All","My Channels","International","Other"};
      for(String option:filters){
-      Button chip=button(option,()->{
+      Button chip=textAction(option,()->{
        if(option.equals(guideFilter))return;
        guideFilter=option;guidePage=0;tvGuide();
       });
@@ -1441,7 +1452,7 @@ public class MainActivity extends Activity {
       LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-2,dp(31));
       size.rightMargin=dp(4);chips.addView(chip,size);
      }
-     Button moreCategories=button("CATEGORIES ▾",this::chooseGuideCategory);
+     Button moreCategories=textAction("CATEGORIES ▾",this::chooseGuideCategory);
      moreCategories.setTextSize(12);
      chips.addView(moreCategories,new LinearLayout.LayoutParams(dp(119),dp(31)));
 
