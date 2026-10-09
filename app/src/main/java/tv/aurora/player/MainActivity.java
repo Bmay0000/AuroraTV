@@ -786,7 +786,7 @@ public class MainActivity extends Activity {
   }
   boolean ranked=heading.startsWith("TOP 20 ");
   // Cap constructed cards; avoid blocking the TV thread building 150+ tiles.
-  final int renderCount=cinematicRail?Math.min(12,rows.size()):rows.size();
+  final int renderCount=cinematicRail?Math.min(20,rows.size()):rows.size();
   for(int position=0;position<renderCount;position++){
    LibraryCore.Item item=rows.get(position);
    cards.addView(cinematicRail?
@@ -799,8 +799,8 @@ public class MainActivity extends Activity {
  /** Widescreen artwork cards make the discovery feed visibly different from a provider poster grid. */
  View landscapeCard(LibraryCore.Item item,int rank,boolean getBackdrop){
   TvLayout m=tv();
-  int w=TvLayout.clamp(m.contentWidth()/3,205,380);
-  int h=TvLayout.clamp(m.heightDp/4-12,110,185);
+  int w=TvLayout.clamp((m.contentWidth()-dp(48))/5,125,245);
+  int h=TvLayout.clamp(m.heightDp/5,88,148);
   FrameLayout tile=new FrameLayout(this);
   LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(dp(w),dp(h));
   layout.rightMargin=dp(9);tile.setLayoutParams(layout);
@@ -1303,7 +1303,7 @@ public class MainActivity extends Activity {
   hero.setBackground(rounded(0xff0c1b2b,12,0xff203746));
   hero.setClipToOutline(true);
   LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-1,
-    dp(TvLayout.clamp(m.heightDp*56/100,235,450)));
+    dp(TvLayout.clamp(m.heightDp*27/100,132,205)));
   size.bottomMargin=dp(9);
   feed.addView(hero,size);
   cinematicArtwork=hero;
@@ -1324,17 +1324,17 @@ public class MainActivity extends Activity {
   cinematicPoster=new ImageView(this);
   cinematicPoster.setScaleType(ImageView.ScaleType.FIT_CENTER);
   FrameLayout.LayoutParams posterSpace=new FrameLayout.LayoutParams(
-       dp(TvLayout.clamp(m.contentWidth()/4,120,245)),-1,Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+       dp(TvLayout.clamp(m.contentWidth()/6,85,160)),-1,Gravity.RIGHT|Gravity.CENTER_VERTICAL);
   posterSpace.rightMargin=dp(20);
   hero.addView(cinematicPoster,posterSpace);
   LinearLayout info=column();info.setGravity(Gravity.CENTER_VERTICAL);
-  info.setPadding(dp(22),dp(6),dp(8),dp(6));
+  info.setPadding(dp(15),dp(3),dp(8),dp(3));
   hero.addView(info,new FrameLayout.LayoutParams(
       dp(TvLayout.clamp(m.contentWidth()*3/5,265,780)),-1,Gravity.LEFT));
   TextView eyebrow=kicker("AURORATV   /   CINEMA");eyebrow.setTextSize(10);
   info.addView(eyebrow);
   cinematicTitle=headline("Explore your library",
-    TvLayout.clamp(m.headingSize()+7,26,41),Color.WHITE);
+    TvLayout.clamp(m.headingSize()+2,21,31),Color.WHITE);
   cinematicTitle.setMaxLines(2);
   cinematicTitle.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicTitle);
@@ -1347,7 +1347,7 @@ public class MainActivity extends Activity {
   cinematicMeta.setMaxLines(1);info.addView(cinematicMeta);
   cinematicOverview=text("",TvLayout.clamp(m.bodySize(),12,16));
   cinematicOverview.setTextColor(0xffd6e4e9);
-  cinematicOverview.setMaxLines(3);
+  cinematicOverview.setMaxLines(2);
   cinematicOverview.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicOverview);
   LinearLayout controls=new LinearLayout(this);
@@ -1874,7 +1874,7 @@ public class MainActivity extends Activity {
      // One compact toolbar, no separate hero/selection area or pagination.
      LinearLayout toolbar=new LinearLayout(this);
      toolbar.setGravity(Gravity.CENTER_VERTICAL);
-     body.addView(toolbar,new LinearLayout.LayoutParams(-1,dp(37)));
+     body.addView(toolbar,new LinearLayout.LayoutParams(-1,dp(31)));
      TextView heading=headline("LIVE  /  CHANNEL GUIDE",TvLayout.clamp(metrics.bodySize()+3,16,23),Color.WHITE);
      toolbar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
      TextView total=text(channels.size()+("North America".equals(filter)?" NETWORKS":" CHANNELS"),11);
@@ -1896,7 +1896,7 @@ public class MainActivity extends Activity {
      HorizontalScrollView chipsScroll=new HorizontalScrollView(this);
      chipsScroll.setHorizontalScrollBarEnabled(false);
      chipsScroll.setClipChildren(true);chipsScroll.setClipToPadding(true);
-     body.addView(chipsScroll,new LinearLayout.LayoutParams(-1,dp(45)));
+     body.addView(chipsScroll,new LinearLayout.LayoutParams(-1,dp(34)));
      LinearLayout chips=new LinearLayout(this);
      chips.setOrientation(LinearLayout.HORIZONTAL);
      chips.setGravity(Gravity.CENTER_VERTICAL);
@@ -1918,7 +1918,7 @@ public class MainActivity extends Activity {
       chip.setTextSize(TvLayout.clamp(metrics.bodySize()-2,11,14));
       chip.setPadding(dp(13),0,dp(13),0);
       chip.setBackground(rounded(option.equals(filter)?0xff14534d:0xff111f31,12,option.equals(filter)?ACCENT:0xff234053));
-      LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-2,dp(36));
+      LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-2,dp(29));
       size.rightMargin=dp(4);chips.addView(chip,size);
       guideChips.put(option,chip);
      }
@@ -1934,13 +1934,13 @@ public class MainActivity extends Activity {
      body.addView(main,viewport);
      LinearLayout directory=column();
      directory.setClipToPadding(true);directory.setClipChildren(true);
-     final int paneWidth=TvLayout.clamp((int)(metrics.contentWidth()*.265),180,350);
+     final int paneWidth=TvLayout.clamp((int)(metrics.contentWidth()*.19),130,245);
      LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,-1,1);
      left.rightMargin=dp(7);main.addView(directory,left);
      LinearLayout columns=new LinearLayout(this);
      columns.setGravity(Gravity.CENTER_VERTICAL);
      columns.setBackground(rounded(0xff102d36,5,0xff224955));
-     directory.addView(columns,new LinearLayout.LayoutParams(-1,dp(35)));
+     directory.addView(columns,new LinearLayout.LayoutParams(-1,dp(24)));
      int leftWidth=Math.max(380,metrics.contentWidth()-paneWidth-20);
      int channelW=(int)(leftWidth*.40),nowW=(int)(leftWidth*.36),nextW=leftWidth-channelW-nowW;
      TextView channelHeader=text(metrics.widthDp>950?"CHANNEL  /  REFERENCE LINEUP":"CHANNEL",11);channelHeader.setTextColor(ACCENT);
@@ -1954,7 +1954,7 @@ public class MainActivity extends Activity {
      final Set<String> pending=java.util.concurrent.ConcurrentHashMap.newKeySet();
      final ListView listing=new ListView(this);
      listing.setVerticalScrollBarEnabled(false);
-     listing.setDividerHeight(dp(3));
+     listing.setDividerHeight(dp(1));
       listing.setDivider(new android.graphics.drawable.ColorDrawable(0xff091322));
      listing.setCacheColorHint(Color.TRANSPARENT);
      listing.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
@@ -1963,7 +1963,7 @@ public class MainActivity extends Activity {
      listing.setClipToPadding(true);
      listing.setPadding(dp(1),dp(2),dp(1),dp(2));
      directory.addView(listing,new LinearLayout.LayoutParams(-1,0,1));
-     final int lineHeight=TvLayout.clamp((int)(metrics.heightDp*.092),44,64);
+     final int lineHeight=TvLayout.clamp((int)(metrics.heightDp*.060),30,41);
      final BaseAdapter adapter=new BaseAdapter(){
       @Override public int getCount(){return channels.size();}
       @Override public Object getItem(int position){return channels.get(position);}
@@ -2015,7 +2015,7 @@ public class MainActivity extends Activity {
 
      LinearLayout previewPanel=column();
       previewPanel.setBackground(rounded(0xff0e2031,12,0xff24424d));
-      previewPanel.setPadding(dp(8),dp(8),dp(8),dp(8));
+      previewPanel.setPadding(dp(4),dp(4),dp(4),dp(4));
      previewPanel.setClipChildren(true);previewPanel.setClipToPadding(true);
      main.addView(previewPanel,new LinearLayout.LayoutParams(dp(paneWidth),-1));
      LinearLayout window=new LinearLayout(this);
