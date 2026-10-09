@@ -942,7 +942,7 @@ class _GuideScreenState extends State<GuideScreen>{
    final channelsWithEpg=widget.channels.where((e)=>programs[key(e)]?.isNotEmpty??false).length;
    final categoryGroups=['North America','All','Favorites',...widget.groups.take(12)].toSet().toList();
    return Padding(padding:const EdgeInsets.symmetric(horizontal:18,vertical:8),child:Column(children:[
-     SizedBox(height:120,child:Row(children:[
+     SizedBox(height:143,child:Row(children:[
        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
          Text(selected?.cleanTitle??'Live TV Guide',
            style:const TextStyle(fontSize:22,fontWeight:FontWeight.w800)),
@@ -959,7 +959,7 @@ class _GuideScreenState extends State<GuideScreen>{
            if(!previewEnabled){++previewRequest;debounce?.cancel();preview?.dispose();preview=null;}
            else if(selected!=null){focused=null;_focus(selected);}},
          icon:Icon(previewEnabled?Icons.picture_in_picture:Icons.picture_in_picture_alt)),
-       SizedBox(width:265,height:114,child:ClipRRect(borderRadius:BorderRadius.circular(9),
+       SizedBox(width:265,height:136,child:ClipRRect(borderRadius:BorderRadius.circular(9),
          child:ColoredBox(color:Colors.black,child:preview?.value.isInitialized==true?
            Center(child:AspectRatio(
              aspectRatio:preview!.value.aspectRatio>0?preview!.value.aspectRatio:16/9,
