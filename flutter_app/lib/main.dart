@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
@@ -62,6 +63,7 @@ class _AuroraShellState extends State<AuroraShell>{
   MovieMeta meta=const MovieMeta();
   final Map<MediaKind,List<MediaEntry>> shelves={};
   final Map<MediaKind,List<MediaEntry>> trends={};
+  final Map<MediaKind,Map<String,List<MediaEntry>>> popularGenres={};
   final Map<MediaKind,List<String>> groups={};
   final Map<MediaKind,List<MediaEntry>> favorites={};
   List<MediaEntry> live=[];
@@ -115,6 +117,17 @@ class _AuroraShellState extends State<AuroraShell>{
       if(!mounted)return;
       setState((){trends[kind]=matched;});
       if(kind==MediaKind.movie&&matched.isNotEmpty&&page==0)_feature(matched.first);
+    }
+    // Weekly lists use TMDB's genre IDs, not inconsistent IPTV category labels.
+    for(final kind in [MediaKind.movie,MediaKind.series]){
+      final weekly=await tmdb.weeklyGenres(kind);
+      final mapped=<String,List<MediaEntry>>{};
+      for(final entry in weekly.entries){
+        if(!mounted)return;
+        final matches=await db.matchTitles(kind,entry.value);
+        if(matches.isNotEmpty)mapped[entry.key]=matches;
+      }
+      if(mounted)setState(()=>popularGenres[kind]=mapped);
     }
   }
   void _feature(MediaEntry item){
@@ -331,8 +344,8 @@ class _AuroraShellState extends State<AuroraShell>{
           color:C.canvas,
           child:isCinema&&featured!=null
           ?meta.backdrop.isNotEmpty
-            ?artwork(meta.backdrop,fit:BoxFit.cover)
-            :artwork(featured!.artwork,fit:BoxFit.cover)
+            ?SizedBox.expand(child:artwork(meta.backdrop,fit:BoxFit.cover))
+            :SizedBox.expand(child:artwork(featured!.artwork,fit:BoxFit.cover))
           :const SizedBox.shrink())))),
       if(isCinema)Positioned.fill(child:DecoratedBox(decoration:BoxDecoration(
         gradient:LinearGradient(begin:Alignment.centerLeft,end:Alignment.centerRight,
@@ -391,7 +404,8 @@ class _AuroraShellState extends State<AuroraShell>{
     final ranked=trends[mainKind]??[];
     final english=items.where((v)=>v.likelyEnglish).toList();
     final recent=english.isNotEmpty?english:items;
-    final title=home?'TOP 20 TODAY':mainKind==MediaKind.movie?'TOP 20 MOVIES TODAY':'TOP 20 SERIES TODAY';
+    final title=home?'TRENDING MOVIES TODAY':mainKind==MediaKind.movie?'TOP MOVIES TODAY':'TOP TV SHOWS TODAY';
+    final genresForPage=popularGenres[mainKind]??{};
     return LayoutBuilder(builder:(ctx,c){
       final available=c.maxHeight;
       final heroHeight=(available*.64).clamp(245.0,540.0);
@@ -411,21 +425,28 @@ class _AuroraShellState extends State<AuroraShell>{
             const Spacer(),
             AuroraButton(text:'All Titles  →',onPressed:()=>_openCatalog(kind)),
           ])),
-        if(ranked.isNotEmpty)
+        if(home&&(trends[MediaKind.series]?.isNotEmpty??false))
+          _shelf('TOP 20 TRENDING TV SHOWS TODAY',trends[MediaKind.series]!,MediaKind.series,ranked:true),
+        if(!home&&ranked.isNotEmpty)
           _shelf(title,ranked,mainKind,ranked:true),
-        if(home && (trends[MediaKind.series]?.isNotEmpty??false))
-          _shelf('TOP 20 TV SHOWS TODAY',trends[MediaKind.series]!,MediaKind.series,ranked:true),
-        _shelf(home?'NEW & RECENT · ENGLISH MOVIES':
-            mainKind==MediaKind.movie?'DISCOVER MOVIES':'DISCOVER SERIES',
-            recent,mainKind),
-        if(home)_shelf('TV SERIES FOR YOU',
-          shelves[MediaKind.series]??[],MediaKind.series),
-        if(home&&recentHistory.isNotEmpty)_shelf('CONTINUE WATCHING',
-          recentHistory,MediaKind.movie),
+        if(recentHistory.isNotEmpty)
+          _shelf('RECENTLY WATCHED',recentHistory.where((e)=>home||e.kind==mainKind).toList(),mainKind),
+        if(home&&ranked.isEmpty)
+          _shelf('POPULAR TV SHOWS',shelves[MediaKind.series]??[],MediaKind.series),
+        if(!home&&ranked.isEmpty)
+          _shelf('EXPLORE ${mainKind==MediaKind.movie?'MOVIES':'TV SHOWS'}',recent,mainKind),
+        if(home)for(final entry in (popularGenres[MediaKind.series]??{}).entries)
+          _shelf('${entry.key.toUpperCase()} · POPULAR THIS WEEK',entry.value,MediaKind.series),
+        if(home)for(final entry in (popularGenres[MediaKind.movie]??{}).entries)
+          _shelf('${entry.key.toUpperCase()} MOVIES · POPULAR THIS WEEK',entry.value,MediaKind.movie),
+        if(!home)for(final entry in genresForPage.entries)
+          _shelf('${entry.key.toUpperCase()} · POPULAR THIS WEEK',entry.value,mainKind),
+        if(home&&popularGenres[MediaKind.series]?.isNotEmpty!=true&&popularGenres[MediaKind.movie]?.isNotEmpty!=true)
+          _shelf('NEW & RECENT · ENGLISH MOVIES',recent,MediaKind.movie),
+        if(!home&&genresForPage.isEmpty)
+          for(final genre in (groups[mainKind]??[]).take(8))_genreShelf(mainKind,genre),
         if(home)_shelf('MY LIST',
           [...?favorites[MediaKind.movie],...?favorites[MediaKind.series]],MediaKind.movie),
-        if(!home)for(final genre in (groups[mainKind]??[]).take(8))
-          _genreShelf(mainKind,genre),
         const SizedBox(height:70),
       ]);
     });
@@ -505,9 +526,10 @@ Widget artwork(String url,{BoxFit fit=BoxFit.cover}){
   if(url.isEmpty||!url.startsWith('http'))return const DecoratedBox(
     decoration:BoxDecoration(gradient:LinearGradient(colors:[Color(0xff172a38),Color(0xff07121d)])),
     child:Center(child:Icon(Icons.movie_creation_outlined,size:39,color:Color(0xff35505d))));
-  return Image.network(url,fit:fit,errorBuilder:(_,__,___)=>const ColoredBox(
+  return CachedNetworkImage(imageUrl:url,fit:fit,memCacheWidth:1280,maxWidthDiskCache:1280,
+    fadeInDuration:const Duration(milliseconds:120),errorWidget:(_,__,___)=>const ColoredBox(
     color:Color(0xff14232d),child:Center(child:Icon(Icons.movie_outlined,color:C.secondary))),
-    loadingBuilder:(ctx,child,event)=>event==null?child:const ColoredBox(color:Color(0xff13202b)));
+    placeholder:(_,__)=>const ColoredBox(color:Color(0xff13202b)));
 }
 
 class AuroraButton extends StatelessWidget{
