@@ -116,7 +116,10 @@ class TmdbClient {
  Future<List<MediaEntry>> discovery(MediaKind kind,{String window='day',int? genreId}) async {
    if(apiKey.isEmpty)return [];
    final media=kind==MediaKind.movie?'movie':'tv';
-   final cacheKey='tmdb.discovery.v3.$media.$window.${genreId??0}';
+   final today=DateTime.now().toUtc();
+   final period=genreId==null?'${today.year}-${today.month}-${today.day}':
+     '${today.year}-W${(today.difference(DateTime.utc(today.year,1,1)).inDays~/7)}';
+   final cacheKey='tmdb.discovery.v4.$media.$window.${genreId??0}.$period';
    final prefs=await SharedPreferences.getInstance();
    final stored=prefs.getString(cacheKey);
    if(stored!=null){
@@ -125,7 +128,7 @@ class TmdbClient {
    }
    final all=<Map<String,dynamic>>[];
    try{
-     for(var page=1;page<=2;page++){
+     for(var page=1;page<=(genreId==null?2:1);page++){
        final uri=genreId==null
          ?Uri.https('api.themoviedb.org','/3/trending/$media/$window',
              {'api_key':apiKey,'language':'en-US','page':'$page'})
