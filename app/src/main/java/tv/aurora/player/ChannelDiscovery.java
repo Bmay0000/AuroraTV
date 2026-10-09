@@ -482,11 +482,23 @@ public final class ChannelDiscovery {
     }
 
     /** Provider quality affects primary choice, not availability of alternates. */
+    /** The satellite reference is a US lineup. Prefer a US feed when a
+     * provider supplies both US and Canadian versions of the same network. */
+    private static int regionPreference(LibraryCore.Item item){
+        String name=item.name==null?"":item.name.toUpperCase(Locale.ROOT);
+        String category=item.category==null?"":item.category.toUpperCase(Locale.ROOT);
+        boolean us=Pattern.compile("(^|[^A-Z])(?:US|USA|UNITED STATES)([^A-Z]|$)").matcher(name+" "+category).find();
+        boolean ca=Pattern.compile("(^|[^A-Z])(?:CA|CAN|CANADA|CANADIAN)([^A-Z]|$)").matcher(name+" "+category).find();
+        if(us&&!ca)return 160;
+        if(ca&&!us)return -100;
+        return 0;
+    }
+
     public static int renditionScore(LibraryCore.Item item){
         if(item==null)return Integer.MIN_VALUE;
         String name=item.name==null?"":item.name.toUpperCase(Locale.ROOT);
         String category=item.category==null?"":item.category;
-        int quality=0;
+        int quality=regionPreference(item);
         if(NA_CATEGORY.matcher(category).find())quality+=25;
         if("en".equals(LibraryCore.language(item)))quality+=20;
         if(item.epgId!=null&&!item.epgId.trim().isEmpty())quality+=15;

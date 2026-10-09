@@ -1955,7 +1955,7 @@ public class MainActivity extends Activity {
      final java.util.Map<String,Button> guideChips=new java.util.HashMap<>();
      for(String option:filters){
       Button chip=textAction(
-        "North America".equals(option)?"US / CANADA":
+        "North America".equals(option)?"US LINEUP":
         "More North America".equals(option)?"MORE NORTH AMERICA":
         "All".equals(option)?"ALL STREAMS":option,()->{
        if(option.equals(guideFilter))return;
@@ -1981,7 +1981,7 @@ public class MainActivity extends Activity {
      body.addView(main,viewport);
      LinearLayout directory=column();
      directory.setClipToPadding(true);directory.setClipChildren(true);
-     final int paneWidth=TvLayout.clamp((int)(metrics.contentWidth()*.19),130,245);
+     final int paneWidth=TvLayout.clamp((int)(metrics.contentWidth()*.24),175,390);
      LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,-1,1);
      left.rightMargin=dp(7);main.addView(directory,left);
      LinearLayout columns=new LinearLayout(this);

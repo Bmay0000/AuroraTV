@@ -243,6 +243,11 @@ public final class GuideEngine extends SQLiteOpenHelper {
         }
         String norm=normalized(item.name);
         if(norm.isEmpty())return null;
+        // The display name can carry a country prefix (CA - CNN, US: CNN)
+        // which the guide does not. Only use the canonical network name as a
+        // second pass when its identity is a known satellite network.
+        String networkNorm=ChannelDiscovery.satelliteNumber(item)>0
+                ? normalized(ChannelDiscovery.canonicalName(item.name)):"";
         // Require an unambiguous exact normalized display-name match.
         try(Cursor c=db.rawQuery(
                 "SELECT id FROM guide_channels WHERE source=? AND norm=? LIMIT 2",
@@ -250,6 +255,16 @@ public final class GuideEngine extends SQLiteOpenHelper {
             if(c.moveToFirst()){
                 String id=c.getString(0);
                 if(!c.moveToNext())return id;
+            }
+        }
+        if(!networkNorm.isEmpty()&&!networkNorm.equals(norm)){
+            try(Cursor c=db.rawQuery(
+                    "SELECT id FROM guide_channels WHERE source=? AND norm=? LIMIT 2",
+                    new String[]{source,networkNorm})){
+                if(c.moveToFirst()){
+                    String id=c.getString(0);
+                    if(!c.moveToNext())return id;
+                }
             }
         }
         // Some public feeds identify BBC One as BBCOne.uk without a useful
@@ -359,8 +374,15 @@ public final class GuideEngine extends SQLiteOpenHelper {
         try{
             String streamUrl=item.url;
             if(streamUrl==null||streamUrl.isEmpty())return false;
-            Matcher m=STREAM_ID.matcher(new URL(streamUrl).getPath());
-            if(!m.find())return false;
+            String streamPath=new URL(streamUrl).getPath();
+            Matcher m=STREAM_ID.matcher(streamPath);
+            // Xtream servers also serve /username/password/stream_id.ts
+            // without the optional /live prefix.
+            if(!m.find()){
+                m=Pattern.compile("/(?:[^/]+/){2}(\\d+)(?:\\.(?:ts|m3u8|mp4))?$",
+                    Pattern.CASE_INSENSITIVE).matcher(streamPath);
+                if(!m.find())return false;
+            }
             String id=m.group(1);
             String baseApi=Provider.base(host)+"/player_api.php?username="+Provider.enc(user)+
               "&password="+Provider.enc(password);
