@@ -829,8 +829,11 @@ class GuideScreen extends StatefulWidget{
 class _GuideScreenState extends State<GuideScreen>{
  DateTime anchor=DateTime.now();
  Map<String,List<TvProgramme>> programs={};
+ String key(MediaEntry item)=>item.epgId.isNotEmpty&&programs.containsKey(item.epgId)
+   ?item.epgId:'name:${GuideNames.canonical(item.cleanTitle)}';
  MediaEntry? focused;Timer? debounce;VideoPlayerController? preview;
- @override void initState(){super.initState();widget.revision.addListener(_loadForAnchor);_load();}
+ bool previewEnabled=true;
+ @override void initState(){super.initState();previewEnabled=widget.previewOn;widget.revision.addListener(_loadForAnchor);_load();}
  @override void didUpdateWidget(covariant GuideScreen old){
    super.didUpdateWidget(old);
    if(old.channels!=widget.channels||old.group!=widget.group)_load();
@@ -838,7 +841,7 @@ class _GuideScreenState extends State<GuideScreen>{
  Future<void> _load()async{
    final now=DateTime.now();
    anchor=DateTime(now.year,now.month,now.day,now.hour,now.minute<30?0:30);
-   final result=await widget.db.schedules(widget.channels.map((e)=>e.epgId).where((e)=>e.isNotEmpty).toList(),
+   final result=await widget.db.schedules(widget.channels.expand((e)=>[if(e.epgId.isNotEmpty)e.epgId,'name:${GuideNames.canonical(e.cleanTitle)}']).toSet().toList(),
      anchor,anchor.add(const Duration(hours:3)));
    if(mounted)setState(()=>programs=result);
  }
@@ -846,7 +849,7 @@ class _GuideScreenState extends State<GuideScreen>{
    if(focused?.id==item.id)return;
    setState(()=>focused=item);
    debounce?.cancel();preview?.dispose();preview=null;
-   if(!widget.previewOn||widget.source==null)return;
+   if(!previewEnabled||widget.source==null)return;
    debounce=Timer(const Duration(milliseconds:1400),()async{
      try{
        final video=VideoPlayerController.networkUrl(Uri.parse(widget.source!.playback(item)));
@@ -876,6 +879,11 @@ class _GuideScreenState extends State<GuideScreen>{
            maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:12,color:C.secondary)),
        ])),
        const SizedBox(width:16),
+       IconButton(tooltip:previewEnabled?'Pause TV preview':'Enable TV preview',
+         onPressed:(){setState(()=>previewEnabled=!previewEnabled);
+           if(!previewEnabled){debounce?.cancel();preview?.dispose();preview=null;}
+           else if(selected!=null){focused=null;_focus(selected);}},
+         icon:Icon(previewEnabled?Icons.picture_in_picture:Icons.picture_in_picture_alt)),
        SizedBox(width:210,height:92,child:ClipRRect(borderRadius:BorderRadius.circular(9),
          child:preview?.value.isInitialized==true?VideoPlayer(preview!):
            Stack(fit:StackFit.expand,children:[
@@ -911,7 +919,7 @@ class _GuideScreenState extends State<GuideScreen>{
            ])),
          Expanded(child:ListView.builder(itemCount:channels.length,itemBuilder:(ctx,i){
            final item=channels[i];
-           final blocks=programs[item.epgId]??[];
+           final blocks=programs[key(item)]??[];
            final current=focused?.id==item.id;
            return InkWell(
              onFocusChange:(value){if(value)_focus(item);},
@@ -942,13 +950,13 @@ class _GuideScreenState extends State<GuideScreen>{
    ]));
  }
  Future<void> _loadForAnchor()async{
-   final data=await widget.db.schedules(widget.channels.map((e)=>e.epgId).where((id)=>id.isNotEmpty).toList(),
+   final data=await widget.db.schedules(widget.channels.expand((e)=>[if(e.epgId.isNotEmpty)e.epgId,'name:${GuideNames.canonical(e.cleanTitle)}']).toSet().toList(),
      anchor,anchor.add(const Duration(hours:3)));
    if(mounted)setState(()=>programs=data);
  }
  TvProgramme? _currentProgram(MediaEntry? item,DateTime clock){
    if(item==null)return null;
-   for(final p in programs[item.epgId]??[]){if(p.start.isBefore(clock)&&p.end.isAfter(clock))return p;}
+   for(final p in programs[key(item)]??[]){if(p.start.isBefore(clock)&&p.end.isAfter(clock))return p;}
    return null;
  }
  String _blockTitle(List<TvProgramme> entries,DateTime time){
