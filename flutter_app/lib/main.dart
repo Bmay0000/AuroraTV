@@ -74,6 +74,68 @@ class _AuroraShellState extends State<AuroraShell>{
   bool englishFirst=true;
 
   @override void initState(){super.initState();_restore();}
+  // Keep a reliable remote shortcut into the header, even on heavily
+  // nested scrolling pages (Home shelves, guide, search, edit library).
+  void _focusNavigation([int? index]){
+    if(!mounted)return;
+    final target=navFocus[(index??page).clamp(0,navFocus.length-1)];
+    target.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_){
+      if(!mounted||!target.hasFocus)return;
+      final ctx=target.context;
+      if(ctx!=null){
+        Scrollable.ensureVisible(ctx,alignment:0.4,
+          duration:const Duration(milliseconds:160));
+      }
+    });
+  }
+  void _backToNavigation(){
+    if(navFocus.any((n)=>n.hasFocus) && page!=0){
+      _choose(0);
+    }else{
+      _focusNavigation();
+    }
+  }
+  KeyEventResult _onShellKey(FocusNode node,KeyEvent event){
+    if(event is! KeyDownEvent)return KeyEventResult.ignored;
+    final key=event.logicalKey;
+    if(key==LogicalKeyboardKey.contextMenu||
+       key==LogicalKeyboardKey.escape||
+       key==LogicalKeyboardKey.goBack||
+       key==LogicalKeyboardKey.browserBack){
+      _backToNavigation();
+      return KeyEventResult.handled;
+    }
+    final active=navFocus.indexWhere((n)=>n.hasFocus);
+    if(active>=0){
+      if(key==LogicalKeyboardKey.arrowLeft && active>0){
+        _focusNavigation(active-1);
+        return KeyEventResult.handled;
+      }
+      if(key==LogicalKeyboardKey.arrowRight && active<navFocus.length-1){
+        _focusNavigation(active+1);
+        return KeyEventResult.handled;
+      }
+    }else if(key==LogicalKeyboardKey.arrowUp){
+      // At the beginning of the currently scrolled page, Up returns to the
+      // header. Away from the top it remains regular directional traversal.
+      final ctx=FocusManager.instance.primaryFocus?.context;
+      if(ctx!=null){
+        final scroll=Scrollable.maybeOf(ctx,axis:Axis.vertical);
+        final atTop=scroll==null||
+          scroll.position.pixels<=scroll.position.minScrollExtent+2;
+        final render=ctx.findRenderObject();
+        if(render is RenderBox&&render.hasSize&&atTop){
+          final y=render.localToGlobal(Offset.zero).dy;
+          if(y<MediaQuery.sizeOf(context).height*.55){
+            _focusNavigation();
+            return KeyEventResult.handled;
+          }
+        }
+      }
+    }
+    return KeyEventResult.ignored;
+  }
   Future<void> _restore() async{
     try{
       await db.open();
@@ -87,6 +149,9 @@ class _AuroraShellState extends State<AuroraShell>{
       await _reload();
       if(!mounted)return;
       setState((){ready=true;showLogin=source==null;});
+      if(source!=null)WidgetsBinding.instance.addPostFrameCallback((_){
+        if(mounted&&!showLogin)_focusNavigation(0);
+      });
       _getTrends();
       if(source!=null) _refreshEpg(silent:true);
     }catch(e){if(mounted)setState((){status='Startup failed: $e';ready=true;showLogin=true;});}
@@ -180,6 +245,9 @@ class _AuroraShellState extends State<AuroraShell>{
       await _reload();
       if(!mounted)return;
       setState((){loading=false;showLogin=false;status='Imported $count titles and channels';page=0;});
+      WidgetsBinding.instance.addPostFrameCallback((_){
+        if(mounted&&!showLogin)_focusNavigation(0);
+      });
       _getTrends();
       _refreshEpg(silent:true);
     }catch(e){if(mounted)setState((){loading=false;status=e.toString();});}
@@ -214,7 +282,7 @@ class _AuroraShellState extends State<AuroraShell>{
     FocusManager.instance.primaryFocus?.unfocus();
     setState(()=>page=index);
     WidgetsBinding.instance.addPostFrameCallback((_){
-      if(mounted && page==index) navFocus[index].requestFocus();
+      if(mounted && page==index)_focusNavigation(index);
     });
     if(index==1)_loadLive();
     if(index==2||index==3){
@@ -393,7 +461,13 @@ class _AuroraShellState extends State<AuroraShell>{
 
     final media=MediaQuery.sizeOf(context);
     final isCinema=page==0||page==2||page==3;
-    return Scaffold(body:Stack(children:[
+    return PopScope(
+      canPop:false,
+      onPopInvokedWithResult:(didPop,_){if(!didPop)_backToNavigation();},
+      child:Scaffold(body:Focus(
+        skipTraversal:true,
+        onKeyEvent:_onShellKey,
+        child:Stack(children:[
       Positioned.fill(child:ValueListenableBuilder<int>(valueListenable:heroVersion,
         builder:(_,__,___)=>AnimatedSwitcher(duration:const Duration(milliseconds:350),
         child:Container(key:ValueKey(isCinema?(meta.backdrop.isNotEmpty?meta.backdrop:featured?.artwork??''):'empty'),
@@ -413,22 +487,25 @@ class _AuroraShellState extends State<AuroraShell>{
             Colors.black.withValues(alpha:.12),Colors.black.withValues(alpha:.90)])))),
       SafeArea(child:Column(children:[
         _navBar(media.width),
-        Expanded(child:FocusScope(child:IndexedStack(index:page,children:[
-          _discovery(MediaKind.movie,home:true),
-          GuideScreen(db:db,channels:live,groups:groups[MediaKind.live]??[],
+        // No nested FocusScope here: it previously trapped D-pad navigation
+        // within the content and stopped Up reaching the app header.
+        Expanded(child:IndexedStack(index:page,children:[
+          ExcludeFocus(excluding:page!=0,child:_discovery(MediaKind.movie,home:true)),
+          ExcludeFocus(excluding:page!=1,child:GuideScreen(
+            db:db,channels:live,groups:groups[MediaKind.live]??[],
             group:channelGroup,onGroup:_loadLive,onPlay:_open,previewOn:previewOn,
-            source:source,provider:provider,refreshEpg:()=>_refreshEpg(),revision:guideRevision),
-          _discovery(MediaKind.movie),
-          _discovery(MediaKind.series),
-          _myList(),
-          _searchPage(),
-          _libraryPage(),
-        ]))),
+            source:source,provider:provider,refreshEpg:()=>_refreshEpg(),revision:guideRevision)),
+          ExcludeFocus(excluding:page!=2,child:_discovery(MediaKind.movie)),
+          ExcludeFocus(excluding:page!=3,child:_discovery(MediaKind.series)),
+          ExcludeFocus(excluding:page!=4,child:_myList()),
+          ExcludeFocus(excluding:page!=5,child:_searchPage()),
+          ExcludeFocus(excluding:page!=6,child:_libraryPage()),
+        ])),
       ])),
       if(loading)Positioned(left:0,right:0,bottom:0,child:Container(
         color:Colors.black87,padding:const EdgeInsets.all(12),
         child:Text(status,textAlign:TextAlign.center))),
-    ]));
+    ])))); 
   }
   Widget _navBar(double width){
     const labels=['Home','Live TV & Guide','Movies','TV Shows','My List','Search','Edit Library'];
@@ -602,11 +679,15 @@ class AuroraButton extends StatelessWidget{
     child:OutlinedButton(focusNode:focusNode,onPressed:onPressed,style:ButtonStyle(
         minimumSize:WidgetStatePropertyAll(Size(nav?54:156,nav?37:44)),
         padding:WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal:nav?14:20)),
-        backgroundColor:WidgetStatePropertyAll(primary?Colors.white:
-          selected?C.aqua.withValues(alpha:.16):Colors.black.withValues(alpha:nav ? .02 : .45)),
+        backgroundColor:WidgetStateProperty.resolveWith((states)=>
+          states.contains(WidgetState.focused)?C.aqua.withValues(alpha:.35):
+          primary?Colors.white:
+          selected?C.aqua.withValues(alpha:.16):Colors.black.withValues(alpha:nav?.02:.45)),
         foregroundColor:WidgetStatePropertyAll(primary?Colors.black:Colors.white),
-        side:WidgetStatePropertyAll(BorderSide(
-          color:selected?C.aqua:primary?Colors.white:C.secondary.withValues(alpha:nav?0:.23))),
+        side:WidgetStateProperty.resolveWith((states)=>BorderSide(
+          width:states.contains(WidgetState.focused)?2.5:1,
+          color:states.contains(WidgetState.focused)?C.aqua:
+            selected?C.aqua:primary?Colors.white:C.secondary.withValues(alpha:nav?0:.23))),
         shape:WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius:BorderRadius.circular(nav?12:9))),
       ),child:Text(text,maxLines:1,style:TextStyle(fontSize:nav?14:15,fontWeight:FontWeight.w700))),
   );
