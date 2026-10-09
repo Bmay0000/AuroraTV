@@ -742,7 +742,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
      if(event.logicalKey==LogicalKeyboardKey.select ||
        event.logicalKey==LogicalKeyboardKey.enter ||
        event.logicalKey==LogicalKeyboardKey.space){
-       if(initialized){v.value.isPlaying?v.pause():v.play();_showControls();}
+       if(v!=null&&initialized){v.value.isPlaying?v.pause():v.play();_showControls();}
        return KeyEventResult.handled;
      }
      _showControls();return KeyEventResult.ignored;
@@ -776,7 +776,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
           padding:const EdgeInsets.all(10),color:Colors.black54,
           child:Row(children:[
             IconButton(onPressed:(){
-              v!.value.isPlaying?v.pause():v.play();_showControls();
+              v.value.isPlaying?v.pause():v.play();_showControls();
             },icon:Icon(v!.value.isPlaying?Icons.pause:Icons.play_arrow,size:30)),
             if(seekable)...[
               IconButton(onPressed:()=>_seek(const Duration(seconds:-10)),
