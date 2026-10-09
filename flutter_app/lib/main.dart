@@ -242,7 +242,7 @@ class _AuroraShellState extends State<AuroraShell>{
     if(stream.isEmpty)return;
     if(!mounted)return;
     await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder:(_)=>PlayerScreen(title:item.cleanTitle,url:stream)));
+      builder:(_)=>PlayerScreen(title:item.cleanTitle,url:stream,live:item.kind==MediaKind.live)));
   }
   void _episodes(MediaEntry item,List<MediaEntry> episodes){
     showDialog<void>(context:context,builder:(ctx)=>Dialog(
@@ -691,14 +691,16 @@ class _LoginScreenState extends State<LoginScreen>{
 }
 
 class PlayerScreen extends StatefulWidget{
- final String title,url;
- const PlayerScreen({super.key,required this.title,required this.url});
+ final String title,url;final bool live;
+ const PlayerScreen({super.key,required this.title,required this.url,this.live=false});
  @override State<PlayerScreen> createState()=>_PlayerScreenState();
 }
 class _PlayerScreenState extends State<PlayerScreen>{
  VideoPlayerController? video;
  String error='';
- bool buffering=true,controls=true;
+ bool buffering=true,controls=true,muted=false,fillScreen=false;
+ double playbackSpeed=1;
+ static const pipChannel=MethodChannel('aurora.tv/picture_in_picture');
  Timer? hideTimer;
  int attempt=0;
  @override void initState(){super.initState();_init();}
@@ -743,6 +745,15 @@ class _PlayerScreenState extends State<PlayerScreen>{
     if(mounted&&video?.value.isPlaying==true)setState(()=>controls=false);
   });
  }
+ Future<void> _pip()async{
+  if(!widget.live)return;
+  try{
+    await pipChannel.invokeMethod<void>('enter');
+  }catch(_){
+    if(mounted)ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content:Text('System picture-in-picture is unavailable on this device.')));
+  }
+ }
  void _seek(Duration delta){
   final v=video;
   if(v==null||!v.value.isInitialized||v.value.duration.inSeconds<=0)return;
@@ -784,7 +795,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
     onTap:_showControls,
     child:Stack(children:[
       Positioned.fill(child:initialized?
-       FittedBox(fit:BoxFit.contain,child:SizedBox(
+       FittedBox(fit:fillScreen?BoxFit.cover:BoxFit.contain,child:SizedBox(
          width:v!.value.size.width,height:v.value.size.height,child:VideoPlayer(v))):
        const ColoredBox(color:Colors.black)),
       if(controls||error.isNotEmpty)Positioned(top:0,left:0,right:0,
@@ -794,6 +805,8 @@ class _PlayerScreenState extends State<PlayerScreen>{
           Expanded(child:Text(widget.title,maxLines:1,overflow:TextOverflow.ellipsis,
             style:const TextStyle(fontSize:19,fontWeight:FontWeight.w700))),
           IconButton(tooltip:'Retry playback',onPressed:_init,icon:const Icon(Icons.refresh)),
+          if(widget.live)IconButton(tooltip:'Picture-in-picture',onPressed:_pip,
+            icon:const Icon(Icons.picture_in_picture_alt_outlined)),
         ]))),
       if(buffering)const Center(child:CircularProgressIndicator(color:C.aqua)),
       if(error.isNotEmpty)Center(child:Container(
@@ -810,6 +823,12 @@ class _PlayerScreenState extends State<PlayerScreen>{
             IconButton(onPressed:(){
               v.value.isPlaying?v.pause():v.play();_showControls();
             },icon:Icon(v!.value.isPlaying?Icons.pause:Icons.play_arrow,size:30)),
+            IconButton(tooltip:muted?'Unmute':'Mute',onPressed:(){
+              muted=!muted;v.setVolume(muted?0:1);_showControls();
+            },icon:Icon(muted?Icons.volume_off:Icons.volume_up)),
+            IconButton(tooltip:'Aspect ratio',onPressed:(){
+              setState(()=>fillScreen=!fillScreen);_showControls();
+            },icon:Icon(fillScreen?Icons.fit_screen:Icons.aspect_ratio)),
             if(seekable)...[
               IconButton(onPressed:()=>_seek(const Duration(seconds:-10)),
                 icon:const Icon(Icons.replay_10)),
@@ -819,6 +838,11 @@ class _PlayerScreenState extends State<PlayerScreen>{
                 onChanged:(n){v.seekTo(Duration(milliseconds:n.round()));_showControls();})),
               IconButton(onPressed:()=>_seek(const Duration(seconds:10)),
                 icon:const Icon(Icons.forward_10)),
+              PopupMenuButton<double>(tooltip:'Playback speed',initialValue:playbackSpeed,
+                onSelected:(speed){playbackSpeed=speed;v.setPlaybackSpeed(speed);_showControls();},
+                itemBuilder:(_)=>[.5,1,1.25,1.5,2].map((speed)=>PopupMenuItem(
+                  value:speed,child:Text('${speed}x'))).toList(),
+                child:Padding(padding:const EdgeInsets.all(9),child:Text('${playbackSpeed}x'))),
             ]else const Expanded(child:Text('LIVE',style:TextStyle(color:C.aqua,
               fontWeight:FontWeight.w800))),
           ]),
