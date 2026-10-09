@@ -8,11 +8,27 @@ import 'provider.dart';
 /// Shared normalization for XMLTV display names and imported stream titles.
 /// Only exact normalized matches are accepted: ESPN2 is never ESPN.
 class GuideNames {
- static String canonical(String raw) => raw.toUpperCase()
-   .replaceFirst(RegExp(r'^(?:US|USA|CA|CAN|CANADA|UK|NZ|AU|EN|ENG|NA)\s*[-|:]\s*'),'')
-   .replaceAll(RegExp(r'\b(?:FHD|UHD|4K|HD|SD|HEVC|H265|1080P|720P|EAST|WEST)\b'),'')
-   .replaceAll(RegExp(r'[^A-Z0-9]+'),'')
-   .trim();
+ static String canonical(String raw) {
+   var name=raw.toUpperCase().trim()
+     .replaceAll(RegExp(r'&AMP;'),'&')
+     .replaceAll(RegExp(r'^\s*[|\[(]\s*(?:US|USA|CANADA|CA|NA|UK|EN|AU|NZ)\s*[|\])]'),'')
+     .replaceFirst(RegExp(r'^\s*(?:US|USA|CANADA|CA|NA|UK|EN|AU|NZ)\s*[-:|]\s*'),'')
+     .replaceAll(RegExp(r'\([^)]*\)'),' ')
+     .replaceAll(RegExp(r'\[[^\]]*\]'),' ')
+     .replaceAll(RegExp(r'\b(?:FHD|UHD|4K|HD|SD|HEVC|H265|1080P|720P|EAST|WEST)\b'),' ')
+     .replaceAll(RegExp(r'\s+'),' ').trim();
+   const aliases=<String,String>{
+     'A&E':'A AND E','FX NETWORK':'FX','NAT GEO':'NATIONAL GEOGRAPHIC',
+     'NATIONAL GEO':'NATIONAL GEOGRAPHIC','HISTORY CHANNEL':'HISTORY',
+     'DISCOVERY CHANNEL':'DISCOVERY','ESPN 2':'ESPN2',
+     'ESPN NEWS':'ESPNEWS','ESPN U':'ESPNU',
+     'FOX SPORTS ONE':'FS1','FOX SPORTS 1':'FS1',
+     'FOX NEWS':'FOX NEWS CHANNEL','MSNBC':'MS NOW',
+     'TURNER CLASSIC MOVIES':'TCM','ION':'ION TELEVISION',
+   };
+   name=aliases[name]??name;
+   return name.replaceAll(RegExp(r'[^A-Z0-9]+'),'');
+ }
 }
 
 class XmltvService {
