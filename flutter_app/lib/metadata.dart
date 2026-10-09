@@ -18,7 +18,8 @@ class MovieMeta {
 
 class TmdbClient {
  final http.Client _client=http.Client();
- String apiKey='';
+ static const bundledApiKey='efd60dbd0c87183cfa868e30bad7c99e';
+ String apiKey=bundledApiKey;
  final Map<String,MovieMeta> _mem={};
  final Map<String,List<String>> _trending={};
  final Map<String,Map<String,List<String>>> _weekly={};
@@ -30,10 +31,10 @@ class TmdbClient {
   10759:'Action & Adventure',10765:'Sci-Fi & Fantasy',10762:'Kids',
  };
  Future<void> restore() async {
-   apiKey=(await SharedPreferences.getInstance()).getString('tmdb.key')??'';
+   apiKey=(await SharedPreferences.getInstance()).getString('tmdb.key')??bundledApiKey;
  }
  Future<void> saveKey(String key) async {
-   apiKey=key.trim();_mem.clear();_trending.clear();
+   apiKey=key.trim().isEmpty?bundledApiKey:key.trim();_mem.clear();_trending.clear();
    _weekly.clear();
    (await SharedPreferences.getInstance()).setString('tmdb.key',apiKey);
  }
