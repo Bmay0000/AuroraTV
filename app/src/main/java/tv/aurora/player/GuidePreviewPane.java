@@ -94,7 +94,7 @@ public final class GuidePreviewPane implements AutoCloseable {
         container.addView(content,sidePane?
             new LinearLayout.LayoutParams(-1,-2):
             new LinearLayout.LayoutParams(0,-1,1));
-        boolean compact=!sidePane&&metrics.heightDp<700;
+        boolean compact=metrics.heightDp<620 || (!sidePane&&metrics.heightDp<700);
         TextView eyebrow=text("AUTO PREVIEW  ·  MUTED",11,0xff5debd0);
         eyebrow.setLetterSpacing(.1f);
         if(!compact)content.addView(eyebrow);
