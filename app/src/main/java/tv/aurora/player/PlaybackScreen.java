@@ -369,7 +369,7 @@ public final class PlaybackScreen {
             final ExoPlayer currentPlayer=player;
             priorState=Player.STATE_IDLE;
             bufferStartMs=0;
-            rebufferCount=0;
+            // Session rebuffer counter remains meaningful across retries.
 
             player.addListener(new Player.Listener(){
                 @Override public void onPlaybackStateChanged(int playbackState){
@@ -464,11 +464,29 @@ public final class PlaybackScreen {
         scheduleHide();
     }
 
+    private void showStreamInfo(){
+        long ahead=player==null?0:Math.max(0,
+            player.getBufferedPosition()-player.getCurrentPosition());
+        String report="Channel: "+media.name+"\n"+
+            "Source format: "+(isHls?"HLS":"MPEG-TS / progressive")+"\n"+
+            "Buffer profile: "+bufferProfile+"\n"+
+            "Buffered ahead: "+(ahead/1000)+" seconds\n"+
+            "Rebuffer events: "+rebufferCount+"\n"+
+            "Automatic reconnects: "+recovery.attempts()+" / "+
+                PlaybackRecoveryPolicy.MAX_ATTEMPTS+"\n\n"+
+            "If this stream freezes, choose Reconnect. AuroraTV also retries "+
+            "automatically before suggesting another source or format.";
+        new AlertDialog.Builder(activity).setTitle("AuroraTV · Stream Health")
+          .setMessage(report).setPositiveButton("RECONNECT",(d,n)->retry())
+          .setNegativeButton("CLOSE",null).show();
+    }
+
     private void showSettings(){
         String[] options={
                 "Buffering: "+labelBuffer(),
                 "Live stream format: "+labelFormat(),
                 "Restart this stream",
+                "Stream Health · current connection",
                 "Why does Live TV buffer?"
         };
         new AlertDialog.Builder(activity).setTitle("AuroraTV · Playback Settings")
@@ -476,6 +494,7 @@ public final class PlaybackScreen {
               if(index==0){chooseBuffering();return;}
               if(index==1){chooseFormat();return;}
               if(index==2){restartPlayer();return;}
+              if(index==3){showStreamInfo();return;}
               new AlertDialog.Builder(activity).setTitle("Playback buffering")
                  .setMessage("Stable mode builds a bigger buffer to help smooth out uneven IPTV streams. "
                    +"Original keeps your provider's stream type. Some Xtream providers offer both MPEG-TS and HLS. "
@@ -688,33 +707,39 @@ public final class PlaybackScreen {
     public void hideControls() { setControlsVisible(false); }
     public boolean controlsVisible() { return overlayVisible; }
 
-    public boolean handleKey(KeyEvent event) {
-        if (closed || player == null) return false;
-        int key = event.getKeyCode();
-        if (event.getAction() != KeyEvent.ACTION_DOWN) {
-            return key == KeyEvent.KEYCODE_MENU ||
-                   key == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE ||
+    public boolean handleKey(KeyEvent event){
+        if(closed || player==null)return false;
+        int key=event.getKeyCode();
+        if(event.getAction()!=KeyEvent.ACTION_DOWN){
+            return key==KeyEvent.KEYCODE_MENU||
+                   key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE||
+                   key==KeyEvent.KEYCODE_MEDIA_PLAY||
+                   key==KeyEvent.KEYCODE_MEDIA_PAUSE||
                    (!overlayVisible && isNavigationKey(key));
         }
-        if (key == KeyEvent.KEYCODE_MENU) {
-            setControlsVisible(!overlayVisible);
-            return true;
+        if(key==KeyEvent.KEYCODE_MENU){
+            setControlsVisible(!overlayVisible);return true;
         }
-        if (key == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE ||
-            key == KeyEvent.KEYCODE_MEDIA_PLAY ||
-            key == KeyEvent.KEYCODE_MEDIA_PAUSE) {
-            if (key == KeyEvent.KEYCODE_MEDIA_PLAY) player.play();
-            else if (key == KeyEvent.KEYCODE_MEDIA_PAUSE) player.pause();
-            else if (player.isPlaying()) player.pause(); else player.play();
-            return true;
+        if(key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE){
+            togglePlay();return true;
         }
-        if (isNavigationKey(key)) {
-            if (!overlayVisible) {
-                showControls();
-                return true;
-            }
-            scheduleHide();
-            return false; // Let buttons respond to DPAD navigation/Select.
+        if(key==KeyEvent.KEYCODE_MEDIA_PLAY){
+            manualPause=false;player.play();updatePlaybackState();return true;
+        }
+        if(key==KeyEvent.KEYCODE_MEDIA_PAUSE){
+            manualPause=true;player.pause();showControls();return true;
+        }
+        if(!overlayVisible && !"live".equals(type) && player.isCurrentMediaItemSeekable() &&
+           (key==KeyEvent.KEYCODE_DPAD_LEFT || key==KeyEvent.KEYCODE_DPAD_RIGHT)){
+            long offset=key==KeyEvent.KEYCODE_DPAD_RIGHT?10000L:-10000L;
+            long target=Math.max(0,player.getCurrentPosition()+offset);
+            long duration=player.getDuration();
+            if(duration>0 && duration!=C.TIME_UNSET)target=Math.min(duration,target);
+            player.seekTo(target);showControls();return true;
+        }
+        if(isNavigationKey(key)){
+            if(!overlayVisible){showControls();return true;}
+            scheduleHide();return false;
         }
         return false;
     }
