@@ -27,7 +27,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
     private static final String DATABASE = "aurora_catalog.db";
     private static final int VERSION = 1;
     private static final String COLUMNS =
-            "(row_id INTEGER PRIMARY KEY AUTOINCREMENT, item_id TEXT NOT NULL UNIQUE, " +
+            "(row_id INTEGER PRIMARY KEY, item_id TEXT NOT NULL UNIQUE, " +
             "name TEXT NOT NULL, category TEXT NOT NULL, type TEXT NOT NULL, " +
             "epg TEXT, language TEXT, url BLOB NOT NULL, artwork TEXT)";
     private static final String FIELDS =
