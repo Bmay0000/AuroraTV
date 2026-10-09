@@ -1430,9 +1430,9 @@ public class MainActivity extends Activity {
      LinearLayout toolbar=new LinearLayout(this);
      toolbar.setGravity(Gravity.CENTER_VERTICAL);
      body.addView(toolbar,new LinearLayout.LayoutParams(-1,dp(37)));
-     TextView heading=headline("LIVE GUIDE",TvLayout.clamp(metrics.bodySize()+3,16,23),Color.WHITE);
+     TextView heading=headline("LIVE TV · GUIDE",TvLayout.clamp(metrics.bodySize()+3,16,23),Color.WHITE);
      toolbar.addView(heading,new LinearLayout.LayoutParams(0,-2,1));
-     TextView total=text(channels.size()+" CHANNELS",11);
+     TextView total=text(channels.size()+("North America".equals(filter)?" NETWORKS":" CHANNELS"),11);
      total.setTextColor(MUTED);
      toolbar.addView(total);
      Button searchButton=textAction(search.isEmpty()?"⌕ SEARCH":"⌕ "+search,()->guideSearch());
@@ -1457,9 +1457,13 @@ public class MainActivity extends Activity {
      chips.setGravity(Gravity.CENTER_VERTICAL);
      chipsScroll.addView(chips,new ViewGroup.LayoutParams(-2,-1));
      final String[] filters={"North America","News","Sports","Entertainment",
-       "Movies","Kids","English","All","My Channels","International","Other"};
+       "Movies","Kids","English","More North America","All","My Channels",
+       "International","Other"};
      for(String option:filters){
-      Button chip=textAction(option,()->{
+      Button chip=textAction(
+        "North America".equals(option)?"US / CANADA":
+        "More North America".equals(option)?"MORE NORTH AMERICA":
+        "All".equals(option)?"ALL STREAMS":option,()->{
        if(option.equals(guideFilter))return;
        guideFilter=option;guidePage=0;tvGuide();
       });
@@ -1934,20 +1938,63 @@ public class MainActivity extends Activity {
 
  void moreGuide(LibraryCore.Item channel){
   new AlertDialog.Builder(this).setTitle(channel.name)
-   .setItems(new String[]{"Preview channel","Full programme schedule",
+   .setItems(new String[]{
+     "▶  Watch channel",
+     "Change stream quality / alternate source",
+     "Preview channel",
+     "Full programme schedule",
      "Match this channel to an EPG source",
-     favorites.contains(channel.id)?"Remove favorite":"Add favorite","Hide channel"},
-    (d,n)->{
-     if(n==0){showLivePreview(channel);return;}
-     if(n==1){showChannelSchedule(channel);return;}
-     if(n==2){chooseGuideMatch(channel);return;}
-     if(n==3){
+     favorites.contains(channel.id)?"Remove favorite":"Add favorite",
+     "Hide channel"
+    },(d,n)->{
+     if(n==0){open(channel);return;}
+     if(n==1){chooseAlternateSource(channel);return;}
+     if(n==2){showLivePreview(channel);return;}
+     if(n==3){showChannelSchedule(channel);return;}
+     if(n==4){chooseGuideMatch(channel);return;}
+     if(n==5){
       if(!favorites.add(channel.id))favorites.remove(channel.id);
       save();tvGuide();return;
      }
      hidden.add(channel.id);shown.remove(channel.id);save();tvGuide();
     }).show();
  }
+
+ void chooseAlternateSource(LibraryCore.Item channel){
+  final int token=browseToken;
+  final Set<String> h=new HashSet<>(hidden),hc=new HashSet<>(categories),
+      fav=new HashSet<>(favorites),lang=new HashSet<>(allowed),
+      manual=new HashSet<>(shown),groups=new HashSet<>(shownCategories);
+  final boolean strict=hideUnknown;
+  catalogReadIO.execute(()->{
+   try{
+    List<LibraryCore.Item> streams=store.alternateStreams(
+      channel,h,hc,fav,lang,strict,manual,groups);
+    runOnUiThread(()->{
+     if(isDestroyed()||token!=browseToken||!"guide".equals(screen))return;
+     if(streams.size()<=1){
+      toast("This network has no other visible provider streams");return;
+     }
+     String[] options=new String[streams.size()];
+     for(int i=0;i<streams.size();i++){
+      LibraryCore.Item alternate=streams.get(i);
+      String label=(alternate.id.equals(channel.id)?"✓  ":"")+
+         alternate.name+" · "+alternate.category;
+      options[i]=label.length()>120?label.substring(0,117)+"…":label;
+     }
+     new AlertDialog.Builder(this).setTitle("Choose stream · "+channel.name)
+       .setItems(options,(d,n)->open(streams.get(n)))
+       .setNegativeButton("CANCEL",null).show();
+    });
+   }catch(Exception error){
+    runOnUiThread(()->{
+     if(!isDestroyed()&&token==browseToken)
+      toast("Unable to inspect alternate channel streams");
+    });
+   }
+  });
+ }
+
  void showChannelSchedule(LibraryCore.Item channel){
   io.execute(()->{
    List<GuideEngine.Program> initial=epg.schedule(channel,22);
