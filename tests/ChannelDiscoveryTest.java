@@ -80,7 +80,12 @@ public class ChannelDiscoveryTest{
   }
   check(primaryEspn==1,"Exactly one primary ESPN channel");
   check(espn2Count==1,"ESPN2 is separate but its HD duplicates are collapsed");
-  check(plusEvents==0,"Numbered ESPN+ event feeds not mixed into main lineup");
+  check(plusEvents==1,"Only one ESPN+ service entry from the official limited 210 feeds");
+  check(ChannelDiscovery.satelliteNumber(
+    channel("ESPN+ 6 HD","US SPORTS","en"))==210,"DIRECTV ESPN+ subfeed near 210");
+  check(ChannelDiscovery.satelliteNumber(
+    channel("ESPN+ 1200 HD","US SPORTS","en"))==0,
+    "Numbered provider event must not steal the 210 reference");
   check(curated.size()<=90,"Default satellite guide is not thousands of provider event feeds");
   List<LibraryCore.Item> allStreams=ChannelDiscovery.curate(crowded,"All",false);
   check(allStreams.size()==crowded.size(),"All Streams preserves every alternate");
