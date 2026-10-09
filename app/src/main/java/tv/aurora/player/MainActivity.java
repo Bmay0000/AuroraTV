@@ -585,6 +585,13 @@ public class MainActivity extends Activity {
  }
 
 
+ GradientDrawable selectionOutline(){
+  GradientDrawable d=new GradientDrawable();
+  d.setColor(0x264cebd0);
+  d.setStroke(dp(4),ACCENT);
+  d.setCornerRadius(dp(16));
+  return d;
+ }
  static final class PosterTile {
   ImageView image;
   TextView title,category,badge,initial;
@@ -886,6 +893,32 @@ public class MainActivity extends Activity {
      body.addView(text("Showing "+(requested*PAGE_SIZE+1)+"–"+
           (requested*PAGE_SIZE+result.rows.size())+(result.more?"+":"")+" matching titles",14));
      if(type.equals("movie")||type.equals("series")){
+      LinearLayout featuredSelection=new LinearLayout(this);
+      featuredSelection.setGravity(Gravity.CENTER_VERTICAL);
+      featuredSelection.setPadding(dp(12),dp(7),dp(15),dp(7));
+      featuredSelection.setBackground(rounded(0xff172a3a,14,0xff2c5861));
+      LinearLayout.LayoutParams spotlightSize=new LinearLayout.LayoutParams(-1,dp(tv().heightDp<500?74:98));
+      spotlightSize.bottomMargin=dp(8);
+      body.addView(featuredSelection,spotlightSize);
+      ImageView spotlightPoster=new ImageView(this);
+      spotlightPoster.setScaleType(ImageView.ScaleType.CENTER_CROP);
+      featuredSelection.addView(spotlightPoster,
+         new LinearLayout.LayoutParams(dp(tv().heightDp<500?43:57),-1));
+      LinearLayout details=column();
+      details.setPadding(dp(17),0,dp(4),0);
+      details.setGravity(Gravity.CENTER_VERTICAL);
+      featuredSelection.addView(details,new LinearLayout.LayoutParams(0,-1,1));
+      details.addView(kicker("YOUR SELECTION"));
+      TextView spotlightTitle=headline("Choose a title",TvLayout.clamp(tv().bodySize()+5,18,25),Color.WHITE);
+      spotlightTitle.setSingleLine(true);
+      spotlightTitle.setEllipsize(TextUtils.TruncateAt.END);
+      details.addView(spotlightTitle);
+      TextView spotlightCategory=text("Press SELECT for details and playback",14);
+      spotlightCategory.setTextColor(MUTED);
+      spotlightCategory.setSingleLine(true);
+      details.addView(spotlightCategory);
+      TextView selectTip=kicker("●  SELECT TO OPEN");
+      featuredSelection.addView(selectTip);
       GridView grid=new GridView(this);
       grid.setNumColumns(GridView.AUTO_FIT);
       grid.setColumnWidth(dp(tv().posterWidth));
@@ -896,7 +929,9 @@ public class MainActivity extends Activity {
       grid.setClipToPadding(false);
       grid.setPadding(dp(5),dp(10),dp(5),dp(16));
       grid.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
-      grid.setSelector(rounded(0x224be0cc,13,ACCENT));
+      grid.setSelector(selectionOutline());
+      grid.setDrawSelectorOnTop(true);
+      grid.setFocusable(true);
       body.addView(grid,new LinearLayout.LayoutParams(-1,0,1));
       grid.setAdapter(new BaseAdapter(){
        public int getCount(){return result.rows.size();}
@@ -906,6 +941,21 @@ public class MainActivity extends Activity {
         return posterGridCard(result.rows.get(n),reuse);
        }
       });
+      grid.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
+       public void onItemSelected(AdapterView<?> parent,View view,int pos,long id){
+        LibraryCore.Item film=result.rows.get(pos);
+        spotlightTitle.setText(film.name);
+        spotlightCategory.setText(film.category);
+        posters.bind(spotlightPoster,film.artwork);
+       }
+       public void onNothingSelected(AdapterView<?> parent){}
+      });
+      if(!result.rows.isEmpty()){
+       LibraryCore.Item first=result.rows.get(0);
+       spotlightTitle.setText(first.name);
+       spotlightCategory.setText(first.category);
+       posters.bind(spotlightPoster,first.artwork);
+      }
       grid.setOnItemClickListener((parent,v,n,id)->{
        LibraryCore.Item media=result.rows.get(n);
        if(editing)actions(media);else showMediaDetails(media);
@@ -923,7 +973,8 @@ public class MainActivity extends Activity {
         return liveChannelRow(result.rows.get(n),reuse);
        }
       });
-      list.setSelector(rounded(0x224be0cc,13,ACCENT));
+      list.setSelector(selectionOutline());
+      list.setDrawSelectorOnTop(true);
       list.setOnItemClickListener((parent,v,n,id)->{
        LibraryCore.Item picked=result.rows.get(n);if(editing)actions(picked);else showLivePreview(picked);
       });
