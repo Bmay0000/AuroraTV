@@ -921,7 +921,7 @@ public class MainActivity extends Activity {
       spotlightCategory.setSingleLine(true);
       details.addView(spotlightCategory);
       TextView selectTip=kicker("●  SELECT TO OPEN");
-      featuredSelection.addView(selectTip);
+      if(tv().contentWidth()>680)featuredSelection.addView(selectTip);
       GridView grid=new GridView(this);
       grid.setNumColumns(GridView.AUTO_FIT);
       grid.setColumnWidth(dp(tv().posterWidth));
@@ -1066,7 +1066,7 @@ public class MainActivity extends Activity {
      TvLayout metrics=tv();
      int channelW=metrics.guideChannel,nowW=metrics.guideNow,
          nextW=metrics.guideNext,actionsW=metrics.guideAction;
-     int rowHeight=TvLayout.clamp((int)(metrics.heightDp*.145),72,102);
+     int rowHeight=metrics.heightDp<480?60:TvLayout.clamp((int)(metrics.heightDp*.145),72,102);
      body.removeAllViews();
      LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);
      heading.addView(headline("TV GUIDE",TvLayout.clamp(metrics.headingSize(),25,36),Color.WHITE),
@@ -1081,9 +1081,9 @@ public class MainActivity extends Activity {
      });
      refreshButton.setTextSize(14);
      heading.addView(refreshButton,new LinearLayout.LayoutParams(dp(actionButtonWidth-12),dp(49)));
-     body.addView(heading,new LinearLayout.LayoutParams(-1,dp(56)));
+     body.addView(heading,new LinearLayout.LayoutParams(-1,dp(metrics.heightDp<480?43:56)));
      LinearLayout meta=new LinearLayout(this);meta.setGravity(Gravity.CENTER_VERTICAL);
-     body.addView(meta,new LinearLayout.LayoutParams(-1,dp(53)));
+     body.addView(meta,new LinearLayout.LayoutParams(-1,dp(metrics.heightDp<480?40:53)));
      Button categoriesButton=button("▦  "+selectedCategory+"   ▾",this::chooseGuideCategory);
      categoriesButton.setSingleLine(true);
      categoriesButton.setEllipsize(TextUtils.TruncateAt.END);
@@ -1093,13 +1093,13 @@ public class MainActivity extends Activity {
      meta.addView(clock,new LinearLayout.LayoutParams(dp(
        TvLayout.clamp(metrics.contentWidth()/4,110,235)),dp(46)));
      LinearLayout previewArea=new LinearLayout(this);
-     int previewHeight=TvLayout.clamp((int)(metrics.heightDp*.255),104,220);
+     int previewHeight=metrics.heightDp<480?76:TvLayout.clamp((int)(metrics.heightDp*.255),104,220);
      LinearLayout.LayoutParams previewPosition=new LinearLayout.LayoutParams(-1,dp(previewHeight));
      previewPosition.topMargin=dp(6);
      body.addView(previewArea,previewPosition);
      guidePreview=new GuidePreviewPane(this,store,posters,previewArea,metrics);
      TextView helper=text("Highlight a channel to preview silently · Select to watch · Long press for options",13);
-     helper.setTextColor(MUTED);body.addView(helper);
+     if(metrics.heightDp>=480){helper.setTextColor(MUTED);body.addView(helper);}
 
      HorizontalScrollView horizontal=new HorizontalScrollView(this);
      horizontal.setHorizontalScrollBarEnabled(false);horizontal.setFillViewport(true);
@@ -1114,7 +1114,7 @@ public class MainActivity extends Activity {
      LinearLayout timeline=new LinearLayout(this);
      timeline.setGravity(Gravity.CENTER_VERTICAL);
      timeline.setBackground(rounded(0xff154252,12,0xff28566b));
-     feed.addView(timeline,new LinearLayout.LayoutParams(-1,dp(51)));
+     feed.addView(timeline,new LinearLayout.LayoutParams(-1,dp(metrics.heightDp<480?38:51)));
      timeline.addView(guideColumn("CHANNEL",dp(channelW),ACCENT));
      timeline.addView(guideColumn("ON NOW",dp(nowW),ACCENT));
      timeline.addView(guideColumn("UP NEXT",dp(nextW),ACCENT));
