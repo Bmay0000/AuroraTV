@@ -753,7 +753,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
     child:Stack(children:[
       Positioned.fill(child:initialized?
        FittedBox(fit:BoxFit.contain,child:SizedBox(
-         width:v.value.size.width,height:v.value.size.height,child:VideoPlayer(v))):
+         width:v!.value.size.width,height:v.value.size.height,child:VideoPlayer(v))):
        const ColoredBox(color:Colors.black)),
       if(controls||error.isNotEmpty)Positioned(top:0,left:0,right:0,
         child:Container(padding:const EdgeInsets.symmetric(vertical:12,horizontal:20),
@@ -776,15 +776,15 @@ class _PlayerScreenState extends State<PlayerScreen>{
           padding:const EdgeInsets.all(10),color:Colors.black54,
           child:Row(children:[
             IconButton(onPressed:(){
-              v.value.isPlaying?v.pause():v.play();_showControls();
-            },icon:Icon(v.value.isPlaying?Icons.pause:Icons.play_arrow,size:30)),
+              v!.value.isPlaying?v.pause():v.play();_showControls();
+            },icon:Icon(v!.value.isPlaying?Icons.pause:Icons.play_arrow,size:30)),
             if(seekable)...[
               IconButton(onPressed:()=>_seek(const Duration(seconds:-10)),
                 icon:const Icon(Icons.replay_10)),
               Expanded(child:Slider(
                 value:position.inMilliseconds.clamp(0,duration.inMilliseconds).toDouble(),
                 max:math.max(1,duration.inMilliseconds).toDouble(),
-                onChanged:(n){v.seekTo(Duration(milliseconds:n.round()));_showControls();})),
+                onChanged:(n){v!.seekTo(Duration(milliseconds:n.round()));_showControls();})),
               IconButton(onPressed:()=>_seek(const Duration(seconds:10)),
                 icon:const Icon(Icons.forward_10)),
             ]else const Expanded(child:Text('LIVE',style:TextStyle(color:C.aqua,
