@@ -75,7 +75,7 @@ public final class GuidePreviewPane implements AutoCloseable {
         videoSurface.setBackground(panel(0xff192d42));
         videoSurface.setClipToOutline(true);
         int paneHeight=TvLayout.clamp((int)(metrics.heightDp*.15),65,138);
-        int width=sidePane?TvLayout.clamp((int)(metrics.contentWidth()*.24)-dp(12),155,390):
+        int width=sidePane?TvLayout.clamp((int)(metrics.contentWidth()*.24)-12,155,390):
             (int)Math.round(Math.max(40,paneHeight-18)*16.0/9.0);
         int height=sidePane?(int)Math.round(width*9.0/16.0):
             Math.max(40,paneHeight-18);
