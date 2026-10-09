@@ -264,9 +264,11 @@ public final class ChannelDiscovery {
             (item.category==null?"":item.category.toUpperCase(Locale.ROOT));
         Pattern matcher=TOPIC_PATTERNS.computeIfAbsent(tokens,words->{
             StringBuilder regex=new StringBuilder("(?<![A-Z0-9])(?:");
+            boolean first=true;
             for(String term:words.split("\\|")){
-                if(regex.length()>24)regex.append('|');
+                if(!first)regex.append('|');
                 regex.append(Pattern.quote(term));
+                first=false;
             }
             return Pattern.compile(regex.append(")(?![A-Z0-9])").toString());
         });
