@@ -167,8 +167,10 @@ public class MainActivity extends Activity {
  }
  void status(String message){
   runOnUiThread(()->{
-   if(!isDestroyed()&&screen.equals("loading")&&loadingStatus!=null)
+   if(isDestroyed())return;
+   if(screen.equals("loading")&&loadingStatus!=null)
     loadingStatus.setText(message);
+   else if(loading&&subtitle!=null)subtitle.setText(message);
   });
  }
  void loginScreen(boolean m3u){
@@ -1033,6 +1035,29 @@ public class MainActivity extends Activity {
       });
       grid.setOnItemLongClickListener((parent,v,n,id)->{actions(result.rows.get(n));return true;});
      }else{
+      LinearLayout selection=new LinearLayout(this);
+      selection.setGravity(Gravity.CENTER_VERTICAL);
+      selection.setPadding(dp(17),dp(8),dp(17),dp(8));
+      selection.setBackground(rounded(0xff152c3d,14,0xff2d5363));
+      LinearLayout.LayoutParams selectedBounds=new LinearLayout.LayoutParams(
+          -1,dp(tv().heightDp<650?61:78));
+      selectedBounds.bottomMargin=dp(8);
+      body.addView(selection,selectedBounds);
+      ImageView stationLogo=new ImageView(this);
+      stationLogo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+      selection.addView(stationLogo,new LinearLayout.LayoutParams(dp(62),-1));
+      LinearLayout info=column();
+      info.setGravity(Gravity.CENTER_VERTICAL);
+      info.setPadding(dp(13),0,0,0);
+      selection.addView(info,new LinearLayout.LayoutParams(0,-1,1));
+      info.addView(kicker("HIGHLIGHTED CHANNEL"));
+      TextView channelTitle=headline("Choose a channel",TvLayout.clamp(tv().bodySize()+4,17,24),Color.WHITE);
+      channelTitle.setMaxLines(1);channelTitle.setEllipsize(TextUtils.TruncateAt.END);
+      info.addView(channelTitle);
+      TextView channelNow=text("Press Select to preview, or open the TV Guide",13);
+      channelNow.setTextColor(MUTED);
+      channelNow.setSingleLine(true);channelNow.setEllipsize(TextUtils.TruncateAt.END);
+      info.addView(channelNow);
       ListView list=new ListView(this);
       list.setDividerHeight(dp(9));
       body.addView(list,new LinearLayout.LayoutParams(-1,0,1));
@@ -1046,6 +1071,21 @@ public class MainActivity extends Activity {
       });
       list.setSelector(selectionOutline());
       list.setDrawSelectorOnTop(true);
+      list.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
+       public void onItemSelected(AdapterView<?> parent,View v,int position,long id){
+        LibraryCore.Item channel=result.rows.get(position);
+        channelTitle.setText(channel.name);
+        channelNow.setText(channel.category+nowNext(channel).replace('\n',' '));
+        posters.bind(stationLogo,channel.artwork);
+       }
+       public void onNothingSelected(AdapterView<?> parent){}
+      });
+      if(!result.rows.isEmpty()){
+       LibraryCore.Item first=result.rows.get(0);
+       channelTitle.setText(first.name);
+       channelNow.setText(first.category+nowNext(first).replace('\n',' '));
+       posters.bind(stationLogo,first.artwork);
+      }
       list.setOnItemClickListener((parent,v,n,id)->{
        LibraryCore.Item picked=result.rows.get(n);if(editing)actions(picked);else showLivePreview(picked);
       });
