@@ -21,6 +21,8 @@ public final class MediaDiscoveryTest {
   check(MediaDiscovery.yearFromTitle("An Example Movie (2026)",today)==2026,"terminal parenthesized year");
   check(MediaDiscovery.yearFromTitle("Another Film [2025]",today)==2025,"terminal bracket year");
   check(MediaDiscovery.yearFromTitle("Another Film [2025] HD",today)==2025,"quality suffix");
+  check(MediaDiscovery.yearFromTitle("A Movie 2026",today)==2026,"plain release year suffix");
+  check(MediaDiscovery.yearFromTitle("[EN] Great Film 2025 HD",today)==2025,"older category title style");
   check(MediaDiscovery.yearFromTitle("2001: A Space Odyssey",today)==0,"do not infer year from film title");
   check(MediaDiscovery.yearFromTitle("Movie 2026 Remaster",today)==0,"plain year in title not release evidence");
   check(MediaDiscovery.yearFromTitle("A 2026.",today)==0,"no unbracketed year");
