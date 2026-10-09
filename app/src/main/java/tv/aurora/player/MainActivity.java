@@ -428,7 +428,6 @@ public class MainActivity extends Activity {
   feed.setClipChildren(true);feed.setClipToPadding(true);
   feed.setPadding(dp(3),dp(1),dp(4),dp(12));
   scroll.addView(feed,new ScrollView.LayoutParams(-1,-2));
-  addDiscoveryShortcuts(feed);
 
   // Everything above the international divider has positive English or
   // North American evidence; unknown-language titles never become the hero.
@@ -436,7 +435,7 @@ public class MainActivity extends Activity {
     americanTV=column(),englishSeries=column(),genres=column(),
     myList=column(),unknown=column(),foreign=column();
   LinearLayout movieTrending=column(),seriesTrending=column();
-   feed.addView(latest);feed.addView(movieTrending);feed.addView(seriesTrending);
+   feed.addView(movieTrending);feed.addView(seriesTrending);feed.addView(latest);
    fetchTrendingShelf(token,"movie",movieTrending,h,hc,fav,lang,strict,manual,groups);
    fetchTrendingShelf(token,"series",seriesTrending,h,hc,fav,lang,strict,manual,groups);
   feed.addView(continueRow);
@@ -1164,7 +1163,6 @@ public class MainActivity extends Activity {
   feed.setPadding(dp(3),dp(1),dp(3),dp(10));
   feed.setClipChildren(true);feed.setClipToPadding(true);
   scroller.addView(feed,new ScrollView.LayoutParams(-1,-2));
-  addDiscoveryShortcuts(feed);
   LinearLayout recent=column(),english=column(),genres=column(),unknown=column(),
       international=column();
   LinearLayout trending=column();feed.addView(trending);
@@ -1288,7 +1286,7 @@ public class MainActivity extends Activity {
   hero.setBackground(rounded(0xff0c1b2b,12,0xff203746));
   hero.setClipToOutline(true);
   LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-1,
-    dp(TvLayout.clamp(m.heightDp*42/100,190,330)));
+    dp(TvLayout.clamp(m.heightDp*56/100,235,450)));
   size.bottomMargin=dp(9);
   feed.addView(hero,size);
   cinematicArtwork=hero;
@@ -1463,6 +1461,7 @@ public class MainActivity extends Activity {
    if(child instanceof ImageView&&child!=old&&child!=cinematicPoster)parent.removeView(child);
   }
   if(url==null||url.isEmpty()){
+   if(cinematicPoster!=null)cinematicPoster.setVisibility(View.VISIBLE);
    if(old!=null)old.animate().alpha(0f).setDuration(160).start();
    return;
   }
@@ -1484,6 +1483,7 @@ public class MainActivity extends Activity {
     }
     if(incoming.getDrawable()==null){parent.removeView(incoming);return;}
     incoming.animate().alpha(.85f).setDuration(330).withEndAction(()->{
+     if(cinematicPoster!=null)cinematicPoster.setVisibility(View.GONE);
      if(revision!=cinematicRevision||cinematicArtwork!=parent)return;
      if(old!=null&&old.getParent()==parent)parent.removeView(old);
      cinematicBackdrop=incoming;
