@@ -95,13 +95,19 @@ public final class ChannelDiscovery {
         return number==null?0:number;
     }
 
+    private static boolean localNetwork(String normalized){
+        if(normalized==null)return false;
+        if(normalized.matches("^(?:ABC|CBS|NBC|FOX|PBS)(?: [0-9]{1,2})?$"))return true;
+        return normalized.matches("^(?:W|K)[A-Z]{2,4}(?: [0-9]{1,2})?(?: ABC| CBS| NBC| FOX| PBS)?$");
+    }
+
     public static boolean northAmerica(LibraryCore.Item item){
         if(item==null)return false;
         String category=item.category==null?"":item.category;
         if(NA_CATEGORY.matcher(category).find())return true;
         String canon=canonicalName(item.name);
         if(satelliteNumber(item)>0)return true;
-        if(canon.matches("(?:ABC|CBS|NBC|FOX|PBS)(?: [A-Z0-9]{1,8})?") ||
+        if(localNetwork(canon) ||
             canon.matches("(?:NESN|MSG NETWORK|YES NETWORK|WGN|CW|MYNETWORKTV)"))
             return true;
         return false;
@@ -121,6 +127,7 @@ public final class ChannelDiscovery {
     public static int priority(LibraryCore.Item item){
         String lang=LibraryCore.language(item);
         if(!lang.equals("en")&&!lang.equals("unknown"))return 500000;
+        if(localNetwork(canonicalName(item.name)))return 100;
         int line=satelliteNumber(item);
         if(line>0)return line;
         if(northAmerica(item))return 10000;
