@@ -1792,11 +1792,12 @@ public class MainActivity extends Activity {
 
  void connect(){
   new AlertDialog.Builder(this).setTitle("MANAGE YOUR CONNECTION")
-   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Smart EPG settings","Playback diagnostics","Disconnect and clear this device"},(d,n)->{
+   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Smart EPG settings","Playback diagnostics","Library status & import speed","Disconnect and clear this device"},(d,n)->{
     if(n==0){loginScreen(false);return;}
     if(n==1){refresh();return;}
     if(n==2){guideSettings();return;}
     if(n==3){showPlaybackDiagnostics();return;}
+    if(n==4){showLibraryStatus();return;}
     new AlertDialog.Builder(this).setTitle("Remove connected provider?")
      .setMessage("This deletes the imported library, saved login and filters from this device.")
      .setPositiveButton("Disconnect",(a,b)->{
@@ -1807,6 +1808,33 @@ public class MainActivity extends Activity {
       page=0;category="All";query="";loginScreen(false);
      }).setNegativeButton("Cancel",null).show();
    }).show();
+ }
+
+ void showLibraryStatus(){
+  io.execute(()->{
+   StringBuilder report=new StringBuilder();
+   try{
+    report.append("Local library ready: ").append(store.hasLibrary()?"yes":"no");
+    report.append("\nLive channels: ").append(store.count("live"));
+    report.append("\nMovies: ").append(store.count("movie"));
+    report.append("\nSeries: ").append(store.count("series"));
+    report.append("\nStill importing: ").append(loading?"yes":"no");
+    String pending=prefs.getString("import.pending","");
+    report.append("\nPending catalog types: ").append(pending.isEmpty()?"none":pending);
+    long liveMs=prefs.getLong("import.live_ms",0);
+    if(liveMs>0)report.append("\nFirst Live TV readiness: ").append(liveMs/1000d).append(" seconds");
+    long totalMs=prefs.getLong("import.total_ms",0);
+    if(totalMs>0)report.append("\nFull catalog import: ").append(totalMs/1000d).append(" seconds");
+    report.append("\n\nSubsequent launches use the saved SQLite catalog. A first import depends on provider response size and connection speed. Playing video pauses unfinished imports.");
+   }catch(Exception e){report.append("Catalog diagnostics unavailable: "+e.getClass().getSimpleName());}
+   runOnUiThread(()->{
+    if(isDestroyed())return;
+    new AlertDialog.Builder(this).setTitle("AuroraTV · Library Status")
+      .setMessage(report.toString())
+      .setPositiveButton("CONTINUE IMPORT",(d,n)->continueCatalogImport(generation))
+      .setNegativeButton("CLOSE",null).show();
+   });
+  });
  }
 
  void showPlaybackDiagnostics(){
@@ -1850,6 +1878,7 @@ public class MainActivity extends Activity {
   if(loading){toast("A library update is already underway");return;}
   loading=true;
   final boolean alreadyReady=store.hasLibrary();
+  final long importStart=SystemClock.elapsedRealtime();
   final int token=++generation;
   if(!alreadyReady)loadingScreen("CONNECTING YOUR LIBRARY",
       "Importing Live TV first — Movies and TV Shows will follow in the background");
@@ -1868,6 +1897,7 @@ public class MainActivity extends Activity {
       status("Making Live TV available…");
       live.commit();
      }
+     prefs.edit().putLong("import.live_ms",SystemClock.elapsedRealtime()-importStart).apply();
      if(token!=generation||Thread.currentThread().isInterrupted())return;
      if(!prefs.edit().putString("mode",mode).putString("url",sealedUrl)
          .putString("user",sealedUser).putString("pass",sealedPass)
@@ -1912,6 +1942,7 @@ public class MainActivity extends Activity {
      prefs.edit().putString("guide.external1",Vault.seal(discoveredGuide[0])).apply();
     prefs.edit().putString("mode",mode).putString("url",sealedUrl)
       .putString("user",sealedUser).putString("pass",sealedPass)
+      .putLong("import.total_ms",SystemClock.elapsedRealtime()-importStart)
       .remove("import.pending").remove("items").commit();
     runOnUiThread(()->{
      if(token!=generation||isDestroyed())return;
