@@ -68,7 +68,8 @@ List<MediaEntry> _xtreamParse(Map<String,dynamic> args) {
     final year=_year(_string(j['releasedate']).isEmpty ? title:_string(j['releasedate']));
     final rating=double.tryParse(_string(j['rating']))??0;
     entries.add(MediaEntry(id:'xtream:${kind.name}:$id',title:title,kind:kind,
-      category:category,artwork:artwork,streamId:id,extension:extension,year:year,rating:rating));
+      category:category,artwork:artwork,streamId:id,extension:extension,year:year,rating:rating,
+      epgId:_string(j['epg_channel_id'])));
   }
   return entries;
 }
@@ -92,6 +93,7 @@ List<MediaEntry> _m3uParse(String source) {
     output.add(MediaEntry(
       id:'m3u:${kind.name}:${output.length}',title:name,kind:kind,
       category:group,artwork:attrs['tvg-logo']??'',directUrl:line,
+      epgId:attrs['tvg-id']??'',
       year:_year(name),
     ));
     extinf=null;
