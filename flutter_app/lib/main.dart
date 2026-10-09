@@ -348,7 +348,7 @@ class _AuroraShellState extends State<AuroraShell>{
           _discovery(MediaKind.movie,home:true),
           GuideScreen(db:db,channels:live,groups:groups[MediaKind.live]??[],
             group:channelGroup,onGroup:_loadLive,onPlay:_open,previewOn:previewOn,
-            source:source,refreshEpg:()=>_refreshEpg(),revision:guideRevision),
+            source:source,provider:provider,refreshEpg:()=>_refreshEpg(),revision:guideRevision),
           _discovery(MediaKind.movie),
           _discovery(MediaKind.series),
           _myList(),
@@ -847,18 +847,32 @@ class GuideScreen extends StatefulWidget{
  final String group;final Future<void> Function({String group}) onGroup;
  final void Function(MediaEntry) onPlay;final bool previewOn;
  final IptvSource? source;final VoidCallback refreshEpg;
+ final ProviderClient provider;
  final ValueNotifier<int> revision;
  const GuideScreen({super.key,required this.db,required this.channels,required this.groups,
    required this.group,required this.onGroup,required this.onPlay,required this.previewOn,
-   required this.source,required this.refreshEpg,required this.revision});
+   required this.source,required this.provider,required this.refreshEpg,required this.revision});
  @override State<GuideScreen> createState()=>_GuideScreenState();
 }
 class _GuideScreenState extends State<GuideScreen>{
  DateTime anchor=DateTime.now();
  Map<String,List<TvProgramme>> programs={};
  int previewRequest=0;
- String key(MediaEntry item)=>item.epgId.isNotEmpty&&programs.containsKey(item.epgId)
-   ?item.epgId:'name:${GuideNames.canonical(item.cleanTitle)}';
+ final Set<String> epgRequested=<String>{};
+ String key(MediaEntry item){
+   if(item.epgId.isNotEmpty&&(programs[item.epgId]?.isNotEmpty??false))return item.epgId;
+   final byName='name:${GuideNames.canonical(item.cleanTitle)}';
+   if(programs[byName]?.isNotEmpty??false)return byName;
+   return 'stream:${item.streamId}';
+ }
+ Future<void> _shortGuide(MediaEntry item)async{
+   if(widget.source?.kind!='xtream'||item.streamId.isEmpty||
+       !epgRequested.add(item.id))return;
+   final data=await widget.provider.shortEpg(widget.source!,item);
+   if(!mounted||data.isEmpty)return;
+   final entry='stream:${item.streamId}';
+   setState(()=>programs[entry]=data);
+ }
  MediaEntry? focused;Timer? debounce;VideoPlayerController? preview;
  bool previewEnabled=true;
  @override void initState(){super.initState();previewEnabled=widget.previewOn;widget.revision.addListener(_loadForAnchor);_load();}
@@ -876,6 +890,7 @@ class _GuideScreenState extends State<GuideScreen>{
      // Start the embedded Live TV preview immediately on guide entry.
      // No separate picture-in-picture action is required.
      if(widget.channels.isNotEmpty&&focused==null){
+       _shortGuide(widget.channels.first);
        WidgetsBinding.instance.addPostFrameCallback((_){
          if(mounted)_focus(widget.channels.first);
        });
@@ -886,6 +901,7 @@ class _GuideScreenState extends State<GuideScreen>{
    if(focused?.id==item.id&&preview!=null)return;
    final request=++previewRequest;
    setState(()=>focused=item);
+   _shortGuide(item);
    debounce?.cancel();
    final old=preview;
    preview=null;
@@ -922,7 +938,7 @@ class _GuideScreenState extends State<GuideScreen>{
    final channelsWithEpg=widget.channels.where((e)=>programs[key(e)]?.isNotEmpty??false).length;
    final categoryGroups=['North America','All','Favorites',...widget.groups.take(12)].toSet().toList();
    return Padding(padding:const EdgeInsets.symmetric(horizontal:18,vertical:8),child:Column(children:[
-     SizedBox(height:96,child:Row(children:[
+     SizedBox(height:120,child:Row(children:[
        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
          Text(selected?.cleanTitle??'Live TV Guide',
            style:const TextStyle(fontSize:22,fontWeight:FontWeight.w800)),
@@ -939,12 +955,15 @@ class _GuideScreenState extends State<GuideScreen>{
            if(!previewEnabled){++previewRequest;debounce?.cancel();preview?.dispose();preview=null;}
            else if(selected!=null){focused=null;_focus(selected);}},
          icon:Icon(previewEnabled?Icons.picture_in_picture:Icons.picture_in_picture_alt)),
-       SizedBox(width:210,height:92,child:ClipRRect(borderRadius:BorderRadius.circular(9),
-         child:preview?.value.isInitialized==true?VideoPlayer(preview!):
+       SizedBox(width:265,height:114,child:ClipRRect(borderRadius:BorderRadius.circular(9),
+         child:ColoredBox(color:Colors.black,child:preview?.value.isInitialized==true?
+           Center(child:AspectRatio(
+             aspectRatio:preview!.value.aspectRatio>0?preview!.value.aspectRatio:16/9,
+             child:VideoPlayer(preview!))):
            Stack(fit:StackFit.expand,children:[
              if(selected!=null)artwork(selected.artwork),
              const Center(child:Icon(Icons.live_tv,color:Colors.white70,size:28)),
-           ]))),
+           ])))),
      ])),
      Row(children:[
        TextButton(onPressed:widget.refreshEpg,child:const Text('↻ Refresh EPG')),
