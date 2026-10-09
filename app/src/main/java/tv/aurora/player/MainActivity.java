@@ -1269,45 +1269,67 @@ public class MainActivity extends Activity {
   if(cinematicArtwork==null||cinematicTitle==null||item==null)return;
   if(pendingCinematic!=null)uiHandler.removeCallbacks(pendingCinematic);
   final int revision=++cinematicRevision;
-  // Debounce D-pad movement so quick browsing never launches dozens of image requests.
   pendingCinematic=()->{
-   if(revision!=cinematicRevision||cinematicArtwork==null||
-      cinematicTitle==null||isDestroyed())return;
+   if(revision!=cinematicRevision||cinematicArtwork==null||isDestroyed())return;
    cinematicTitle.animate().cancel();
-   cinematicTitle.animate().alpha(0.15f).setDuration(75)
-     .withEndAction(()->{
-      if(revision!=cinematicRevision||cinematicTitle==null)return;
-      cinematicTitle.setText(displayMediaName(item));
-      cinematicTitle.animate().alpha(1f).setDuration(210).start();
-     }).start();
-   String descriptor=(item.releaseYear>0?item.releaseYear+"  •  ":"")
-      +("series".equals(item.type)?"TV SERIES":"MOVIE")
-      ;
-   cinematicSubtitle.setText(descriptor);
-   if(item.artwork==null||!item.artwork.startsWith("http"))return;
-   final FrameLayout parent=cinematicArtwork;
-   final ImageView old=cinematicBackdrop;
-   ImageView next=new ImageView(this);
-   next.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-   next.setAlpha(0f);
-   // Keep transitions behind the metadata gradient and foreground labels.
-   // Crossfade the incoming bitmap on top of the old image, beneath metadata.
-   for(int i=parent.getChildCount()-1;i>=0;i--){
-    View layer=parent.getChildAt(i);
-    if(layer instanceof ImageView && layer!=old)parent.removeView(layer);
-   }
-   parent.addView(next,old!=null&&old.getParent()==parent?1:0,
-      new FrameLayout.LayoutParams(-1,-1));
-   posters.bind(next,item.artwork);
-   next.animate().alpha(.54f).setDuration(350).withEndAction(()->{
-    if(revision!=cinematicRevision||cinematicArtwork!=parent){
-     parent.removeView(next);return;
-    }
-    if(old!=null&&old.getParent()==parent)parent.removeView(old);
-    cinematicBackdrop=next;
-   }).start();
+   cinematicTitle.setText(displayMediaName(item));
+   cinematicTitle.setAlpha(.45f);
+   cinematicTitle.animate().alpha(1f).setDuration(200).start();
+   cinematicSubtitle.setText((item.releaseYear>0?item.releaseYear+"  •  ":"")+
+        ("series".equals(item.type)?"SERIES":"MOVIE")+"  •  YOUR LIBRARY");
+   // A portrait poster must not be enlarged into a fake landscape backdrop.
+   final String apiKey=prefs.getString("tmdb.apiKey","");
+   if(apiKey.isEmpty()){showCinematicBackdrop(revision,"");return;}
+   final String name=item.name;final int year=item.releaseYear;
+   final boolean series="series".equals(item.type);
+   io.execute(()->{
+    String url=BackdropCatalog.lookup(getApplicationContext(),apiKey,name,year,series);
+    final String result=url;
+    runOnUiThread(()->{
+     if(isDestroyed()||revision!=cinematicRevision)return;
+     showCinematicBackdrop(revision,result);
+    });
+   });
   };
-  uiHandler.postDelayed(pendingCinematic,155);
+  uiHandler.postDelayed(pendingCinematic,135);
+ }
+ void showCinematicBackdrop(int revision,String url){
+  if(revision!=cinematicRevision||cinematicArtwork==null)return;
+  final FrameLayout parent=cinematicArtwork;
+  final ImageView old=cinematicBackdrop;
+  for(int i=parent.getChildCount()-1;i>=0;i--){
+   View child=parent.getChildAt(i);
+   if(child instanceof ImageView&&child!=old)parent.removeView(child);
+  }
+  if(url==null||url.isEmpty()){
+   if(old!=null)old.animate().alpha(0f).setDuration(160).start();
+   return;
+  }
+  ImageView incoming=new ImageView(this);
+  incoming.setScaleType(ImageView.ScaleType.CENTER_CROP);
+  incoming.setAlpha(0f);
+  parent.addView(incoming,old!=null&&old.getParent()==parent?1:0,
+      new FrameLayout.LayoutParams(-1,-1));
+  posters.bind(incoming,url);
+  // Wait for the asynchronous bitmap before fading; otherwise the fade is invisible.
+  Runnable reveal=new Runnable(){
+   int checks=0;
+   public void run(){
+    if(revision!=cinematicRevision||cinematicArtwork!=parent){
+     parent.removeView(incoming);return;
+    }
+    if(incoming.getDrawable()==null&&checks++<28){
+     uiHandler.postDelayed(this,80);return;
+    }
+    if(incoming.getDrawable()==null){parent.removeView(incoming);return;}
+    incoming.animate().alpha(.85f).setDuration(330).withEndAction(()->{
+     if(revision!=cinematicRevision||cinematicArtwork!=parent)return;
+     if(old!=null&&old.getParent()==parent)parent.removeView(old);
+     cinematicBackdrop=incoming;
+    }).start();
+   }
+  };
+  uiHandler.post(reveal);
  }
  void fetchSeriesCategories(int token,LinearLayout target,
        Set<String> h,Set<String> hc,Set<String> fav,Set<String> langs,boolean strict,
