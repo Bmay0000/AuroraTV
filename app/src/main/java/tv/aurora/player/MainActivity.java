@@ -397,7 +397,8 @@ public class MainActivity extends Activity {
   scroller.setFillViewport(false);
   scroller.setClipToPadding(true);scroller.setClipChildren(true);
   body.addView(scroller,new LinearLayout.LayoutParams(-1,-1));
-  LinearLayout feed=column();feed.setPadding(dp(6),0,dp(9),dp(24));
+  LinearLayout feed=column();feed.setClipChildren(true);feed.setClipToPadding(true);
+  feed.setPadding(dp(6),0,dp(9),dp(24));
   scroller.addView(feed,new ScrollView.LayoutParams(-1,-2));
   FrameLayout heroHolder=new FrameLayout(this);
   feed.addView(heroHolder,new LinearLayout.LayoutParams(-1,dp(tv().heroHeight)));
@@ -596,11 +597,12 @@ public class MainActivity extends Activity {
   header.addView(seeAll,new LinearLayout.LayoutParams(dp(128),dp(41)));
   HorizontalScrollView gallery=new HorizontalScrollView(this);
   gallery.setHorizontalScrollBarEnabled(false);
-  gallery.setClipToPadding(false);gallery.setClipChildren(false);
+  gallery.setClipToPadding(true);gallery.setClipChildren(true);
+  gallery.setPadding(dp(6),dp(5),dp(6),dp(5));
   feed.addView(gallery,new LinearLayout.LayoutParams(-1,dp(
      type.equals("live")?dim.liveCardHeight+18:dim.posterCardHeight+18)));
   LinearLayout cards=new LinearLayout(this);
-  cards.setClipChildren(false);cards.setGravity(Gravity.TOP);
+  cards.setClipChildren(true);cards.setGravity(Gravity.TOP);
   gallery.addView(cards,new ViewGroup.LayoutParams(-2,-2));
   if(rows.isEmpty()){
    TextView empty=text("Nothing to show yet. Check your language filters or refresh your provider.",16);
