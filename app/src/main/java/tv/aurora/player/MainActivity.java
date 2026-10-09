@@ -28,6 +28,7 @@ public class MainActivity extends Activity {
  Runnable pendingTrailer; boolean trailerRunning=false;
  final ExecutorService trailerLookupIO=Executors.newSingleThreadExecutor();
  final ExecutorService trendingIO=Executors.newSingleThreadExecutor();
+ final ExecutorService discoveryArtworkIO=Executors.newFixedThreadPool(2);
  volatile java.util.concurrent.Future<?> guideCategoryTask; TextView cinematicTitle,cinematicSubtitle; FrameLayout cinematicArtwork; Runnable pendingCinematic; int cinematicRevision=0;
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
  LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false,browseAll=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";String guideSelectedId="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();final Map<String,GuideEngine.Slot> guideSlotCache=new java.util.concurrent.ConcurrentHashMap<>();final ExecutorService guideDirectoryIO=Executors.newSingleThreadExecutor();int guideCategorySequence=0;long guideSlotCacheAt=0;String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;long navigationStartedAt;int navigationMarkedToken=-1;
@@ -787,13 +788,14 @@ public class MainActivity extends Activity {
   for(int position=0;position<rows.size();position++){
    LibraryCore.Item item=rows.get(position);
    cards.addView(cinematicRail?
-      landscapeCard(item,ranked?position+1:0):
+      landscapeCard(item,ranked?position+1:0,position<6&&
+       (heading.startsWith("TOP 20")||heading.startsWith("NEW & RECENT"))):
       mediaCard(item,type.equals("personal")?item.type:type,ranked?position+1:0));
   }
  }
 
  /** Widescreen artwork cards make the discovery feed visibly different from a provider poster grid. */
- View landscapeCard(LibraryCore.Item item,int rank){
+ View landscapeCard(LibraryCore.Item item,int rank,boolean getBackdrop){
   TvLayout m=tv();
   int w=TvLayout.clamp(m.contentWidth()/3,205,380);
   int h=TvLayout.clamp(m.heightDp/4-12,110,185);
@@ -806,6 +808,19 @@ public class MainActivity extends Activity {
   picture.setScaleType(ImageView.ScaleType.CENTER_CROP);
   tile.addView(picture,new FrameLayout.LayoutParams(-1,-1));
   if(item.artwork!=null)posters.bind(picture,item.artwork);
+  final String api=prefs.getString("tmdb.apiKey","");
+  if(getBackdrop&&!api.isEmpty()){
+   final int version=browseToken;
+   discoveryArtworkIO.execute(()->{
+    BackdropCatalog.Info movie=BackdropCatalog.info(getApplicationContext(),api,
+         item.name,item.releaseYear,"series".equals(item.type));
+    if(movie.backdrop.isEmpty())return;
+    runOnUiThread(()->{
+     if(!isDestroyed()&&version==browseToken&&picture.isAttachedToWindow())
+      posters.bind(picture,movie.backdrop);
+    });
+   });
+  }
   View shade=new View(this);
   shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
       new int[]{0xf4000b16,0x74000c1a,0x0c05111b}));
@@ -3138,7 +3153,7 @@ public class MainActivity extends Activity {
   stopGuidePreview();
   if(pendingGuideUpdate!=null)uiHandler.removeCallbacks(pendingGuideUpdate);
   if(livePreview!=null){livePreview.dismiss();livePreview=null;}
-  clearCinematic();release();io.shutdownNow();catalogReadIO.shutdownNow();importIO.shutdownNow();trailerLookupIO.shutdownNow();trendingIO.shutdownNow();if(guideCategoryTask!=null)guideCategoryTask.cancel(true);posters.close();epgRefreshIO.shutdownNow();shortEpgIO.shutdownNow();guideDirectoryIO.shutdownNow();store.close();epg.close();
+  clearCinematic();release();io.shutdownNow();catalogReadIO.shutdownNow();importIO.shutdownNow();trailerLookupIO.shutdownNow();trendingIO.shutdownNow();discoveryArtworkIO.shutdownNow();if(guideCategoryTask!=null)guideCategoryTask.cancel(true);posters.close();epgRefreshIO.shutdownNow();shortEpgIO.shutdownNow();guideDirectoryIO.shutdownNow();store.close();epg.close();
   super.onDestroy();
  }
  void toast(String s){if(!isDestroyed())Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
