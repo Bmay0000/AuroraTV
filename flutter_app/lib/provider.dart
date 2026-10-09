@@ -251,8 +251,8 @@ class ProviderClient {
           ?_string(episode['title'])
           :'Episode ${number.isNotEmpty?number:index+1}';
         episodes.add(MediaEntry(
-          id:'xtream:episode:$'+'id',title:label,
-          kind:MediaKind.series,category:'Season $'+'season',streamId:id,
+          id:'xtream:episode:$id',title:label,
+          kind:MediaKind.series,category:'Season $season',streamId:id,
           extension:ext.isEmpty?'mp4':ext,artwork:series.artwork));
       }
     });
