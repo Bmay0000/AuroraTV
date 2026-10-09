@@ -389,7 +389,7 @@ public final class ChannelDiscovery {
         if(c.equals("NICK JR."))c="NICK JR";
         if(c.equals("ION TELEVISION"))c="ION";
         if(c.equals("PARAMOUNT PLUS WITH SHOWTIME"))c="SHOWTIME";
-        if(c.equals("A AND E"))c="A AND E";
+        if(c.equals("A&E"))c="A AND E";
         if(c.equals("FMC"))c="FAMILY MOVIE CLASSICS";
         if(c.equals("FXM"))c="FX MOVIE CHANNEL";
         if(c.equals("OXYGEN"))c="OXYGEN TRUE CRIME";
@@ -405,6 +405,19 @@ public final class ChannelDiscovery {
         if(c.equals("HBO"))c="HBO EAST";
         if(c.equals("CINEMAX"))c="CINEMAX EAST";
         if(c.equals("SHOWTIME"))c="PARAMOUNT PLUS WITH SHOWTIME EAST";
+        if(c.equals("MGM"))c="MGM PLUS";
+        if(c.equals("MGM HITS"))c="MGM PLUS HITS";
+        if(c.equals("MGM MARQUEE"))c="MGM PLUS MARQUEE";
+        if(c.equals("IN TOUCH"))c="IN TOUCH PLUS";
+        if(c.equals("HEROES AND ICONS"))c="HEROES AND ICONS";
+        if(c.equals("STARZ KIDS AND FAMILY"))c="STARZ KIDS AND FAMILY";
+        if(c.equals("PARAMOUNT WITH SHOWTIME EAST"))c="PARAMOUNT PLUS WITH SHOWTIME EAST";
+        if(c.equals("PARAMOUNT WITH SHOWTIME WEST"))c="PARAMOUNT PLUS WITH SHOWTIME WEST";
+        if(c.equals("HBO HITS EAST"))c="HBO HITS";
+        if(c.equals("HALLMARK MOVIES AND MYSTERIES"))c="HALLMARK MYSTERY";
+        if(c.equals("DISNEY CHANNEL EAST"))c="DISNEY CHANNEL";
+        if(c.equals("CARTOON NETWORK"))c="CARTOON NETWORK EAST";
+        if(c.equals("NAT GEO WILD HD"))c="NAT GEO WILD";
         Integer number=LINEUP.get(c);
         return number==null?0:number;
     }
