@@ -22,7 +22,10 @@ import androidx.media3.common.*;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
- ImageView cinematicBackdrop,cinematicIncoming,cinematicPoster; LibraryCore.Item cinematicFocused; TextView cinematicTitle,cinematicSubtitle; FrameLayout cinematicArtwork; Runnable pendingCinematic; int cinematicRevision=0;
+ ImageView cinematicBackdrop,cinematicIncoming,cinematicPoster; LibraryCore.Item cinematicFocused;
+ FrameLayout cinematicTrailerLayer; android.webkit.WebView cinematicTrailerView;
+ Runnable pendingTrailer; boolean trailerRunning=false;
+ final ExecutorService trailerLookupIO=Executors.newSingleThreadExecutor(); TextView cinematicTitle,cinematicSubtitle; FrameLayout cinematicArtwork; Runnable pendingCinematic; int cinematicRevision=0;
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
  LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false,browseAll=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";String guideSelectedId="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();final Map<String,GuideEngine.Slot> guideSlotCache=new java.util.concurrent.ConcurrentHashMap<>();final ExecutorService guideDirectoryIO=Executors.newSingleThreadExecutor();int guideCategorySequence=0;long guideSlotCacheAt=0;String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;long navigationStartedAt;int navigationMarkedToken=-1;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
@@ -1199,6 +1202,11 @@ public class MainActivity extends Activity {
  void clearCinematic(){
   cinematicRevision++;
   if(pendingCinematic!=null)uiHandler.removeCallbacks(pendingCinematic);
+  stopCinematicTrailer();
+  if(cinematicTrailerView!=null){
+   cinematicTrailerView.destroy();cinematicTrailerView=null;
+  }
+  cinematicTrailerLayer=null;
   pendingCinematic=null;cinematicBackdrop=null;cinematicIncoming=null;cinematicPoster=null;cinematicFocused=null;
   cinematicArtwork=null;cinematicTitle=null;cinematicSubtitle=null;
  }
@@ -1236,6 +1244,10 @@ public class MainActivity extends Activity {
   cinematicBackdrop.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
   cinematicBackdrop.setAlpha(.85f);
   hero.addView(cinematicBackdrop,new FrameLayout.LayoutParams(-1,-1));
+  cinematicTrailerLayer=new FrameLayout(this);
+  cinematicTrailerLayer.setVisibility(View.GONE);
+  cinematicTrailerLayer.setFocusable(false);
+  hero.addView(cinematicTrailerLayer,new FrameLayout.LayoutParams(-1,-1));
   View shade=new View(this);
   shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
     new int[]{0xff081321,0xf0081423,0x87081524,0x240b1724}));
@@ -1293,6 +1305,7 @@ public class MainActivity extends Activity {
   if(cinematicArtwork==null||cinematicTitle==null||item==null)return;
   if(pendingCinematic!=null)uiHandler.removeCallbacks(pendingCinematic);
   final int revision=++cinematicRevision;
+  stopCinematicTrailer();
   pendingCinematic=()->{
    if(revision!=cinematicRevision||cinematicArtwork==null||isDestroyed())return;
    cinematicTitle.animate().cancel();
@@ -1301,6 +1314,7 @@ public class MainActivity extends Activity {
    cinematicTitle.animate().alpha(1f).setDuration(200).start();
    cinematicFocused=item;
    if(cinematicPoster!=null)posters.bind(cinematicPoster,item.artwork);
+   scheduleCinematicTrailer(item,revision);
    cinematicSubtitle.setText((item.releaseYear>0?item.releaseYear+"  •  ":"")+
         ("series".equals(item.type)?"SERIES":"MOVIE")+"  •  YOUR LIBRARY");
    // A portrait poster must not be enlarged into a fake landscape backdrop.
@@ -1318,6 +1332,59 @@ public class MainActivity extends Activity {
    });
   };
   uiHandler.postDelayed(pendingCinematic,135);
+ }
+
+ /** Trailer autoplay is opt-in and only starts after focus settles. */
+ void scheduleCinematicTrailer(LibraryCore.Item item,int revision){
+  if(!prefs.getBoolean("cinema.trailers",false))return;
+  String apiKey=prefs.getString("tmdb.apiKey","");
+  if(apiKey.isEmpty())return;
+  pendingTrailer=()->{
+   if(isDestroyed()||revision!=cinematicRevision)return;
+   trailerLookupIO.execute(()->{
+    String key=TrailerCatalog.find(getApplicationContext(),apiKey,item.name,
+          item.releaseYear,"series".equals(item.type));
+    runOnUiThread(()->{
+     if(isDestroyed()||revision!=cinematicRevision||key.isEmpty())return;
+     playCinematicTrailer(key);
+    });
+   });
+  };
+  uiHandler.postDelayed(pendingTrailer,2800L);
+ }
+ void stopCinematicTrailer(){
+  if(pendingTrailer!=null)uiHandler.removeCallbacks(pendingTrailer);
+  pendingTrailer=null;
+  if(cinematicTrailerLayer!=null)cinematicTrailerLayer.setVisibility(View.GONE);
+  if(cinematicPoster!=null)cinematicPoster.setVisibility(View.VISIBLE);
+  if(trailerRunning&&cinematicTrailerView!=null){
+   cinematicTrailerView.stopLoading();
+   cinematicTrailerView.loadUrl("about:blank");
+  }
+  trailerRunning=false;
+ }
+ void playCinematicTrailer(String key){
+  if(cinematicTrailerLayer==null||!key.matches("[a-zA-Z0-9_-]{11}"))return;
+  try{
+   if(cinematicTrailerView==null){
+    cinematicTrailerView=new android.webkit.WebView(this);
+    cinematicTrailerView.setBackgroundColor(Color.BLACK);
+    cinematicTrailerView.setFocusable(false);
+    cinematicTrailerView.setFocusableInTouchMode(false);
+    cinematicTrailerView.setOnTouchListener((v,e)->true);
+    cinematicTrailerView.getSettings().setJavaScriptEnabled(true);
+    cinematicTrailerView.getSettings().setMediaPlaybackRequiresUserGesture(false);
+    cinematicTrailerView.setWebChromeClient(new android.webkit.WebChromeClient());
+    cinematicTrailerLayer.addView(cinematicTrailerView,
+        new FrameLayout.LayoutParams(-1,-1));
+   }
+   String url="https://www.youtube-nocookie.com/embed/"+key+
+      "?autoplay=1&mute=1&playsinline=1&controls=0&loop=1&playlist="+key;
+   cinematicTrailerView.loadUrl(url);
+   cinematicTrailerLayer.setVisibility(View.VISIBLE);
+   if(cinematicPoster!=null)cinematicPoster.setVisibility(View.GONE);
+   trailerRunning=true;
+  }catch(Exception ignored){stopCinematicTrailer();}
  }
  void showCinematicBackdrop(int revision,String url){
   if(revision!=cinematicRevision||cinematicArtwork==null)return;
@@ -2984,7 +3051,7 @@ public class MainActivity extends Activity {
   stopGuidePreview();
   if(pendingGuideUpdate!=null)uiHandler.removeCallbacks(pendingGuideUpdate);
   if(livePreview!=null){livePreview.dismiss();livePreview=null;}
-  release();io.shutdownNow();catalogReadIO.shutdownNow();importIO.shutdownNow();posters.close();epgRefreshIO.shutdownNow();shortEpgIO.shutdownNow();guideDirectoryIO.shutdownNow();store.close();epg.close();
+  clearCinematic();release();io.shutdownNow();catalogReadIO.shutdownNow();importIO.shutdownNow();trailerLookupIO.shutdownNow();posters.close();epgRefreshIO.shutdownNow();shortEpgIO.shutdownNow();guideDirectoryIO.shutdownNow();store.close();epg.close();
   super.onDestroy();
  }
  void toast(String s){if(!isDestroyed())Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
