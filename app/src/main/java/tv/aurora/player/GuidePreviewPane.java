@@ -60,9 +60,14 @@ public final class GuidePreviewPane implements AutoCloseable {
     }
     public GuidePreviewPane(Activity activity,LibraryStore catalog,PosterLoader posters,
                             LinearLayout container,TvLayout metrics,boolean autoVideo){
+        this(activity,catalog,posters,container,metrics,autoVideo,false);
+    }
+    public GuidePreviewPane(Activity activity,LibraryStore catalog,PosterLoader posters,
+                            LinearLayout container,TvLayout metrics,boolean autoVideo,
+                            boolean sidePane){
         this.activity=activity;this.catalog=catalog;this.posters=posters;
         this.autoVideo=autoVideo;
-        container.setOrientation(LinearLayout.HORIZONTAL);
+        container.setOrientation(sidePane?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);
         container.setGravity(Gravity.CENTER_VERTICAL);
         container.setPadding(dp(12),dp(9),dp(16),dp(9));
         container.setBackground(panel(0xff11273a));
@@ -70,9 +75,14 @@ public final class GuidePreviewPane implements AutoCloseable {
         videoSurface.setBackground(panel(0xff192d42));
         videoSurface.setClipToOutline(true);
         int paneHeight=TvLayout.clamp((int)(metrics.heightDp*.15),65,138);
-        int height=Math.max(40,paneHeight-18);
-        int width=(int)Math.round(height*16.0/9.0);
-        container.addView(videoSurface,new LinearLayout.LayoutParams(dp(width),dp(height)));
+        int width=sidePane?TvLayout.clamp((int)(metrics.contentWidth()*.245),155,410):
+            (int)Math.round(Math.max(40,paneHeight-18)*16.0/9.0);
+        int height=sidePane?(int)Math.round(width*9.0/16.0):
+            Math.max(40,paneHeight-18);
+        LinearLayout.LayoutParams videoBounds=new LinearLayout.LayoutParams(
+            sidePane?-1:dp(width),dp(height));
+        if(sidePane)videoBounds.bottomMargin=dp(9);
+        container.addView(videoSurface,videoBounds);
         channelArtwork=new ImageView(activity);
         channelArtwork.setScaleType(ImageView.ScaleType.FIT_CENTER);
         channelArtwork.setPadding(dp(12),dp(12),dp(12),dp(12));
@@ -80,9 +90,11 @@ public final class GuidePreviewPane implements AutoCloseable {
 
         content=new LinearLayout(activity);
         content.setOrientation(LinearLayout.VERTICAL);content.setGravity(Gravity.CENTER_VERTICAL);
-        content.setPadding(dp(19),0,0,0);
-        container.addView(content,new LinearLayout.LayoutParams(0,-1,1));
-        boolean compact=metrics.heightDp<700;
+        content.setPadding(sidePane?dp(5):dp(19),0,0,0);
+        container.addView(content,sidePane?
+            new LinearLayout.LayoutParams(-1,-2):
+            new LinearLayout.LayoutParams(0,-1,1));
+        boolean compact=!sidePane&&metrics.heightDp<700;
         TextView eyebrow=text("AUTO PREVIEW  ·  MUTED",11,0xff5debd0);
         eyebrow.setLetterSpacing(.1f);
         if(!compact)content.addView(eyebrow);
@@ -112,8 +124,8 @@ public final class GuidePreviewPane implements AutoCloseable {
         now.setText(slot!=null&&slot.now!=null?"NOW  ·  "+slot.now.title:"NOW  ·  No guide listing");
         next.setText(slot!=null&&slot.next!=null?"NEXT  ·  "+slot.next.title:"NEXT  ·  Not available");
         status.setText(autoVideo?"Previewing shortly…":"Automatic video disabled in Guide settings");
-        if(!autoVideo)return;
         posters.bind(channelArtwork,item.artwork);
+        if(!autoVideo)return;
         pendingStart=()->{
             if(closed||selected!=token)return;
             status.setText("Connecting to muted live preview…");
@@ -129,6 +141,12 @@ public final class GuidePreviewPane implements AutoCloseable {
             });
         };
         ui.postDelayed(pendingStart,FOCUS_DELAY_MS);
+    }
+    /** Refresh programme labels without tearing down the stream on each EPG update. */
+    public void updateSchedule(GuideEngine.Slot slot){
+        if(closed)return;
+        now.setText(slot!=null&&slot.now!=null?"NOW  ·  "+slot.now.title:"NOW  ·  No listing");
+        next.setText(slot!=null&&slot.next!=null?"NEXT  ·  "+slot.next.title:"NEXT  ·  Unavailable");
     }
     private void start(String url,int selected){
         if(url==null||url.isEmpty()||closed||token!=selected)return;
