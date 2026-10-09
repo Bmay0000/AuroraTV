@@ -316,7 +316,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
             arguments.add("% ["+str+"] HD");
             arguments.add("% "+str+" HD");
         }
-        sql.append("))) ORDER BY release_year DESC,rating DESC,added_at DESC,row_id DESC LIMIT 900");
+        sql.append("))) ORDER BY release_year DESC,rating DESC,added_at DESC,row_id DESC");
         List<LibraryCore.Item> english=new ArrayList<>();
         List<LibraryCore.Item> unknown=new ArrayList<>();
         List<LibraryCore.Item> international=new ArrayList<>();
@@ -331,6 +331,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
                 if(MediaDiscovery.confirmedEnglish(candidate))english.add(candidate);
                 else if(MediaDiscovery.knownForeign(candidate))international.add(candidate);
                 else unknown.add(candidate);
+                if(english.size()>=36&&unknown.size()>=36&&international.size()>=36)break;
             }
         }
         java.util.Comparator<LibraryCore.Item> ranking=(a,b)->{
@@ -434,7 +435,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
           Set<String> restoredCategories){
         List<LibraryCore.Item> results=new ArrayList<>();
         String sql="SELECT "+FIELDS+" FROM entries WHERE type=? "+
-            "ORDER BY release_year DESC,added_at DESC,row_id DESC LIMIT 6500";
+            "ORDER BY release_year DESC,added_at DESC,row_id DESC";
         try(Cursor c=getReadableDatabase().rawQuery(sql,new String[]{type})){
             while(c.moveToNext()){
                 if(Thread.currentThread().isInterrupted())break;
@@ -455,7 +456,7 @@ public final class LibraryStore extends SQLiteOpenHelper {
           Set<String> restoredCategories){
         List<LibraryCore.Item> results=new ArrayList<>();
         try(Cursor cursor=getReadableDatabase().rawQuery(
-            "SELECT "+FIELDS+" FROM entries WHERE type=? ORDER BY release_year DESC,added_at DESC,row_id DESC LIMIT 8000",
+            "SELECT "+FIELDS+" FROM entries WHERE type=? ORDER BY release_year DESC,added_at DESC,row_id DESC",
             new String[]{type})){
             while(cursor.moveToNext()){
                 if(Thread.currentThread().isInterrupted())break;
