@@ -256,6 +256,10 @@ public final class LibraryStore extends SQLiteOpenHelper {
                     Set<String> hidden, Set<String> hiddenCategories, Set<String> favorites,
                     Set<String> allowed, boolean hideUnknown, Set<String> visibleItems,
                     Set<String> visibleCategories) {
+        final int rev=revision();
+        final String key="visibleCategories:"+type+":"+hiddenOnly;
+        String[] previous=cached(key,rev);
+        if(previous!=null)return previous.clone();
         java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
         try (Cursor c = getReadableDatabase().rawQuery(
                 "SELECT " + FIELDS + " FROM entries WHERE type=? ORDER BY category COLLATE NOCASE",
@@ -270,17 +274,24 @@ public final class LibraryStore extends SQLiteOpenHelper {
                 if (hiddenOnly ? !visible : visible) found.add(group);
             }
         }
-        return found.toArray(new String[0]);
+        String[] result=found.toArray(new String[0]);
+        if(!Thread.currentThread().isInterrupted())cache(key,result,rev);
+        return result.clone();
     }
 
     public String[] categories(String type) {
+        final int rev=revision();
+        String[] previous=cached("categories:"+type,rev);
+        if(previous!=null)return previous.clone();
         ArrayList<String> groups = new ArrayList<>();
         try (Cursor c = getReadableDatabase().rawQuery(
                 "SELECT DISTINCT category FROM entries WHERE type=? ORDER BY category COLLATE NOCASE",
                 new String[]{type})) {
             while (c.moveToNext()) groups.add(c.getString(0));
         }
-        return groups.toArray(new String[0]);
+        String[] result=groups.toArray(new String[0]);
+        if(!Thread.currentThread().isInterrupted())cache("categories:"+type,result,rev);
+        return result.clone();
     }
 
     public int count(String type) {
