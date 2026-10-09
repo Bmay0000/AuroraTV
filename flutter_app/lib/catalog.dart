@@ -205,6 +205,37 @@ class CatalogDatabase {
     }
     return matches;
   }
+  /// All variants of a series title, including provider duplicates/alternate IDs.
+  /// The first matching catalog item isn't necessarily the one with episodes.
+  Future<List<MediaEntry>> seriesCandidates(String title,{int max=12}) async {
+    final key=matchKey(title);
+    if(key.isEmpty)return [];
+    final out=<MediaEntry>[];
+    const pageSize=1200;
+    for(var offset=0;;offset+=pageSize){
+      final rows=await _db!.query('media',
+        where:'kind=? AND hidden=0',whereArgs:[MediaKind.series.name],
+        limit:pageSize,offset:offset,orderBy:'id');
+      for(final row in rows){
+        final item=MediaEntry.fromRow(row);
+        if(matchKey(item.title)==key)out.add(item);
+      }
+      if(rows.length<pageSize)break;
+    }
+    // Favor familiar English and USA entries, without deleting other variants.
+    out.sort((a,b){
+      int score(MediaEntry e){
+        final text='${e.category} ${e.title}'.toUpperCase();
+        var n=0;
+        if(RegExp(r'(^|[^A-Z])(USA|US|EN|ENG|ENGLISH)([^A-Z]|$)').hasMatch(text))n+=10;
+        if(e.artwork.isNotEmpty)n+=2;
+        if(RegExp(r'(TEST|BACKUP|TRAILER)').hasMatch(text))n-=10;
+        return n;
+      }
+      return score(b).compareTo(score(a));
+    });
+    return out.take(max).toList();
+  }
   Future<List<MediaEntry>> matchTitles(MediaKind kind,List<String> titles) async {
     final indexed=await matchTitleMap(kind,titles);
     return titles.map((title)=>indexed[title]).whereType<MediaEntry>().toList();
