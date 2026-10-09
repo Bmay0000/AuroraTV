@@ -765,11 +765,18 @@ public class MainActivity extends Activity {
    empty.setTextColor(MUTED);cards.addView(empty);
    return;
   }
-  for(LibraryCore.Item item:rows)
-   cards.addView(mediaCard(item,type.equals("personal")?item.type:type));
+  boolean ranked=heading.startsWith("TOP 20 ");
+  for(int position=0;position<rows.size();position++){
+   LibraryCore.Item item=rows.get(position);
+   cards.addView(mediaCard(item,type.equals("personal")?item.type:type,
+       ranked?position+1:0));
+  }
  }
 
  View mediaCard(LibraryCore.Item item,String type){
+  return mediaCard(item,type,0);
+ }
+ View mediaCard(LibraryCore.Item item,String type,int rank){
   TvLayout dim=tv();
   boolean live="live".equals(type);
   int width=live?dim.liveCardWidth:dim.posterWidth;
@@ -779,7 +786,7 @@ public class MainActivity extends Activity {
   card.setPadding(dp(3),dp(3),dp(3),dp(3));
   LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(dp(width),dp(height));
   size.rightMargin=dp(dim.columnGap);card.setLayoutParams(size);
-  card.setBackground(rounded(PANEL,10,0xff253b4c));
+  card.setBackground(rounded(0xff0f1b2a,11,0xff203343));
   FrameLayout art=new FrameLayout(this);
   art.setClipToOutline(true);
   art.setBackground(gradient(live?0xff164854:0xff303653,0xff121f34,9));
@@ -790,10 +797,11 @@ public class MainActivity extends Activity {
   art.addView(initial,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
   displayArtwork(art,item.artwork);
   boolean recent=MediaDiscovery.recent(item.releaseYear,MediaDiscovery.currentYear());
-  if(live||recent){
-   TextView marker=kicker(live?"●  LIVE":Integer.toString(item.releaseYear));
+  if(live||recent||rank>0){
+   TextView marker=kicker(rank>0?String.format(Locale.US,"%02d",rank):
+       live?"●  LIVE":Integer.toString(item.releaseYear));
    marker.setTextSize(9);marker.setPadding(dp(5),dp(2),dp(5),dp(2));
-   marker.setBackground(rounded(0xea0b2732,6,0xff315761));
+   marker.setBackground(rounded(rank>0?0xff104a43:0xea0b2732,6,rank>0?ACCENT:0xff315761));
    FrameLayout.LayoutParams label=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.LEFT);
    label.setMargins(dp(5),dp(5),0,0);
    art.addView(marker,label);
@@ -815,7 +823,7 @@ public class MainActivity extends Activity {
   });
   card.setOnFocusChangeListener((v,focus)->{
    if(focus&&!live)updateCinematicPanel(item);
-   card.setBackground(rounded(focus?0xff214a4c:PANEL,10,focus?ACCENT:0xff253b4c));
+   card.setBackground(rounded(focus?0xff153c3d:0xff0f1b2a,11,focus?ACCENT:0xff203343));
    card.animate().scaleX(focus?1.025f:1f).scaleY(focus?1.025f:1f)
     .setDuration(100).start();
   });
