@@ -301,7 +301,7 @@ public class MainActivity extends Activity {
   navItem.setTextSize(TvLayout.clamp(tv().bodySize()-2,12,16));
   navItem.setAllCaps(false);
   navItem.setPadding(dp(11),0,dp(11),0);
-  navItem.setLetterSpacing(.04f);
+  navItem.setLetterSpacing(.015f);
   LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-2,dp(TvLayout.clamp(tv().navRow-5,29,41)));
   params.setMargins(dp(3),dp(2),dp(3),dp(2));
   navItem.setLayoutParams(params);
@@ -313,9 +313,9 @@ public class MainActivity extends Activity {
   boolean selected=isNavActive(String.valueOf(item.getTag()));
   // AuroraTV's own high-contrast pill/underline language; not a recreation
   // of any proprietary streaming-service navigation.
-  int fill=focused?ACCENT:selected?0xff284b4b:Color.TRANSPARENT;
-  int outline=focused?ACCENT:selected?0xff438d85:Color.TRANSPARENT;
-  item.setBackground(rounded(fill,12,outline));
+  int fill=focused?ACCENT:selected?0xff183c3c:Color.TRANSPARENT;
+  int outline=focused?ACCENT:selected?0xff296962:Color.TRANSPARENT;
+  item.setBackground(rounded(fill,8,outline));
   item.setTextColor(focused?BG:selected?0xffb7ffed:0xffb3c4d5);
   item.setTypeface(Typeface.create("sans-serif-medium",
       selected||focused?Typeface.BOLD:Typeface.NORMAL));
@@ -476,6 +476,9 @@ public class MainActivity extends Activity {
      if(isDestroyed()||token!=browseToken||(!"home".equals(screen)&&!"discover".equals(screen)))return;
      markLoad("home".equals(screen)?"home":"movie",token);
      recentArea.removeAllViews();
+     if(!result.english.isEmpty()&&cinematicTitle!=null
+        &&"Explore your library".contentEquals(cinematicTitle.getText()))
+       updateCinematicPanel(result.english.get(0));
      if(!result.english.isEmpty())
       homeShelf(recentArea,"NEW & RECENT • ENGLISH MOVIES","movie",result.english);
      // No speculative "New" label on films lacking an actual release year.
@@ -506,6 +509,9 @@ public class MainActivity extends Activity {
     runOnUiThread(()->{
      if(isDestroyed()||token!=browseToken||(!"home".equals(screen)&&!"discover".equals(screen)))return;
      if(matches.isEmpty())return;
+     if("discover".equals(screen)&&cinematicTitle!=null
+         &&"Explore your library".contentEquals(cinematicTitle.getText()))
+       updateCinematicPanel(matches.get(0));
      if("discover".equals(screen))markLoad(type,token);
      homeShelf(target,label,type,matches);
     });
@@ -1206,7 +1212,7 @@ public class MainActivity extends Activity {
       dp(TvLayout.clamp(m.contentWidth()*3/5,265,780)),-1,Gravity.LEFT));
   TextView eyebrow=kicker("AURORATV   /   CINEMA");eyebrow.setTextSize(10);
   info.addView(eyebrow);
-  cinematicTitle=headline("Discover something great",
+  cinematicTitle=headline("Explore your library",
     TvLayout.clamp(m.headingSize()+7,26,41),Color.WHITE);
   cinematicTitle.setMaxLines(2);
   cinematicTitle.setEllipsize(TextUtils.TruncateAt.END);
