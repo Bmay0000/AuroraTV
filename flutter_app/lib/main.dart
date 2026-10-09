@@ -876,32 +876,85 @@ class _LibraryContent extends StatefulWidget{
  @override State<_LibraryContent> createState()=>_LibraryContentState();
 }
 class _LibraryContentState extends State<_LibraryContent>{
- MediaKind kind=MediaKind.live;List<MediaEntry> rows=[];
- @override void initState(){super.initState();_load();}
- Future<void> _load()async{
-   final result=await widget.db.list(kind,limit:200);
-   if(mounted)setState(()=>rows=result);
+ MediaKind kind=MediaKind.live;
+ List<MediaEntry> rows=[];
+ final search=TextEditingController();
+ Timer? debounce;
+ bool hiddenOnly=false,loading=false,hasMore=true;
+ int offset=0,revision=0;
+ final scroll=ScrollController();
+ @override void initState(){
+   super.initState();_load(reset:true);
+   scroll.addListener((){
+     if(scroll.hasClients&&scroll.position.extentAfter<450&&!loading&&hasMore)_load();
+   });
  }
- @override Widget build(BuildContext context)=>Padding(padding:const EdgeInsets.all(26),
+ Future<void> _load({bool reset=false})async{
+   if(loading&&!reset)return;
+   final id=reset?++revision:revision;
+   if(reset){offset=0;rows=[];hasMore=true;}
+   if(!hasMore)return;
+   setState(()=>loading=true);
+   final found=await widget.db.manage(kind,hiddenOnly:hiddenOnly,
+     search:search.text,limit:75,offset:offset);
+   if(!mounted||id!=revision)return;
+   setState((){
+     rows=[...rows,...found];
+     offset+=found.length;
+     hasMore=found.length==75;
+     loading=false;
+   });
+ }
+ Future<void> _mark(MediaEntry item,{bool hide=false}) async{
+   // Library management is local and should never re-import the provider.
+   await widget.db.mark(item.id,
+     favorite:hide?null:!item.favorite,
+     hidden:hide?!item.hidden:null);
+   // Provider refresh is deliberately NOT called here.
+   await _load(reset:true);
+ }
+ @override void dispose(){search.dispose();scroll.dispose();debounce?.cancel();super.dispose();}
+ @override Widget build(BuildContext context)=>Padding(padding:const EdgeInsets.all(22),
    child:Column(children:[
      Row(children:[
        Text('EDIT LIBRARY',style:Theme.of(context).textTheme.titleLarge),
-       const SizedBox(width:20),
+       const SizedBox(width:12),
        for(final t in MediaKind.values)AuroraButton(text:t.name.toUpperCase(),
-         selected:kind==t,onPressed:(){kind=t;_load();}),
-       const Spacer(),AuroraButton(text:'Refresh',onPressed:widget.onRefresh),
+         selected:kind==t,onPressed:(){kind=t;_load(reset:true);}),
+       const Spacer(),
+       AuroraButton(text:'Refresh provider',onPressed:widget.onRefresh),
      ]),
      const SizedBox(height:12),
-     Expanded(child:ListView.builder(itemCount:rows.length,itemBuilder:(ctx,i){
-       final item=rows[i];
-       return ListTile(title:Text(item.cleanTitle),subtitle:Text(item.category),
-         trailing:Row(mainAxisSize:MainAxisSize.min,children:[
-           IconButton(onPressed:(){widget.onFavorite(item);_load();},
-             icon:Icon(item.favorite?Icons.favorite:Icons.favorite_outline)),
-           IconButton(onPressed:(){widget.onHide(item);_load();},
-             icon:const Icon(Icons.visibility_off_outlined)),
-         ]));
-     })),
+     Row(children:[
+       Expanded(child:TextField(controller:search,onChanged:(_){
+         debounce?.cancel();
+         debounce=Timer(const Duration(milliseconds:250),()=>_load(reset:true));
+       },decoration:const InputDecoration(
+         prefixIcon:Icon(Icons.search),hintText:'Filter library titles'))),
+       const SizedBox(width:14),
+       FilterChip(label:const Text('Show hidden'),selected:hiddenOnly,
+         onSelected:(v){setState(()=>hiddenOnly=v);_load(reset:true);}),
+     ]),
+     const SizedBox(height:10),
+     Expanded(child:ListView.builder(controller:scroll,
+       itemCount:rows.length+(loading?1:0),
+       itemBuilder:(ctx,i){
+         if(i==rows.length)return const Center(child:Padding(
+           padding:EdgeInsets.all(12),child:CircularProgressIndicator()));
+         final item=rows[i];
+         return ListTile(dense:true,title:Text(item.cleanTitle,
+           maxLines:1,overflow:TextOverflow.ellipsis),
+           subtitle:Text(item.category,maxLines:1),
+           trailing:Row(mainAxisSize:MainAxisSize.min,children:[
+             IconButton(tooltip:item.favorite?'Remove from My List':'Add to My List',
+               onPressed:()=>_mark(item),
+               icon:Icon(item.favorite?Icons.favorite:Icons.favorite_outline,
+                 color:item.favorite?C.aqua:null)),
+             IconButton(tooltip:item.hidden?'Restore channel':'Hide channel',
+               onPressed:()=>_mark(item,hide:true),
+               icon:Icon(item.hidden?Icons.visibility:Icons.visibility_off_outlined)),
+           ]));
+       })),
    ]));
 }
 
