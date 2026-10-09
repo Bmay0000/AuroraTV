@@ -1784,8 +1784,15 @@ public class MainActivity extends Activity {
       fav=new HashSet<>(favorites),langs=new HashSet<>(allowed),
       manual=new HashSet<>(shown),groups=new HashSet<>(shownCategories);
   final boolean strict=hideUnknown;
-  // Retain last screen until the requested directory is ready.
-  catalogReadIO.execute(()->{
+  // Show a guide shell on the first frame, independent of slow VOD reads.
+  body.removeAllViews();
+  TextView guideStatus=headline("LIVE TV  /  GUIDE",25,Color.WHITE);
+  body.addView(guideStatus,new LinearLayout.LayoutParams(-1,dp(48)));
+  TextView guideWait=text("Loading channels in the background…",15);
+  guideWait.setTextColor(MUTED);
+  body.addView(guideWait,new LinearLayout.LayoutParams(-1,dp(44)));
+  if(guideCategoryTask!=null)guideCategoryTask.cancel(true);
+  guideCategoryTask=guideDirectoryIO.submit(()->{
    try{
     final List<LibraryCore.Item> channels=new ArrayList<>(store.channelDirectory(
         filter,search,h,hc,fav,langs,strict,manual,groups));
