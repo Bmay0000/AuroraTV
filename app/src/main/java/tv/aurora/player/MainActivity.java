@@ -687,7 +687,7 @@ public class MainActivity extends Activity {
   heading.setMaxLines(3);heading.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(heading);
   TextView group=text(item.category,16);group.setTextColor(MUTED);info.addView(group);
-  TextView description=text("Ready when you are. Watch or manage this title from your AuroraTV library.",15);
+  TextView description=text(prefs.getString("mode","").equals("xtream")?"Loading the provider synopsis…":"Artwork and title details from your IPTV playlist.",15);
   description.setTextColor(0xffb4c7d3);
   LinearLayout.LayoutParams ds=new LinearLayout.LayoutParams(-1,-2);ds.topMargin=dp(13);
   info.addView(description,ds);
@@ -720,6 +720,26 @@ public class MainActivity extends Activity {
   dialog.show();
   if(window!=null)window.setLayout(dp(Math.min(dim.widthDp-2*dim.marginX,1080)),-2);
   play.requestFocus();
+  // Rich media previews are fetched only on selection, off the UI thread.
+  if("xtream".equals(prefs.getString("mode",""))){
+   io.execute(()->{
+    String synopsis="";
+    try{
+     LibraryCore.Item full=store.resolve(item);
+     synopsis=Provider.mediaSummary(full,
+       Vault.open(prefs.getString("url","")),
+       Vault.open(prefs.getString("user","")),
+       Vault.open(prefs.getString("pass","")));
+    }catch(Exception ignored){}
+    final String shownSynopsis=synopsis;
+    runOnUiThread(()->{
+     if(isDestroyed() || !dialog.isShowing())return;
+     description.setText(shownSynopsis.isEmpty()?
+       "No synopsis was supplied by this IPTV provider. You can still play or browse this title.":
+       shownSynopsis);
+    });
+   });
+  }
  }
 
  static final class ChannelTile{
