@@ -1097,7 +1097,8 @@ public class MainActivity extends Activity {
      LinearLayout.LayoutParams previewPosition=new LinearLayout.LayoutParams(-1,dp(previewHeight));
      previewPosition.topMargin=dp(6);
      body.addView(previewArea,previewPosition);
-     guidePreview=new GuidePreviewPane(this,store,posters,previewArea,metrics);
+     guidePreview=new GuidePreviewPane(this,store,posters,previewArea,metrics,
+       prefs.getBoolean("guide.preview.auto",true));
      TextView helper=text("Highlight a channel to preview silently · Select to watch · Long press for options",13);
      if(metrics.heightDp>=480){helper.setTextColor(MUTED);body.addView(helper);}
 
@@ -1293,6 +1294,7 @@ public class MainActivity extends Activity {
    "Set independent XMLTV source A",
    "Set independent XMLTV source B",
    "Refresh all configured guide sources",
+   "Automatic muted preview: "+(prefs.getBoolean("guide.preview.auto",true)?"ON":"OFF"),
    "About Aurora Smart EPG"
   };
   new AlertDialog.Builder(this).setTitle("AuroraTV · Smart EPG")
@@ -1307,6 +1309,13 @@ public class MainActivity extends Activity {
     if(index==3){confirmGuidePreset("Disable public guide feeds","","");return;}
     if(index==4||index==5){promptGuideUrl(index==4?"external1":"external2");return;}
     if(index==6){scheduleGuideSync(true,true);toast("Updating configured EPG feeds in the background");return;}
+    if(index==7){
+     boolean enabled=!prefs.getBoolean("guide.preview.auto",true);
+     prefs.edit().putBoolean("guide.preview.auto",enabled).apply();
+     if("guide".equals(screen))tvGuide();
+     toast(enabled?"Automatic muted previews enabled":"Automatic video previews disabled");
+     return;
+    }
     new AlertDialog.Builder(this).setTitle("About Smart EPG")
      .setMessage("Aurora combines your provider's XMLTV and per-channel data with two custom XMLTV and two optional public feeds. A schedule can only be displayed when a real source supplies it. Unmatched stations can be mapped through their guide row.")
      .setPositiveButton("OK",null).show();
