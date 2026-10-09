@@ -80,7 +80,7 @@ public final class ChannelDiscovery {
     // Satellite lists a handful of ESPN+ subfeeds near channel 210, not every
     // numbered event in a third-party IPTV catalog.
     private static final Pattern ESPN_PLUS=Pattern.compile(
-        "(?i)ESPN\\s*\\+\\s*([1-7])?(?!\\d)");
+        "(?i)ESPN\\s*\\+\\s*(?:[1-7](?!\\d)|HD|FHD|UHD|4K|$)");
     private static final Pattern SYMBOLS=Pattern.compile("[\\[\\](){}|:/+.,]");
     private static final Pattern WHITESPACE=Pattern.compile("\\s+");
     private static final Pattern TRAILING_REGION=Pattern.compile(
