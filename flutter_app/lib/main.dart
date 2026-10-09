@@ -444,7 +444,7 @@ class AuroraButton extends StatelessWidget{
         minimumSize:WidgetStatePropertyAll(Size(nav?54:156,nav?37:44)),
         padding:WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal:nav?14:20)),
         backgroundColor:WidgetStatePropertyAll(primary?Colors.white:
-          selected?C.aqua.withValues(alpha:.16):Colors.black.withValues(alpha:nav?.02:.45)),
+          selected?C.aqua.withValues(alpha:.16):Colors.black.withValues(alpha:nav ? .02 : .45)),
         foregroundColor:WidgetStatePropertyAll(primary?Colors.black:Colors.white),
         side:WidgetStatePropertyAll(BorderSide(
           color:selected?C.aqua:primary?Colors.white:C.secondary.withValues(alpha:nav?0:.23))),
@@ -536,7 +536,7 @@ class _LoginScreenState extends State<LoginScreen>{
         if(widget.status.isNotEmpty)Padding(padding:const EdgeInsets.only(top:13),
           child:Text(widget.status,style:const TextStyle(color:C.secondary))),
       ]))),
-  )));
+  ));
 }
 
 class PlayerScreen extends StatefulWidget{
