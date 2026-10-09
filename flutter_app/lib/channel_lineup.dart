@@ -321,10 +321,10 @@ class ChannelLineup {
   };
   static String canonical(String name){
     var n=name.trim().toUpperCase()
-      .replaceFirst(RegExp(r'^(?:USA|US|UK|CA|CAN|AU|NZ|NA|EN|ENG)\\s*[:|\\-]\\s*'),'')
-      .replaceAll(RegExp(r'\\s*\\((?:US|USA|UK|CA|AU|NZ|EN|HD|FHD|UHD|4K|1080P)\\)\\s*'),' ')
-      .replaceAll(RegExp(r'\\b(?:4K|UHD|FHD|HD|HEVC|H265|H264|1080P|720P|SD)\\b'),' ')
-      .replaceAll(RegExp(r'\\s+'),' ').trim();
+      .replaceFirst(RegExp(r'^(?:USA|US|UK|CA|CAN|AU|NZ|NA|EN|ENG)\s*[:|\-]\s*'),'')
+      .replaceAll(RegExp(r'\s*\((?:US|USA|UK|CA|AU|NZ|EN|HD|FHD|UHD|4K|1080P)\)\s*'),' ')
+      .replaceAll(RegExp(r'\b(?:4K|UHD|FHD|HD|HEVC|H265|H264|1080P|720P|SD)\b'),' ')
+      .replaceAll(RegExp(r'\s+'),' ').trim();
     return aliases[n]??n;
   }
   static int? referenceNumber(MediaEntry item) => reference[canonical(item.cleanTitle)];
