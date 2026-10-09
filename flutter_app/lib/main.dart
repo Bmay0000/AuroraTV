@@ -9,6 +9,7 @@ import 'catalog.dart';
 import 'provider.dart';
 import 'metadata.dart';
 import 'epg.dart';
+import 'channel_lineup.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -61,7 +62,7 @@ class _AuroraShellState extends State<AuroraShell>{
   final Map<MediaKind,List<String>> groups={};
   final Map<MediaKind,List<MediaEntry>> favorites={};
   List<MediaEntry> live=[];
-  String channelGroup='All';
+  String channelGroup='North America';
   int selectedCategory=0;
   bool englishFirst=true;
 
@@ -165,9 +166,17 @@ class _AuroraShellState extends State<AuroraShell>{
       if(items.isNotEmpty)_feature(items.first);
     }
   }
-  Future<void> _loadLive({String group='All'}) async{
-    final loaded=await db.list(MediaKind.live,category:group=='Favorites'?'All':group,
-      favorites:group=='Favorites',limit:120);
+  Future<void> _loadLive({String group='North America'}) async{
+    List<MediaEntry> loaded;
+    if(group=='North America'){
+      final all=await db.list(MediaKind.live,limit:12000);
+      loaded=ChannelLineup.curated(all);
+      if(loaded.isEmpty)loaded=all.where((e)=>e.likelyEnglish).take(160).toList();
+      if(loaded.isEmpty)loaded=all.take(160).toList();
+    }else{
+      loaded=await db.list(MediaKind.live,category:group=='Favorites'?'All':group,
+        favorites:group=='Favorites',limit:250);
+    }
     if(mounted)setState((){live=loaded;channelGroup=group;});
   }
   Future<void> _toggle(MediaEntry item,{bool hide=false})async{
@@ -650,7 +659,7 @@ class _GuideScreenState extends State<GuideScreen>{
    final channels=widget.channels;
    final selected=focused??(channels.isNotEmpty?channels.first:null);
    final now=DateTime.now();
-   final categoryGroups=['All','Favorites',...widget.groups.take(12)];
+   final categoryGroups=['North America','All','Favorites',...widget.groups.take(12)].toSet().toList();
    return Padding(padding:const EdgeInsets.symmetric(horizontal:18,vertical:8),child:Column(children:[
      SizedBox(height:96,child:Row(children:[
        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
@@ -712,7 +721,7 @@ class _GuideScreenState extends State<GuideScreen>{
                    child:Row(children:[
                      if(item.artwork.isNotEmpty)SizedBox(width:38,height:30,child:artwork(item.artwork,fit:BoxFit.contain)),
                      const SizedBox(width:5),
-                     Expanded(child:Text(item.cleanTitle,maxLines:1,overflow:TextOverflow.ellipsis,
+                     Expanded(child:Text('${ChannelLineup.referenceNumber(item)??''}  ${item.cleanTitle}',maxLines:1,overflow:TextOverflow.ellipsis,
                        style:const TextStyle(fontSize:13,fontWeight:FontWeight.w600))),
                    ]))),
                  for(var slot=0;slot<4;slot++)Expanded(child:Container(
