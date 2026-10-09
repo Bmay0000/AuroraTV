@@ -30,14 +30,20 @@ import java.util.concurrent.Executors;
  */
 public final class PosterLoader implements AutoCloseable {
     private static final int MAX_DOWNLOAD = 2 * 1024 * 1024;
-    private static final long MAX_DISK_CACHE = 36L * 1024 * 1024;
+    private static final long MAX_DISK_CACHE = 96L * 1024 * 1024;
     private final Activity activity;
     private final ExecutorService background = Executors.newFixedThreadPool(3);
-    private final LruCache<String, Bitmap> memory = new LruCache<String, Bitmap>(16 * 1024) {
+    private final LruCache<String, Bitmap> memory = new LruCache<String, Bitmap>(24 * 1024) {
         @Override protected int sizeOf(String key, Bitmap b) {
             return Math.max(1, b.getByteCount() / 1024);
         }
     };
+    // A film may appear in Continue Watching, recent releases and several
+    // genre shelves. Download/decode its poster just once, then share it
+    // among all visible ImageViews.
+    private final java.util.concurrent.ConcurrentHashMap<String,
+        java.util.concurrent.CopyOnWriteArrayList<WeakReference<ImageView>>>
+        inFlight = new java.util.concurrent.ConcurrentHashMap<>();
     private final File cacheDir;
     private final Set<String> missed = Collections.synchronizedSet(new HashSet<String>());
 
@@ -49,27 +55,46 @@ public final class PosterLoader implements AutoCloseable {
     }
 
     public void bind(ImageView image, String raw) {
-        // ImageView tags are part of view recycling correctness: an old request
-        // must never draw onto a newly assigned title.
-        String url = raw == null ? "" : raw.trim();
+        String url=raw==null?"":raw.trim();
+        if(url.equals(image.getTag())&&image.getDrawable()!=null)return;
         image.setTag(url);
         image.setImageDrawable(null);
-        if (!(url.startsWith("https://") || url.startsWith("http://"))
-                || url.length() > 1600 || missed.contains(url)) return;
-        Bitmap ready = memory.get(url);
-        if (ready != null) {
-            image.setImageBitmap(ready);
+        if(!(url.startsWith("https://")||url.startsWith("http://"))
+                ||url.length()>1600||missed.contains(url))return;
+        Bitmap ready=memory.get(url);
+        if(ready!=null){image.setImageBitmap(ready);return;}
+        WeakReference<ImageView> target=new WeakReference<>(image);
+        java.util.concurrent.CopyOnWriteArrayList<WeakReference<ImageView>> fresh=
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.concurrent.CopyOnWriteArrayList<WeakReference<ImageView>> existing=
+            inFlight.putIfAbsent(url,fresh);
+        if(existing!=null){
+            existing.add(target);
+            // A finished request might have removed itself while we were
+            // joining its listeners. Reuse the completed memory bitmap.
+            Bitmap cached=memory.get(url);
+            if(cached!=null&&url.equals(image.getTag()))image.setImageBitmap(cached);
             return;
         }
-        final WeakReference<ImageView> target = new WeakReference<>(image);
-        background.execute(() -> {
-            Bitmap value = getOrFetch(url);
-            if (value == null) return;
-            activity.runOnUiThread(() -> {
-                ImageView current = target.get();
-                if (current != null && url.equals(current.getTag())
-                        && !activity.isDestroyed()) current.setImageBitmap(value);
-            });
+        fresh.add(target);
+        background.execute(()->{
+            Bitmap artwork=null;
+            try{artwork=getOrFetch(url);}
+            catch(Exception ignored){}
+            finally{
+                java.util.concurrent.CopyOnWriteArrayList<WeakReference<ImageView>> receivers=
+                    inFlight.remove(url);
+                final Bitmap result=artwork;
+                if(result!=null && receivers!=null)
+                    activity.runOnUiThread(()->{
+                        if(activity.isDestroyed())return;
+                        for(WeakReference<ImageView> ref:receivers){
+                            ImageView current=ref.get();
+                            if(current!=null&&url.equals(current.getTag()))
+                                current.setImageBitmap(result);
+                        }
+                    });
+            }
         });
     }
 
@@ -167,6 +192,7 @@ public final class PosterLoader implements AutoCloseable {
 
     @Override public void close() {
         background.shutdownNow();
+        inFlight.clear();
         memory.evictAll();
     }
 }
