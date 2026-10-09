@@ -793,7 +793,7 @@ public class MainActivity extends Activity {
   card.setPadding(dp(3),dp(3),dp(3),dp(3));
   LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(dp(width),dp(height));
   size.rightMargin=dp(dim.columnGap);card.setLayoutParams(size);
-  card.setBackground(rounded(0xff0f1b2a,11,0xff203343));
+  card.setBackground(rounded(0xff0b1422,11,0xff182a38));
   FrameLayout art=new FrameLayout(this);
   art.setClipToOutline(true);
   art.setBackground(gradient(live?0xff164854:0xff303653,0xff121f34,9));
@@ -813,13 +813,13 @@ public class MainActivity extends Activity {
    label.setMargins(dp(5),dp(5),0,0);
    art.addView(marker,label);
   }
-  TextView name=text(item.name,TvLayout.clamp(dim.bodySize()-1,12,15));
+  TextView name=text(live?item.name:displayMediaName(item),TvLayout.clamp(dim.bodySize()-1,12,15));
   name.setMaxLines(1);name.setEllipsize(TextUtils.TruncateAt.END);
   name.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
   name.setPadding(dp(4),dp(3),dp(4),0);
   card.addView(name,new LinearLayout.LayoutParams(-1,dp(23)));
   TextView details=text(item.releaseYear>0&&!live?
-    item.releaseYear+"   ·   "+item.category:item.category,11);
+    item.releaseYear+"   ·   "+("series".equals(item.type)?"SERIES":"MOVIE"):(live?item.category:""),11);
   details.setTextColor(MUTED);details.setSingleLine(true);
   details.setEllipsize(TextUtils.TruncateAt.END);
   details.setPadding(dp(4),0,dp(4),0);
@@ -954,10 +954,10 @@ public class MainActivity extends Activity {
   LinearLayout info=column();info.setGravity(Gravity.CENTER_VERTICAL);
   info.setPadding(dp(22),0,0,0);layout.addView(info,new LinearLayout.LayoutParams(0,-2,1));
   info.addView(kicker(item.type.equals("movie")?"MOVIE FROM YOUR LIBRARY":"TV SERIES FROM YOUR LIBRARY"));
-  TextView heading=headline(item.name,TvLayout.clamp(dim.headingSize(),26,37),Color.WHITE);
+  TextView heading=headline(displayMediaName(item),TvLayout.clamp(dim.headingSize(),26,37),Color.WHITE);
   heading.setMaxLines(3);heading.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(heading);
-  TextView group=text(item.category,16);group.setTextColor(MUTED);info.addView(group);
+  TextView group=text((item.releaseYear>0?item.releaseYear+"  ·  ":"")+("series".equals(item.type)?"TV Series":"Movie"),16);group.setTextColor(MUTED);info.addView(group);
   TextView description=text(prefs.getString("mode","").equals("xtream")?"Loading the provider synopsis…":"Artwork and title details from your IPTV playlist.",15);
   description.setTextColor(0xffb4c7d3);
   LinearLayout.LayoutParams ds=new LinearLayout.LayoutParams(-1,-2);ds.topMargin=dp(13);
@@ -1211,7 +1211,7 @@ public class MainActivity extends Activity {
   feed.addView(hero,size);
   cinematicArtwork=hero;
   cinematicBackdrop=new ImageView(this);
-  cinematicBackdrop.setScaleType(ImageView.ScaleType.CENTER_CROP);
+  cinematicBackdrop.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
   cinematicBackdrop.setAlpha(.52f);
   hero.addView(cinematicBackdrop,new FrameLayout.LayoutParams(-1,-1));
   View shade=new View(this);
@@ -1235,6 +1235,14 @@ public class MainActivity extends Activity {
   cinematicSubtitle.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicSubtitle);
  }
+ /** Keep provider prefixes and stream quality tags out of customer-facing VOD labels. */
+ String displayMediaName(LibraryCore.Item item){
+  String name=item.name==null?"":item.name.trim();
+  name=name.replaceFirst("(?i)^(?:EN|ENG|US|UK|AU|NZ)\\s*[-|:]\\s*","");
+  name=name.replaceFirst("(?i)^(?:VOD|MOVIE|FILM|SERIES)\\s*[-|:]\\s*","");
+  name=name.replaceFirst("(?i)\\s*\\b(?:FHD|UHD|4K|1080P|720P)\\s*$","");
+  return name.isEmpty()?item.name:name;
+ }
  void updateCinematicPanel(LibraryCore.Item item){
   if(cinematicArtwork==null||cinematicTitle==null||item==null)return;
   if(pendingCinematic!=null)uiHandler.removeCallbacks(pendingCinematic);
@@ -1247,18 +1255,18 @@ public class MainActivity extends Activity {
    cinematicTitle.animate().alpha(0.15f).setDuration(75)
      .withEndAction(()->{
       if(revision!=cinematicRevision||cinematicTitle==null)return;
-      cinematicTitle.setText(item.name);
+      cinematicTitle.setText(displayMediaName(item));
       cinematicTitle.animate().alpha(1f).setDuration(210).start();
      }).start();
    String descriptor=(item.releaseYear>0?item.releaseYear+"  •  ":"")
       +("series".equals(item.type)?"TV SERIES":"MOVIE")
-      +(item.category.isEmpty()?"":"  •  "+item.category);
+      ;
    cinematicSubtitle.setText(descriptor);
    if(item.artwork==null||!item.artwork.startsWith("http"))return;
    final FrameLayout parent=cinematicArtwork;
    final ImageView old=cinematicBackdrop;
    ImageView next=new ImageView(this);
-   next.setScaleType(ImageView.ScaleType.CENTER_CROP);
+   next.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
    next.setAlpha(0f);
    // Keep transitions behind the metadata gradient and foreground labels.
    // Crossfade the incoming bitmap on top of the old image, beneath metadata.
