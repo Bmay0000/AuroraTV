@@ -825,7 +825,7 @@ public class MainActivity extends Activity {
  /** Widescreen artwork cards make the discovery feed visibly different from a provider poster grid. */
  View landscapeCard(LibraryCore.Item item,int rank,boolean getBackdrop){
   TvLayout m=tv();
-  int w=TvLayout.clamp((m.contentWidth()-dp(48))/5,125,245);
+  int w=TvLayout.clamp((m.contentWidth()-dp(48))/5,125,275);
   int h=TvLayout.clamp(m.heightDp/5,88,148);
   FrameLayout tile=new FrameLayout(this);
   LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(dp(w),dp(h));
@@ -1331,7 +1331,7 @@ public class MainActivity extends Activity {
   hero.setBackgroundColor(Color.TRANSPARENT);
   hero.setClipToOutline(false);
   LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-1,
-    dp(TvLayout.clamp(m.heightDp*46/100,210,350)));
+    dp(TvLayout.clamp(m.heightDp*60/100,270,475)));
   size.bottomMargin=dp(9);
   feed.addView(hero,size);
   cinematicArtwork=hero;
@@ -1346,7 +1346,7 @@ public class MainActivity extends Activity {
   View shade=new View(this);
   shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
     new int[]{0xff081321,0xf0081423,0x87081524,0x240b1724}));
-  hero.addView(shade,new FrameLayout.LayoutParams(-1,-1));
+  // Full-screen canvas provides the vignette; avoid an obvious rectangular hero panel.
   // Portrait artwork remains portrait-sized on the right when a wide backdrop
   // is missing; no giant cropped faces pretending to be film backdrops.
   cinematicPoster=new ImageView(this);
@@ -1363,7 +1363,7 @@ public class MainActivity extends Activity {
       dp(TvLayout.clamp(m.contentWidth()*3/5,265,780)),-1,Gravity.LEFT));
   TextView eyebrow=kicker("AURORATV    •    FEATURED FOR YOU");eyebrow.setTextSize(11);
   info.addView(eyebrow);
-  cinematicTitle=headline("Explore your library",
+  cinematicTitle=headline("Discover your next favorite",
     TvLayout.clamp(m.headingSize()+13,28,48),Color.WHITE);
   cinematicTitle.setMaxLines(2);
   cinematicTitle.setEllipsize(TextUtils.TruncateAt.END);
