@@ -403,8 +403,10 @@ public class MainActivity extends Activity {
   scroll.addView(feed,new ScrollView.LayoutParams(-1,-2));
 
   FrameLayout heroHolder=new FrameLayout(this);
-  feed.addView(heroHolder,new LinearLayout.LayoutParams(-1,dp(tv().heroHeight)));
-  heroHolder.addView(homeHero(null),new FrameLayout.LayoutParams(-1,-1));
+  if(tv().heightDp>=470){
+   feed.addView(heroHolder,new LinearLayout.LayoutParams(-1,dp(tv().heroHeight)));
+   heroHolder.addView(homeHero(null),new FrameLayout.LayoutParams(-1,-1));
+  }
   quickCategories(feed);
 
   LinearLayout newlyReleased=column(),genreArea=column(),personal=column(),
@@ -1061,15 +1063,17 @@ public class MainActivity extends Activity {
      body.removeAllViews();
      LinearLayout heading=new LinearLayout(this);
      heading.setGravity(Gravity.CENTER_VERTICAL);
+     boolean compact=tv().heightDp<470;
+     int actionHeight=compact?35:46;
      String title=(isEditing?"EDIT  /  ":"")+(showHidden?"HIDDEN":onlyFavorites?"FAVORITES":
        type.equals("live")?"LIVE TV":type.equals("movie")?"MOVIES":"TV SHOWS");
-     heading.addView(headline(title,TvLayout.clamp(tv().headingSize(),25,35),Color.WHITE),new LinearLayout.LayoutParams(0,-2,1));
+     heading.addView(headline(title,TvLayout.clamp(tv().headingSize(),compact?20:23,31),Color.WHITE),new LinearLayout.LayoutParams(0,-2,1));
      int actionsWidth=tv().contentWidth()<650?105:134;
      Button filters=button("☷  FILTERS",this::smart);
-     heading.addView(filters,new LinearLayout.LayoutParams(dp(actionsWidth),dp(49)));
+     heading.addView(filters,new LinearLayout.LayoutParams(dp(actionsWidth),dp(actionHeight)));
      Button back=button("⌂  HOME",this::home);
-     heading.addView(back,new LinearLayout.LayoutParams(dp(actionsWidth),dp(49)));
-     body.addView(heading);
+     heading.addView(back,new LinearLayout.LayoutParams(dp(actionsWidth),dp(actionHeight)));
+     body.addView(heading,new LinearLayout.LayoutParams(-1,dp(compact?37:50)));
 
      // Users can search within the selected media type without going back to
      // the navigation menu. Search is performed by SQLite, not in-memory scans.
@@ -1078,7 +1082,7 @@ public class MainActivity extends Activity {
      body.addView(controls);
      Button selectCategory=button("▦  "+cat+"   ▾",this::chooseCategory);
      selectCategory.setSingleLine(true);selectCategory.setEllipsize(TextUtils.TruncateAt.END);
-     controls.addView(selectCategory,new LinearLayout.LayoutParams(0,dp(52),2));
+     controls.addView(selectCategory,new LinearLayout.LayoutParams(0,dp(actionHeight),2));
      EditText searchField=new EditText(this);
      searchField.setTextColor(Color.WHITE);
      searchField.setHintTextColor(0xffa6bbc9);
@@ -1092,7 +1096,7 @@ public class MainActivity extends Activity {
        searchField.setBackground(rounded(focused?0xff193849:0xff102139,12,
          focused?ACCENT:0xff2a4a5b)));
      searchField.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
-     LinearLayout.LayoutParams searchSize=new LinearLayout.LayoutParams(0,dp(52),2);
+     LinearLayout.LayoutParams searchSize=new LinearLayout.LayoutParams(0,dp(actionHeight),2);
      searchSize.leftMargin=dp(10);controls.addView(searchField,searchSize);
      if(focusSearchNext){focusSearchNext=false;searchField.requestFocus();}
      Runnable applySearch=()->{query=searchField.getText().toString().trim();page=0;browse();};
@@ -1104,10 +1108,10 @@ public class MainActivity extends Activity {
       return false;
      });
      Button go=button("SEARCH",applySearch);
-     controls.addView(go,new LinearLayout.LayoutParams(dp(108),dp(52)));
+     controls.addView(go,new LinearLayout.LayoutParams(dp(compact?76:104),dp(actionHeight)));
      if(!search.isEmpty()){
       controls.addView(button("✕",()->{query="";page=0;browse();}),
-          new LinearLayout.LayoutParams(dp(55),dp(52)));
+          new LinearLayout.LayoutParams(dp(42),dp(actionHeight)));
      }
      if(isEditing)body.addView(text("Select a title to favorite, restore or hide it.",14));
      if(result.rows.isEmpty()){
@@ -1121,8 +1125,9 @@ public class MainActivity extends Activity {
       return;
      }
      subtitle.setText("Your entertainment, your selection");
-     body.addView(text("Showing "+(requested*PAGE_SIZE+1)+"–"+
-          (requested*PAGE_SIZE+result.rows.size())+(result.more?"+":"")+" matching titles",14));
+     if(!compact)
+      body.addView(text("Showing "+(requested*PAGE_SIZE+1)+"–"+
+          (requested*PAGE_SIZE+result.rows.size())+(result.more?"+":"")+" matching titles",13));
      if(type.equals("movie")||type.equals("series")){
       LinearLayout featuredSelection=new LinearLayout(this);
       featuredSelection.setGravity(Gravity.CENTER_VERTICAL);
@@ -1130,7 +1135,7 @@ public class MainActivity extends Activity {
       featuredSelection.setBackground(rounded(0xff172a3a,14,0xff2c5861));
       LinearLayout.LayoutParams spotlightSize=new LinearLayout.LayoutParams(-1,dp(tv().heightDp<750?60:76));
       spotlightSize.bottomMargin=dp(8);
-      body.addView(featuredSelection,spotlightSize);
+      if(!compact)body.addView(featuredSelection,spotlightSize);
       ImageView spotlightPoster=new ImageView(this);
       spotlightPoster.setScaleType(ImageView.ScaleType.CENTER_CROP);
       featuredSelection.addView(spotlightPoster,
