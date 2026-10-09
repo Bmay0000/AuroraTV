@@ -357,17 +357,31 @@ public class MainActivity extends Activity {
   root=column();
   root.setClipChildren(true);root.setClipToPadding(true);
   root.setBackgroundColor(Color.TRANSPARENT);
-  root.setPadding(dp(Math.max(6,metrics.marginX-4)),dp(2),
-    dp(Math.max(6,metrics.marginX-4)),dp(2));
-  setContentView(root);
+  root.setPadding(0,0,0,0);
+  // The entire experience shares one full-bleed cinematic canvas.
+  cinemaStage=new FrameLayout(this);
+  cinemaStage.setBackgroundColor(0xff05080d);
+  cinemaBackground=new ImageView(this);
+  cinemaBackground.setScaleType(ImageView.ScaleType.CENTER_CROP);
+  cinemaBackground.setVisibility(View.GONE);
+  cinemaStage.addView(cinemaBackground,new FrameLayout.LayoutParams(-1,-1));
+  cinemaVeil=new View(this);
+  cinemaVeil.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+    new int[]{0xf907090c,0xd9091015,0x7b081019,0x30060b13}));
+  cinemaVeil.setVisibility(View.GONE);
+  cinemaStage.addView(cinemaVeil,new FrameLayout.LayoutParams(-1,-1));
+  cinemaStage.addView(root,new FrameLayout.LayoutParams(-1,-1));
+  setContentView(cinemaStage);
 
   // One persistent navigation row. Previous versions had a separate
   // branding/header plus a second tab bar and consumed ~20% of the TV.
   LinearLayout top=new LinearLayout(this);
   top.setGravity(Gravity.CENTER_VERTICAL);
   top.setClipChildren(true);top.setClipToPadding(true);
+  top.setPadding(dp(23),0,dp(23),0);
+  top.setBackgroundColor(0x41050b12);
   root.addView(top,new LinearLayout.LayoutParams(-1,dp(
-      TvLayout.clamp(metrics.heightDp/12,40,53))));
+      TvLayout.clamp(metrics.heightDp/12,37,51))));
   TextView mark=brand(TvLayout.clamp(metrics.widthDp/48,19,29));
   mark.setText(new android.text.SpannableStringBuilder(mark.getText()).append("  1.1"));
   LinearLayout.LayoutParams brandSize=new LinearLayout.LayoutParams(-2,-2);
@@ -415,7 +429,7 @@ public class MainActivity extends Activity {
   root.addView(edge,new LinearLayout.LayoutParams(-1,dp(1)));
   body=column();
   body.setClipChildren(true);body.setClipToPadding(true);
-  body.setPadding(dp(2),dp(2),dp(2),dp(2));
+  body.setPadding(dp(18),0,dp(18),0);
   root.addView(body,new LinearLayout.LayoutParams(-1,0,1));
   refreshSidebar();
  }
