@@ -69,7 +69,7 @@ public final class GuidePreviewPane implements AutoCloseable {
         videoSurface=new FrameLayout(activity);
         videoSurface.setBackground(panel(0xff192d42));
         videoSurface.setClipToOutline(true);
-        int paneHeight=TvLayout.clamp((int)(metrics.heightDp*.19),74,180);
+        int paneHeight=TvLayout.clamp((int)(metrics.heightDp*.15),65,138);
         int height=Math.max(55,paneHeight-18);
         int width=(int)Math.round(height*16.0/9.0);
         container.addView(videoSurface,new LinearLayout.LayoutParams(dp(width),dp(height)));
