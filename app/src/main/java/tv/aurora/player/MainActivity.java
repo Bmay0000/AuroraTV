@@ -1967,6 +1967,9 @@ public class MainActivity extends Activity {
   });
  }
  void importRemainingKinds(int token,String host,String username,String password){
+  // Keep live navigation and guide decoders responsive during VOD indexing.
+  try{android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);}
+  catch(Exception ignored){}
   try{
    for(String kind:new String[]{"vod","series"}){
     if(Thread.currentThread().isInterrupted()||token!=generation)return;
