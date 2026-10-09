@@ -45,6 +45,8 @@ jobs:
           java -cp build/core-tests PlaybackRecoveryTest
           javac -cp build/core-tests -d build/core-tests app/src/main/java/tv/aurora/player/TvLayout.java tests/TvLayoutTest.java
           java -cp build/core-tests TvLayoutTest
+          javac -cp build/core-tests -d build/core-tests app/src/main/java/tv/aurora/player/XtreamReference.java tests/XtreamReferenceTest.java
+          java -cp build/core-tests XtreamReferenceTest
 
       - name: Build signed debug APK
         run: |
