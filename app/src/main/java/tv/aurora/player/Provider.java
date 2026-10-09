@@ -20,13 +20,21 @@ public final class Provider {
   return xtreamStream(host,user,pass,output,(stage,count)->{});
  }
  public static int xtreamStream(String host,String user,String pass,LibraryStore.Writer output,ImportProgress progress)throws Exception{
+  return xtreamStreamKinds(host,user,pass,output,progress,"live","vod","series");
+ }
+ /** Import only selected media types, allowing a usable Live TV library first. */
+ public static int xtreamStreamKinds(String host,String user,String pass,
+     LibraryStore.Writer output,ImportProgress progress,String... kinds)throws Exception{
   host=base(host);
   String api=host+"/player_api.php?username="+enc(user)+"&password="+enc(pass);
   JSONObject auth=new JSONObject(get(api));
   if(auth.optJSONObject("user_info")==null||auth.getJSONObject("user_info").optInt("auth")!=1)
    throw new IOException("Login rejected");
   int total=0;
-  for(String kind:new String[]{"live","vod","series"}){
+  for(String kind:kinds){
+   if(!kind.equals("live")&&!kind.equals("vod")&&!kind.equals("series"))
+    throw new IOException("Invalid catalogue type");
+   if(Thread.currentThread().isInterrupted())throw new IOException("Import cancelled");
    progress.update(kind,total);
    Map<String,String> names=new HashMap<>();
    try{
@@ -49,6 +57,7 @@ public final class Provider {
       throw new IOException("Provider returned invalid "+kind+" list");
      reader.beginArray();
      while(reader.hasNext()){
+      if(Thread.currentThread().isInterrupted())throw new IOException("Import cancelled");
       if(reader.peek()!=android.util.JsonToken.BEGIN_OBJECT){reader.skipValue();continue;}
       String id="",name="",cat="",epg="",ext="",artwork="",language="";
       reader.beginObject();
