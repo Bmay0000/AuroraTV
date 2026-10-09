@@ -42,7 +42,24 @@ public class MainActivity extends Activity {
    }
    start();}
  Set<String> set(String k){return new HashSet<>(prefs.getStringSet(k,new HashSet<>()));}
- void save(){prefs.edit().putStringSet("hidden",hidden).putStringSet("categories",categories).putStringSet("favorites",favorites).putStringSet("allowed",allowed).putStringSet("shown",shown).putStringSet("shownCategories",shownCategories).putBoolean("unknown",hideUnknown).putBoolean("smartFilterV2",true).apply();}
+ void save(){
+  prefs.edit().putStringSet("hidden",hidden).putStringSet("categories",categories)
+   .putStringSet("favorites",favorites).putStringSet("allowed",allowed)
+   .putStringSet("shown",shown).putStringSet("shownCategories",shownCategories)
+   .putBoolean("unknown",hideUnknown).putBoolean("smartFilterV2",true).apply();
+  // Favorites, hides and language filters immediately retire old browse results.
+  store.invalidateBrowseCache();
+ }
+ /** A fresh section must not sit behind minutes of stale catalog scans.
+  * Interrupt abandoned jobs; the SQLite readers check interruption and close
+  * their cursors. Playback, provider import and EPG have separate executors. */
+ int beginNavigationRead(){
+  int current=++browseToken;
+  ExecutorService obsolete=catalogReadIO;
+  catalogReadIO=Executors.newFixedThreadPool(2);
+  obsolete.shutdownNow();
+  return current;
+ }
  int dp(int v){return (int)(v*getResources().getDisplayMetrics().density);}
  TvLayout tv(){
    android.util.DisplayMetrics dm=getResources().getDisplayMetrics();
@@ -379,7 +396,7 @@ public class MainActivity extends Activity {
   stopGuidePreview();
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="home";refreshSidebar();
-  final int token=++browseToken;
+  final int token=beginNavigationRead();
   final Set<String> h=new HashSet<>(hidden),hc=new HashSet<>(categories),
       fav=new HashSet<>(favorites),lang=new HashSet<>(allowed),
       manual=new HashSet<>(shown),groups=new HashSet<>(shownCategories);
@@ -1018,7 +1035,7 @@ public class MainActivity extends Activity {
  void catalogLanding(String type){
   stopGuidePreview();
   screen="discover";section=type;refreshSidebar();
-  final int token=++browseToken;
+  final int token=beginNavigationRead();
   final Set<String> h=new HashSet<>(hidden),hc=new HashSet<>(categories),
       fav=new HashSet<>(favorites),langs=new HashSet<>(allowed),
       manual=new HashSet<>(shown),groups=new HashSet<>(shownCategories);
@@ -1110,7 +1127,7 @@ public class MainActivity extends Activity {
    catalogLanding(section);return;
   }
   screen="browse";refreshSidebar();
-  final int token=++browseToken;
+  final int token=beginNavigationRead();
   final String type=section,cat=category,search=query;
   final boolean showHidden=hiddenOnly,onlyFavorites=favOnly,isEditing=editing,hide=hideUnknown;
   final int requested=page;
@@ -1393,7 +1410,7 @@ public class MainActivity extends Activity {
   stopGuidePreview();
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="guide";section="live";refreshSidebar();
-  final int token=++browseToken;
+  final int token=beginNavigationRead();
   final String filter=guideFilter,search=guideQuery;
   final Set<String> h=new HashSet<>(hidden),hc=new HashSet<>(categories),
       fav=new HashSet<>(favorites),langs=new HashSet<>(allowed),
