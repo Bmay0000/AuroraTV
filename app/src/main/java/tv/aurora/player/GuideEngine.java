@@ -359,9 +359,22 @@ public final class GuideEngine extends SQLiteOpenHelper {
         try{
             String streamUrl=item.url;
             if(streamUrl==null||streamUrl.isEmpty())return false;
-            Matcher m=STREAM_ID.matcher(new URL(streamUrl).getPath());
-            if(!m.find())return false;
-            String id=m.group(1);
+            String id;
+            if(XtreamReference.isReference(streamUrl)){
+                // Imported Xtream channels use credential-free compact references,
+                // not /live/user/pass/id.ts URLs. The previous URL-only parser
+                // silently skipped every one of these channels.
+                String[] parts=streamUrl.substring("aurora-xtream:".length()).split(":",-1);
+                if(parts.length!=3||!"live".equals(parts[0])||
+                        XtreamReference.of(parts[0],parts[1],parts[2])==null||
+                        !streamUrl.equals(XtreamReference.of(parts[0],parts[1],parts[2])))
+                    return false;
+                id=parts[1];
+            }else{
+                Matcher m=STREAM_ID.matcher(new URL(streamUrl).getPath());
+                if(!m.find())return false;
+                id=m.group(1);
+            }
             String baseApi=Provider.base(host)+"/player_api.php?username="+Provider.enc(user)+
               "&password="+Provider.enc(password);
             JSONArray entries=null;
