@@ -168,21 +168,46 @@ class CatalogDatabase {
     if (values.isNotEmpty) await _db!.update('media', values, where: 'id=?', whereArgs: [id]);
   }
 
-  Future<List<MediaEntry>> matchTitles(MediaKind kind, List<String> titles) async {
-    final out = <MediaEntry>[];
-    final seen = <String>{};
-    for (final name in titles) {
-      final parts = name.split(' ').where((v) => v.length > 3).toList();
-      if (parts.isEmpty) continue;
-      final results = await list(kind, search: parts.first, limit: 60);
-      final normalized = MediaEntry.normalize(name);
-      for (final e in results) {
-        if (MediaEntry.normalize(e.cleanTitle) == normalized && seen.add(e.id)) {
-          out.add(e); break;
-        }
-      }
+  /// Match TMDB titles against the COMPLETE stored catalog, not just the
+  /// first 60 entries returned by a single title fragment search.
+  /// This uses conservative title normalization to avoid wrong playback.
+  static String matchKey(String title) {
+    var value=title.toLowerCase().trim();
+    value=value.replaceAll(RegExp(r'^(?:(?:usa?|uk|ca|au|nz|en|eng|4k|8k|uhd|fhd|hd|sd|hevc|h265|vod|movie|series)\s*[-|: ]\s*)+',caseSensitive:false),'');
+    value=value.replaceAll(RegExp(r'\s*\((?:19|20)\d{2}\)\s*\$'),'');
+    value=value.replaceAll(RegExp(r'\s*[-|:]\s*(?:19|20)\d{2}\s*\$'),'');
+    value=value.replaceAll(RegExp(r'\s+(?:4k|uhd|fhd|hd|sd|hevc|h265)\s*\$'),'');
+    return value.replaceAll(RegExp(r'[^a-z0-9]'),'');
+  }
+  Future<Map<String,MediaEntry>> matchTitleMap(MediaKind kind,List<String> titles) async {
+    if(titles.isEmpty)return {};
+    final wanted=<String,String>{};
+    for(final title in titles){
+      final key=matchKey(title);
+      if(key.isNotEmpty)wanted[key]=title;
     }
-    return out;
+    final matches=<String,MediaEntry>{};
+    const pageSize=1200;
+    for(var offset=0;;offset+=pageSize){
+      final rows=await _db!.query('media',
+        where:'kind=? AND hidden=0',whereArgs:[kind.name],
+        limit:pageSize,offset:offset,orderBy:'id');
+      for(final row in rows){
+        final item=MediaEntry.fromRow(row);
+        final key=matchKey(item.title);
+        final original=wanted[key];
+        if(original==null)continue;
+        final existing=matches[original];
+        if(existing==null || (item.artwork.isNotEmpty&&!existing.artwork.isNotEmpty) ||
+            (item.rating>existing.rating))matches[original]=item;
+      }
+      if(rows.length<pageSize||matches.length==wanted.length)break;
+    }
+    return matches;
+  }
+  Future<List<MediaEntry>> matchTitles(MediaKind kind,List<String> titles) async {
+    final indexed=await matchTitleMap(kind,titles);
+    return titles.map((title)=>indexed[title]).whereType<MediaEntry>().toList();
   }
 
   Future<void> writePrograms(List<TvProgramme> programs) async {
