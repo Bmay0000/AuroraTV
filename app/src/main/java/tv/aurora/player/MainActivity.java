@@ -415,12 +415,12 @@ public class MainActivity extends Activity {
   ScrollView scroll=new ScrollView(this);
   scroll.setVerticalScrollBarEnabled(false);
   scroll.setClipChildren(true);scroll.setClipToPadding(true);
-  body.addView(scroll,new LinearLayout.LayoutParams(-1,-1));
+  addCinematicPanel(body);
+  body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
   LinearLayout feed=column();
   feed.setClipChildren(true);feed.setClipToPadding(true);
   feed.setPadding(dp(3),dp(1),dp(4),dp(12));
   scroll.addView(feed,new ScrollView.LayoutParams(-1,-2));
-  addCinematicPanel(feed);
   addDiscoveryShortcuts(feed);
 
   // Everything above the international divider has positive English or
@@ -1108,12 +1108,12 @@ public class MainActivity extends Activity {
   ScrollView scroller=new ScrollView(this);
   scroller.setVerticalScrollBarEnabled(false);scroller.setFillViewport(false);
   scroller.setClipChildren(true);scroller.setClipToPadding(true);
+  addCinematicPanel(body);
   body.addView(scroller,new LinearLayout.LayoutParams(-1,0,1));
   LinearLayout feed=column();
   feed.setPadding(dp(3),dp(1),dp(3),dp(10));
   feed.setClipChildren(true);feed.setClipToPadding(true);
   scroller.addView(feed,new ScrollView.LayoutParams(-1,-2));
-  addCinematicPanel(feed);
   addDiscoveryShortcuts(feed);
   LinearLayout recent=column(),english=column(),genres=column(),unknown=column(),
       international=column();
