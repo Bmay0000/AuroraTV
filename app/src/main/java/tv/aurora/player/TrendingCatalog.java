@@ -23,7 +23,9 @@ public final class TrendingCatalog {
     private TrendingCatalog(){}
     public static String normalize(String name){
         if(name==null)return "";
-        return name.toLowerCase(Locale.ROOT).replaceAll("\\s*\\((19|20)\\d{2}\\)\\s*$","")
+        return name.toLowerCase(Locale.ROOT)
+            .replaceFirst("^(en|eng|usa|us|uk|nz|au|vod|movie|film|series)\\\\s*[-|:]\\\\s*","")
+            .replaceAll("\\s*\\((19|20)\\d{2}\\)\\s*$","")
             .replaceAll("\\s*\\[(19|20)\\d{2}\\]\\s*$","")
             .replaceAll("\\s+(4k|uhd|fhd|hd|sd)$","")
             .replaceAll("[^\\p{L}\\p{N}]","").trim();
