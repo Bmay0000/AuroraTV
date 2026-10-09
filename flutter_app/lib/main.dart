@@ -194,7 +194,21 @@ class _AuroraShellState extends State<AuroraShell>{
       final used=curated.map((e)=>e.id).toSet();
       final extras=all.where((e)=>!used.contains(e.id)&&e.likelyEnglish).toList()
         ..sort((a,b)=>a.cleanTitle.compareTo(b.cleanTitle));
-      loaded=[...curated,...extras];
+      final byNumber=<int,MediaEntry>{
+        for(final station in curated)
+          if(ChannelLineup.referenceNumber(station)!=null)
+            ChannelLineup.referenceNumber(station)!:station,
+      };
+      final numbered=ChannelLineup.reference.entries.toList()
+        ..sort((a,b)=>a.value.compareTo(b.value));
+      final slots=<MediaEntry>[];
+      for(final entry in numbered){
+        final station=byNumber[entry.value];
+        slots.add(station??MediaEntry(
+          id:'lineup:${entry.value}',title:entry.key,kind:MediaKind.live,
+          category:'Unavailable from provider'));
+      }
+      loaded=[...slots,...extras];
       if(loaded.isEmpty)loaded=all.take(350).toList();
     }else{
       loaded=await db.list(MediaKind.live,category:group=='Favorites'?'All':group,
@@ -894,7 +908,7 @@ class _GuideScreenState extends State<GuideScreen>{
      Row(children:[
        TextButton(onPressed:widget.refreshEpg,child:const Text('↻ Refresh EPG')),
        const Spacer(),
-       Text('${channels.length} CHANNELS',style:const TextStyle(color:C.secondary,fontSize:12)),
+       Text('${channels.where((v)=>!v.id.startsWith('lineup:')).length} PLAYABLE · ${channels.length} GUIDE SLOTS',style:const TextStyle(color:C.secondary,fontSize:12)),
        const SizedBox(width:10),
        IconButton(onPressed:(){setState(()=>anchor=anchor.subtract(const Duration(hours:1)));_loadForAnchor();},
          icon:const Icon(Icons.chevron_left)),
@@ -921,9 +935,10 @@ class _GuideScreenState extends State<GuideScreen>{
            final item=channels[i];
            final blocks=programs[key(item)]??[];
            final current=focused?.id==item.id;
+           final unavailable=item.id.startsWith('lineup:');
            return InkWell(
              onFocusChange:(value){if(value)_focus(item);},
-             onTap:()=>widget.onPlay(item),
+             onTap:()=>item.id.startsWith('lineup:')?null:widget.onPlay(item),
              child:Container(height:42,margin:const EdgeInsets.only(bottom:2),
                decoration:BoxDecoration(color:current?const Color(0xff1b5051):
                  i.isEven?const Color(0xff142331):const Color(0xff192939)),
@@ -932,7 +947,7 @@ class _GuideScreenState extends State<GuideScreen>{
                    child:Row(children:[
                      if(item.artwork.isNotEmpty)SizedBox(width:38,height:30,child:artwork(item.artwork,fit:BoxFit.contain)),
                      const SizedBox(width:5),
-                     Expanded(child:Text('${ChannelLineup.referenceNumber(item)??''}  ${item.cleanTitle}',maxLines:1,overflow:TextOverflow.ellipsis,
+                     Expanded(child:Text('${ChannelLineup.referenceNumber(item)??''}  ${item.cleanTitle}${unavailable?' · Unavailable':''}',maxLines:1,overflow:TextOverflow.ellipsis,
                        style:const TextStyle(fontSize:13,fontWeight:FontWeight.w600))),
                    ]))),
                  for(var slot=0;slot<4;slot++)Expanded(child:Container(
