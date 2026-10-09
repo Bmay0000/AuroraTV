@@ -216,25 +216,44 @@ class ProviderClient {
   }
 
   Future<List<MediaEntry>> episodes(IptvSource source,MediaEntry series) async {
-    if(source.kind!='xtream')return [];
-    final rows=await _http.get(source.action('get_series_info',{'series_id':series.streamId}))
-        .timeout(const Duration(seconds:25));
-    if(rows.statusCode!=200)return [];
-    final info=await compute(_decodeJson,rows.body);
-    if(info is! Map||info['episodes'] is! Map)return [];
+    if(source.kind!='xtream'||series.streamId.isEmpty)return [];
+    final response=await _http.get(source.action('get_series_info',{'series_id':series.streamId}))
+      .timeout(const Duration(seconds:25));
+    if(response.statusCode!=200)throw Exception('Series API HTTP ${response.statusCode}');
+    final info=await compute(_decodeJson,response.body);
+    if(info is! Map)throw Exception('Series API returned an invalid response');
+    final root=info['episodes'];
+    if(root==null)throw Exception('Series API omitted episode listings');
     final episodes=<MediaEntry>[];
-    (info['episodes'] as Map).forEach((season,list){
-      if(list is! List)return;
-      for(final episode in list){
+    // Most Xtream-compatible providers return a map of season number to
+    // episodes; a minority return arrays or a nested seasons structure.
+    final collections=<String,dynamic>{};
+    if(root is Map){
+      root.forEach((season,entries)=>collections['$season']=entries);
+    }else if(root is List){
+      collections['1']=root;
+    }else{
+      throw Exception('Series API returned an unsupported episode format');
+    }
+    collections.forEach((season,entries){
+      if(entries is! List)return;
+      for(var index=0;index<entries.length;index++){
+        final episode=entries[index];
         if(episode is! Map)continue;
-        final id=_string(episode['id']);
+        final id=_string(episode['id']).isNotEmpty?_string(episode['id']):_string(episode['stream_id']);
         if(id.isEmpty)continue;
+        final info=episode['info'];
+        final ext=_string(episode['container_extension']).isNotEmpty
+          ?_string(episode['container_extension'])
+          :info is Map?_string(info['container_extension']):'';
+        final number=_string(episode['episode_num']);
+        final label=_string(episode['title']).isNotEmpty
+          ?_string(episode['title'])
+          :'Episode ${number.isNotEmpty?number:index+1}';
         episodes.add(MediaEntry(
-          id:'xtream:episode:$id',title:_string(episode['title']).isEmpty?'Episode $id':_string(episode['title']),
-          kind:MediaKind.series,category:'Season $season',streamId:id,
-          extension:_string(episode['container_extension']).isEmpty?'mp4':_string(episode['container_extension']),
-          artwork:series.artwork,
-        ));
+          id:'xtream:episode:$'+'id',title:label,
+          kind:MediaKind.series,category:'Season $'+'season',streamId:id,
+          extension:ext.isEmpty?'mp4':ext,artwork:series.artwork));
       }
     });
     return episodes;
