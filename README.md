@@ -6,9 +6,9 @@ AuroraTV is an independent, original dark-themed streaming interface for Android
 
 ## Features
 
-- Xtream Codes and M3U login, with local encrypted credentials and per-title AES-GCM encrypted stream URLs.
+- Xtream Codes and M3U login, with locally encrypted credentials, compact credential-free Xtream references, and AES-GCM encryption for playlist URLs.
 - Live TV, movies, series/episodes, search, favorites, language filtering, category hiding/restoration and poster-based browsing.
-- Distinctive AuroraTV navigation for Fire TV remotes, high-contrast selection outlines and poster/title spotlights.
+- Fixed top navigation, full-width cinematic hero, horizontal media shelves, Continue Watching and My List, high-contrast remote selection and poster/title spotlights.
 - A TV Guide combining compatible Xtream/short EPG with configurable XMLTV feeds.
 - **Guide preview panel:** move focus onto a station to begin an automatic, silent preview after a short delay. Only one preview connection is active. Press Select to watch fullscreen.
 - Fullscreen Media3 playback, stable buffering/recovery options, live restart, VOD resume, seekbar, rewind/fast forward, selectable playback speeds, audio/subtitle track choices (when streams provide them), aspect controls and stream-health diagnostics.
@@ -17,11 +17,13 @@ AuroraTV is an independent, original dark-themed streaming interface for Android
 
 **After the first successful import, AuroraTV loads from an indexed local SQLite library.** It does not need to download all channels on each launch. Home shelves and searches load asynchronously without blocking the navigation UI.
 
-**For a first Xtream Codes login**, Live TV is downloaded and committed **first**. AuroraTV then opens the home screen while films and series download and index in the background. If the app is interrupted, pending media types can resume on the next launch; catalog work pauses during video playback so decoding takes priority.
+**On an initial Xtream Codes login**, AuroraTV now imports Live TV, Movies and TV Shows together and only marks the new library ready when the full catalog has been committed. This corrects an earlier release that interrupted Movies/TV Shows during guide navigation. Existing staged installs with pending imports automatically repair their catalog on the next launch.
 
-Initial network import duration depends on the IPTV server, transfer size and device processing speed. Importing 100,000-plus titles cannot be guaranteed to finish in 5–10 seconds. The objective is to make usable Live TV available before the entire catalog has arrived.
+The importer now requests **gzip-compressed JSON** when available, streams provider responses rather than loading giant arrays in memory, uses faster SHA-256 ID construction, and writes compact credential-free Xtream references rather than repeatedly encrypting a full username/password URL for every title. A single transaction replaces the catalog atomically, leaving an existing valid library intact if refresh fails.
 
-Check **Sources & Settings → Library status & import speed** on the device to see saved title counts, pending media and actual import timings.
+**Subsequent launches load the saved database directly**, without re-importing all titles. Initial network transfer still depends on the provider, connection and Fire TV storage; a 150,000-title first download cannot be guaranteed to complete in 5–10 seconds.
+
+Check **Sources & Settings → Library status & import speed** for the actual Live TV, Movie and Series import timings on your device. Those measurements help identify whether provider download or local indexing is still slow.
 
 ## Get the APK
 
@@ -43,7 +45,7 @@ The included signing key is for **development/testing**, not store releases. Min
 
 ## Technical notes and limitations
 
-- Large imports use streaming Xtream JSON/M3U parsing, database transactions, WAL-enabled reads and an encrypted catalog. If the provider returns its API slowly, AuroraTV cannot eliminate that network delay.
+- Large imports use streaming Xtream JSON/M3U parsing, gzip (when supported), atomic SQLite staging transactions and indexed reads. M3U URLs remain encrypted at rest; Xtream titles store only non-secret IDs and formats. If the provider returns its API slowly, AuroraTV cannot eliminate that network delay.
 - Muted guide previews require an additional temporary stream connection and a supported hardware decoder. Rapid remote focus changes are debounced; failed previews stop after a timeout. Some providers limit simultaneous stream connections.
 - Channel guide entries require genuine programme data. Missing schedules may need an independent XMLTV source or manual channel matching.
 - Subtitle/audio menus depend on tracks actually present in the video stream; not every codec or provider supports every playback speed.
