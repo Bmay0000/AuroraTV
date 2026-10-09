@@ -262,9 +262,17 @@ class _AuroraShellState extends State<AuroraShell>{
     final src=source;
     if(src==null)return;
     if(item.kind==MediaKind.series&&!item.id.startsWith('xtream:episode:')){
-      final episodes=await provider.episodes(src,item);
-      if(!mounted)return;
-      if(episodes.isNotEmpty){_episodes(item,episodes);return;}
+      try{
+        final episodes=await provider.episodes(src,item);
+        if(!mounted)return;
+        if(episodes.isNotEmpty){_episodes(item,episodes);return;}
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:Text('No episodes returned by your IPTV provider for this series.')));
+      }catch(_){
+        if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:Text('Unable to load episodes from your IPTV provider.')));
+      }
+      return; // A series ID is not an episode and must never be played directly.
     }
     final stream=src.playback(item);
     if(stream.isEmpty)return;
@@ -273,17 +281,8 @@ class _AuroraShellState extends State<AuroraShell>{
       builder:(_)=>PlayerScreen(title:item.cleanTitle,url:stream,live:item.kind==MediaKind.live)));
   }
   void _episodes(MediaEntry item,List<MediaEntry> episodes){
-    showDialog<void>(context:context,builder:(ctx)=>Dialog(
-      backgroundColor:const Color(0xff101a26),
-      child:SizedBox(width:650,height:430,child:Column(children:[
-        Padding(padding:const EdgeInsets.all(20),child:Text(item.cleanTitle,style:Theme.of(context).textTheme.titleLarge)),
-        Expanded(child:ListView.builder(itemCount:episodes.length,itemBuilder:(context,index){
-          final ep=episodes[index];
-          return ListTile(title:Text(ep.title),subtitle:Text(ep.category),
-            onTap:(){Navigator.pop(ctx);_open(ep);});
-        })),
-      ])),
-    ));
+    Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>
+      EpisodeBrowser(series:item,episodes:episodes,source:source!)));
   }
   Future<void> _openDiscovery(MediaEntry item)async{
     if(!item.id.startsWith('tmdb:')){_details(item);return;}
@@ -739,14 +738,81 @@ class _LoginScreenState extends State<LoginScreen>{
   ));
 }
 
+class EpisodeBrowser extends StatefulWidget {
+ final MediaEntry series;final List<MediaEntry> episodes;final IptvSource source;
+ const EpisodeBrowser({super.key,required this.series,required this.episodes,required this.source});
+ @override State<EpisodeBrowser> createState()=>_EpisodeBrowserState();
+}
+class _EpisodeBrowserState extends State<EpisodeBrowser>{
+ late int season;
+ late final Map<int,List<MediaEntry>> seasons;
+ @override void initState(){
+  super.initState();
+  seasons={};
+  for(final ep in widget.episodes){
+   final match=RegExp(r'Season\s*(\d+)',caseSensitive:false).firstMatch(ep.category);
+   final number=int.tryParse(match?.group(1)??'')??0;
+   seasons.putIfAbsent(number,()=>[]).add(ep);
+  }
+  for(final entries in seasons.values){
+   entries.sort((a,b){
+    int number(MediaEntry e)=>int.tryParse(RegExp(r'(?:E|Episode\s*)(\d+)',caseSensitive:false)
+      .firstMatch(e.title)?.group(1)??'')??0;
+    return number(a).compareTo(number(b));
+   });
+  }
+  season=seasons.keys.where((k)=>k>0).fold<int>(0,(a,b)=>a==0||b<a?b:a);
+  if(!seasons.containsKey(season)&&seasons.isNotEmpty)season=seasons.keys.first;
+ }
+ @override Widget build(BuildContext context){
+  final entries=seasons[season]??[];
+  return Scaffold(backgroundColor:const Color(0xff09111b),appBar:AppBar(
+    backgroundColor:const Color(0xff101e29),title:Text(widget.series.cleanTitle)),
+   body:Padding(padding:const EdgeInsets.all(24),child:Row(children:[
+    SizedBox(width:210,child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+      const Text('SEASONS',style:TextStyle(fontSize:16,color:C.aqua,fontWeight:FontWeight.bold)),
+      const SizedBox(height:12),
+      Expanded(child:ListView(children:[
+        for(final key in seasons.keys.toList()..sort())
+          Padding(padding:const EdgeInsets.only(bottom:6),child:AuroraButton(
+            text:key==0?'Specials / Other':'Season $key',
+            selected:season==key,onPressed:()=>setState(()=>season=key))),
+      ])),
+    ])),
+    const SizedBox(width:22),
+    Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Text('SEASON $season · ${entries.length} EPISODES',
+        style:const TextStyle(fontSize:20,fontWeight:FontWeight.bold)),
+      const SizedBox(height:12),
+      Expanded(child:ListView.builder(itemCount:entries.length,itemBuilder:(ctx,index){
+       final ep=entries[index];
+       return Card(color:const Color(0xff192b38),margin:const EdgeInsets.only(bottom:8),
+        child:ListTile(
+         leading:CircleAvatar(backgroundColor:C.aqua,foregroundColor:Colors.black,
+           child:Text('${index+1}')),
+         title:Text(ep.title,maxLines:2,overflow:TextOverflow.ellipsis),
+         subtitle:Text(ep.category),trailing:const Icon(Icons.play_circle_outline,size:32),
+         onTap:()=>Navigator.push(context,MaterialPageRoute<void>(
+           builder:(_)=>PlayerScreen(title:ep.title,url:widget.source.playback(ep),
+             episodes:widget.episodes,episode:ep,source:widget.source))),
+        ));
+      })),
+    ]))
+   ])));
+ }
+}
+
 class PlayerScreen extends StatefulWidget{
  final String title,url;final bool live;
- const PlayerScreen({super.key,required this.title,required this.url,this.live=false});
+ final List<MediaEntry> episodes;final MediaEntry? episode;final IptvSource? source;
+ const PlayerScreen({super.key,required this.title,required this.url,this.live=false,
+   this.episodes=const [],this.episode,this.source});
  @override State<PlayerScreen> createState()=>_PlayerScreenState();
 }
 class _PlayerScreenState extends State<PlayerScreen>{
  VideoPlayerController? video;
  String error='';
+ String? episodeTitle,episodeUrl;
  bool buffering=true,controls=true,muted=false,fillScreen=false;
  double playbackSpeed=1;
  static const pipChannel=MethodChannel('aurora.tv/picture_in_picture');
@@ -761,7 +827,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
   await previous?.dispose();
   if(!mounted||revision!=attempt)return;
   setState((){buffering=true;error='';});
-  final controller=VideoPlayerController.networkUrl(Uri.parse(widget.url));
+  final controller=VideoPlayerController.networkUrl(Uri.parse(episodeUrl??widget.url));
   video=controller;
   controller.addListener(_monitor);
   try{
@@ -786,6 +852,26 @@ class _PlayerScreenState extends State<PlayerScreen>{
   if(buffering!=v.value.isBuffering && v.value.isInitialized){
     setState(()=>buffering=v.value.isBuffering);
   }
+ }
+ void _selectEpisode(MediaEntry episode){
+  final src=widget.source;
+  if(src==null)return;
+  setState((){episodeTitle=episode.title;episodeUrl=src.playback(episode);});
+  _init();
+ }
+ Future<void> _episodePicker()async{
+  if(widget.episodes.isEmpty)return;
+  final selected=await showModalBottomSheet<MediaEntry>(context:context,
+   backgroundColor:const Color(0xff101e29),isScrollControlled:true,
+   builder:(ctx)=>SafeArea(child:SizedBox(height:math.min(MediaQuery.sizeOf(ctx).height*.75,600),
+    child:Column(children:[const Padding(padding:EdgeInsets.all(16),child:Text('EPISODES',
+      style:TextStyle(fontSize:20,fontWeight:FontWeight.bold))),
+      Expanded(child:ListView.builder(itemCount:widget.episodes.length,itemBuilder:(ctx,i){
+       final ep=widget.episodes[i];
+       return ListTile(title:Text(ep.title),subtitle:Text(ep.category),
+         trailing:const Icon(Icons.play_arrow),onTap:()=>Navigator.pop(ctx,ep));
+      }))])));
+  if(selected!=null&&mounted)_selectEpisode(selected);
  }
  void _showControls(){
   hideTimer?.cancel();
@@ -851,8 +937,10 @@ class _PlayerScreenState extends State<PlayerScreen>{
         child:Container(padding:const EdgeInsets.symmetric(vertical:12,horizontal:20),
           color:Colors.black54,child:Row(children:[
           IconButton(onPressed:()=>Navigator.pop(context),icon:const Icon(Icons.arrow_back)),
-          Expanded(child:Text(widget.title,maxLines:1,overflow:TextOverflow.ellipsis,
+          Expanded(child:Text(episodeTitle??widget.title,maxLines:1,overflow:TextOverflow.ellipsis,
             style:const TextStyle(fontSize:19,fontWeight:FontWeight.w700))),
+          if(widget.episodes.isNotEmpty)IconButton(tooltip:'Seasons and episodes',
+            onPressed:_episodePicker,icon:const Icon(Icons.video_library_outlined)),
           IconButton(tooltip:'Retry playback',onPressed:_init,icon:const Icon(Icons.refresh)),
           if(widget.live)IconButton(tooltip:'Picture-in-picture',onPressed:_pip,
             icon:const Icon(Icons.picture_in_picture_alt_outlined)),
@@ -875,6 +963,8 @@ class _PlayerScreenState extends State<PlayerScreen>{
             IconButton(tooltip:muted?'Unmute':'Mute',onPressed:(){
               muted=!muted;v.setVolume(muted?0:1);_showControls();
             },icon:Icon(muted?Icons.volume_off:Icons.volume_up)),
+            if(widget.episodes.isNotEmpty)IconButton(tooltip:'Episodes',
+              onPressed:_episodePicker,icon:const Icon(Icons.playlist_play)),
             IconButton(tooltip:'Aspect ratio',onPressed:(){
               setState(()=>fillScreen=!fillScreen);_showControls();
             },icon:Icon(fillScreen?Icons.fit_screen:Icons.aspect_ratio)),
