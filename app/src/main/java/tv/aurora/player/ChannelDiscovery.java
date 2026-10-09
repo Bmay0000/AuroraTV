@@ -48,6 +48,7 @@ public final class ChannelDiscovery {
         {"612","ACC NETWORK"},{"618","FS2"}
     };
     private static final Map<String,Integer> LINEUP = new HashMap<>();
+    private static final java.util.concurrent.ConcurrentHashMap<String,Pattern> TOPIC_PATTERNS = new java.util.concurrent.ConcurrentHashMap<>();
     static{for(String[] record:NATIONAL)
         LINEUP.put(record[1],Integer.parseInt(record[0]));}
 
@@ -87,6 +88,14 @@ public final class ChannelDiscovery {
         if(c.equals("NATIONAL GEOGRAPHIC CHANNEL"))c="NATIONAL GEOGRAPHIC";
         if(c.equals("SCIENCE"))c="SCIENCE CHANNEL";
         if(c.equals("FX MOVIE CHANNEL"))c="FXM";
+        if(c.equals("ESPN 2"))c="ESPN2";
+        if(c.equals("ESPN NEWS"))c="ESPNEWS";
+        if(c.equals("ESPN U"))c="ESPNU";
+        if(c.equals("FOX SPORTS 1"))c="FS1";
+        if(c.equals("FOX SPORTS 2"))c="FS2";
+        if(c.equals("NFL NETWORK"))c="NFL NETWORK";
+        if(c.equals("NBA TELEVISION"))c="NBA TV";
+        if(c.equals("NAT GEO"))c="NATIONAL GEOGRAPHIC";
         if(c.equals("MSNBC"))c="MS NOW";
         if(c.equals("NICK JR."))c="NICK JR";
         if(c.equals("ION TELEVISION"))c="ION";
@@ -189,7 +198,18 @@ public final class ChannelDiscovery {
         if(searchActive||"All".equals(section)||"International".equals(section)
                 ||"Other".equals(section)||"More North America".equals(section)){
             List<LibraryCore.Item> all=new ArrayList<>(source);
-            all.sort(ChannelDiscovery::compare);
+            // One normalization pass rather than recomputing dozens of regex
+            // matches during O(N log N) sorting of 10k+ provider streams.
+            final Map<String,Integer> priorities=new HashMap<>(all.size()*2+1);
+            final Map<String,String> names=new HashMap<>(all.size()*2+1);
+            for(LibraryCore.Item row:all){
+                priorities.put(row.id,priority(row));
+                names.put(row.id,canonicalName(row.name));
+            }
+            all.sort((a,b)->{
+                int n=Integer.compare(priorities.get(a.id),priorities.get(b.id));
+                return n!=0?n:names.get(a.id).compareTo(names.get(b.id));
+            });
             return all;
         }
         Map<String,LibraryCore.Item> primary=new LinkedHashMap<>();
@@ -240,11 +260,16 @@ public final class ChannelDiscovery {
         }
     }
     private static boolean matches(LibraryCore.Item item,String tokens){
-        String raw=canonicalName(item.name)+" "+canonicalName(item.category);
-        for(String token:tokens.split("\\|")){
-            if(Pattern.compile("(?<![A-Z0-9])"+Pattern.quote(token)+"(?![A-Z0-9])")
-                .matcher(raw).find())return true;
-        }
-        return false;
+        String raw=canonicalName(item.name)+" "+
+            (item.category==null?"":item.category.toUpperCase(Locale.ROOT));
+        Pattern matcher=TOPIC_PATTERNS.computeIfAbsent(tokens,words->{
+            StringBuilder regex=new StringBuilder("(?<![A-Z0-9])(?:");
+            for(String term:words.split("\\|")){
+                if(regex.length()>24)regex.append('|');
+                regex.append(Pattern.quote(term));
+            }
+            return Pattern.compile(regex.append(")(?![A-Z0-9])").toString());
+        });
+        return matcher.matcher(raw).find();
     }
 }
