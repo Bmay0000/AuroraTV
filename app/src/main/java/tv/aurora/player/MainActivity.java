@@ -254,26 +254,33 @@ public class MainActivity extends Activity {
   panel.addView(security);
   address.requestFocus();
  }
- void addNav(String key,String label,Runnable action){
-  Button b=button(label,()->{action.run();refreshSidebar();});
-  b.setTag(key);
-  b.setGravity(Gravity.LEFT|Gravity.CENTER_VERTICAL);
-  b.setTextSize(TvLayout.clamp(tv().bodySize(),14,18));
-  b.setPadding(dp(17),0,dp(5),0);
-  b.setLetterSpacing(.01f);
-  b.setOnFocusChangeListener((view,focused)->{
-   styleNav(b,focused);
-  });
-  navButtons.put(key,b);nav.addView(b);
+ void addNav(String key,String caption,Runnable action){
+  Button navItem=button(caption,()->{action.run();refreshSidebar();});
+  navItem.setTag(key);
+  navItem.setGravity(Gravity.CENTER);
+  navItem.setTextSize(TvLayout.clamp(tv().bodySize()-1,14,18));
+  navItem.setAllCaps(false);
+  navItem.setPadding(dp(17),0,dp(17),0);
+  navItem.setLetterSpacing(.04f);
+  LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-2,dp(tv().navRow-4));
+  params.setMargins(dp(3),dp(2),dp(3),dp(2));
+  navItem.setLayoutParams(params);
+  navItem.setOnFocusChangeListener((v,focused)->styleNav(navItem,focused));
+  navButtons.put(key,navItem);
+  nav.addView(navItem,params);
  }
- void styleNav(Button b,boolean focused){
-  boolean active=isNavActive(String.valueOf(b.getTag()));
-  b.setBackground(rounded(
-   focused?ACCENT:active?0xff173c45:0x00000000,12,
-   focused?ACCENT:active?0xff2c8b80:0x00000000));
-  b.setTextColor(focused?BG:active?0xff84f8dd:0xffc0cede);
-  b.setTypeface(null,active?Typeface.BOLD:Typeface.NORMAL);
-  b.animate().scaleX(focused?1.02f:1f).scaleY(focused?1.02f:1f).setDuration(110).start();
+ void styleNav(Button item,boolean focused){
+  boolean selected=isNavActive(String.valueOf(item.getTag()));
+  // AuroraTV's own high-contrast pill/underline language; not a recreation
+  // of any proprietary streaming-service navigation.
+  int fill=focused?ACCENT:selected?0xff284b4b:Color.TRANSPARENT;
+  int outline=focused?ACCENT:selected?0xff438d85:Color.TRANSPARENT;
+  item.setBackground(rounded(fill,12,outline));
+  item.setTextColor(focused?BG:selected?0xffb7ffed:0xffb3c4d5);
+  item.setTypeface(Typeface.create("sans-serif-medium",
+      selected||focused?Typeface.BOLD:Typeface.NORMAL));
+  item.animate().scaleX(focused?1.045f:1f).scaleY(focused?1.045f:1f)
+      .setDuration(100).start();
  }
  boolean isNavActive(String key){
   if(key.equals("home"))return screen.equals("home");
@@ -283,62 +290,89 @@ public class MainActivity extends Activity {
   return screen.equals("browse")&&!favOnly&&!editing&&key.equals(section);
  }
  void refreshSidebar(){
-  for(Button b:navButtons.values())styleNav(b,b.isFocused());
+  for(Button item:navButtons.values())styleNav(item,item.isFocused());
  }
  void shell(){
   screen="home";
   TvLayout metrics=tv();
   root=column();
-  root.setBackground(gradient(0xff060b16,0xff0a1322,0));
-  root.setPadding(dp(metrics.marginX),dp(metrics.marginY),
-                  dp(metrics.marginX),dp(metrics.marginY));
+  root.setClipChildren(true);
+  root.setClipToPadding(true);
+  root.setBackground(gradient(0xff070b15,0xff0b1723,0));
+  root.setPadding(dp(metrics.marginX),dp(Math.max(7,metrics.marginY-6)),
+    dp(metrics.marginX),dp(Math.max(6,metrics.marginY-6)));
   setContentView(root);
-  LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);
-  root.addView(header,new LinearLayout.LayoutParams(-1,dp(metrics.headerHeight())));
-  TextView mark=brand(TvLayout.clamp(metrics.widthDp/36,26,36));header.addView(mark);
-  TextView dot=text("  •  YOUR PERSONAL STREAMING SPACE",12);
-  dot.setTextColor(0xff8497ad);
-  if(metrics.widthDp>940)header.addView(dot);
-  LinearLayout.LayoutParams space=new LinearLayout.LayoutParams(0,1,1);
-  View spacer=new View(this);header.addView(spacer,space);
-  subtitle=text("Ready to watch",TvLayout.clamp(metrics.bodySize()-2,12,16));
-  subtitle.setTextColor(MUTED);
-  subtitle.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
-  header.addView(subtitle,new LinearLayout.LayoutParams(-2,-1));
 
-  LinearLayout layout=new LinearLayout(this);
-  layout.setClipChildren(false);layout.setClipToPadding(false);
-  LinearLayout.LayoutParams area=new LinearLayout.LayoutParams(-1,0,1);
-  area.topMargin=dp(7);root.addView(layout,area);
-  LinearLayout sidebar=column();
-  sidebar.setBackground(rounded(0xff0c1726,18,0xff1c3042));
-  sidebar.setPadding(dp(7),dp(12),dp(7),dp(12));
-  layout.addView(sidebar,new LinearLayout.LayoutParams(dp(metrics.sidebar),-1));
-  TextView explore=kicker("DISCOVER");
-  explore.setPadding(dp(17),dp(8),0,dp(10));
-  sidebar.addView(explore);
-  ScrollView menuScroll=new ScrollView(this);
-  menuScroll.setFillViewport(false);
-  menuScroll.setVerticalScrollBarEnabled(false);
-  sidebar.addView(menuScroll,new LinearLayout.LayoutParams(-1,0,1));
-  nav=column();menuScroll.addView(nav);
+  // The top navigation is fixed; scrolling content is confined to the
+  // separate body viewport. Artwork cannot draw over navigation anymore.
+  LinearLayout identity=new LinearLayout(this);
+  identity.setGravity(Gravity.CENTER_VERTICAL);
+  identity.setClipChildren(true);
+  root.addView(identity,new LinearLayout.LayoutParams(-1,dp(
+      TvLayout.clamp(metrics.headerHeight(),50,72))));
+  TextView logo=brand(TvLayout.clamp(metrics.widthDp/34,27,37));
+  identity.addView(logo);
+  TextView tagline=kicker("  •  THE WAY YOU WATCH");
+  tagline.setTextSize(11);
+  tagline.setTextColor(0xff829dac);
+  if(metrics.widthDp>820)identity.addView(tagline);
+  View spacer=new View(this);
+  identity.addView(spacer,new LinearLayout.LayoutParams(0,dp(1),1));
+  subtitle=text("YOUR LIBRARY",TvLayout.clamp(metrics.bodySize()-2,12,15));
+  subtitle.setTextColor(0xffa4b5c6);
+  subtitle.setMaxLines(1);
+  subtitle.setEllipsize(TextUtils.TruncateAt.END);
+  identity.addView(subtitle);
+  Button settings=button("⚙  SETTINGS",this::connect);
+  settings.setTextSize(13);
+  LinearLayout.LayoutParams gear=new LinearLayout.LayoutParams(dp(
+     TvLayout.clamp(metrics.widthDp/8,95,150)),dp(43));
+  gear.leftMargin=dp(14);
+  identity.addView(settings,gear);
+
+  HorizontalScrollView navScroll=new HorizontalScrollView(this);
+  navScroll.setHorizontalScrollBarEnabled(false);
+  navScroll.setClipChildren(true);
+  navScroll.setFillViewport(false);
+  LinearLayout.LayoutParams tabs=new LinearLayout.LayoutParams(-1,dp(metrics.navRow+8));
+  tabs.bottomMargin=dp(4);
+  root.addView(navScroll,tabs);
+  nav=new LinearLayout(this);
+  nav.setOrientation(LinearLayout.HORIZONTAL);
+  nav.setGravity(Gravity.CENTER_VERTICAL);
+  nav.setClipChildren(false);
+  navScroll.addView(nav,new ViewGroup.LayoutParams(-2,-1));
   navButtons.clear();
-  addNav("home","⌂   Home",this::home);
-  addNav("live","◉   Live TV",()->{section="live";favOnly=false;hiddenOnly=false;editing=false;page=0;category="All";query="";browse();});
-  addNav("guide","▦   TV Guide",()->{section="live";category="All";guidePage=0;tvGuide();});
-  addNav("movie","◆   Movies",()->{section="movie";favOnly=false;hiddenOnly=false;editing=false;page=0;category="All";query="";browse();});
-  addNav("series","▥   TV Shows",()->{section="series";favOnly=false;hiddenOnly=false;editing=false;page=0;category="All";query="";browse();});
-  addNav("favorites","★   Favorites",()->{favOnly=true;hiddenOnly=false;editing=false;page=0;browse();});
-  addNav("search","⌕   Search",this::search);
-  TextView manageLabel=kicker("YOUR LIBRARY");
-  manageLabel.setPadding(dp(17),dp(18),0,dp(7));nav.addView(manageLabel);
-  addNav("library","☷   Edit Library",this::manage);
-  addNav("sources","⚙   Sources & Settings",this::connect);
-  TextView foot=text("BUILT FOR THE BIG SCREEN",10);
-  foot.setTextColor(0xff647e8f);foot.setGravity(Gravity.CENTER);
-  sidebar.addView(foot);
-  body=column();body.setPadding(dp(metrics.columnGap),0,0,0);
-  layout.addView(body,new LinearLayout.LayoutParams(0,-1,1));
+  addNav("home","Home",this::home);
+  addNav("live","Live TV",()->{
+   section="live";favOnly=false;hiddenOnly=false;editing=false;
+   page=0;category="All";query="";browse();
+  });
+  addNav("guide","TV Guide",()->{section="live";category="All";guidePage=0;tvGuide();});
+  addNav("movie","Movies",()->{
+   section="movie";favOnly=false;hiddenOnly=false;editing=false;
+   page=0;category="All";query="";browse();
+  });
+  addNav("series","TV Shows",()->{
+   section="series";favOnly=false;hiddenOnly=false;editing=false;
+   page=0;category="All";query="";browse();
+  });
+  addNav("favorites","My List",()->{
+   favOnly=true;hiddenOnly=false;editing=false;page=0;browse();
+  });
+  addNav("search","Search",this::search);
+  addNav("library","Edit Library",this::manage);
+
+  View divider=new View(this);
+  divider.setBackgroundColor(0xff1e3944);
+  LinearLayout.LayoutParams line=new LinearLayout.LayoutParams(-1,dp(1));
+  line.bottomMargin=dp(8);
+  root.addView(divider,line);
+  body=column();
+  body.setClipToPadding(true);
+  body.setClipChildren(true);
+  body.setPadding(dp(3),0,dp(3),0);
+  root.addView(body,new LinearLayout.LayoutParams(-1,0,1));
   refreshSidebar();
  }
 
