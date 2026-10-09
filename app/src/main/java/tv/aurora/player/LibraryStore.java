@@ -231,6 +231,40 @@ public final class LibraryStore extends SQLiteOpenHelper {
         }
     }
 
+    /** Fetch a handful of bookmarked/recent titles by indexed ID. No catalog scan. */
+    public List<LibraryCore.Item> lookupByIds(List<String> requested){
+        if(requested==null || requested.isEmpty())return new ArrayList<>();
+        List<String> ids=new ArrayList<>(Math.min(20,requested.size()));
+        for(String id:requested){
+            if(id!=null && id.matches("[0-9a-f]{64}")&&!ids.contains(id)){
+                ids.add(id);
+                if(ids.size()>=20)break;
+            }
+        }
+        if(ids.isEmpty())return new ArrayList<>();
+        StringBuilder sql=new StringBuilder("SELECT ").append(FIELDS)
+            .append(" FROM entries WHERE item_id IN (");
+        for(int n=0;n<ids.size();n++){
+            if(n>0)sql.append(',');
+            sql.append('?');
+        }
+        sql.append(')');
+        java.util.HashMap<String,LibraryCore.Item> found=new java.util.HashMap<>();
+        try(Cursor rows=getReadableDatabase().rawQuery(sql.toString(),
+                ids.toArray(new String[0]))){
+            while(rows.moveToNext()){
+                LibraryCore.Item value=item(rows);
+                found.put(value.id,value);
+            }
+        }
+        List<LibraryCore.Item> result=new ArrayList<>();
+        for(String id:ids){
+            LibraryCore.Item value=found.get(id);
+            if(value!=null)result.add(value);
+        }
+        return result;
+    }
+
     /** URLs are only decrypted when a user actually opens a title. */
     public LibraryCore.Item resolve(LibraryCore.Item item) throws Exception {
         if (item.url != null && !item.url.isEmpty()) return item;
