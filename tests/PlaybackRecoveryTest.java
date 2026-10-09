@@ -9,9 +9,9 @@ public final class PlaybackRecoveryTest {
         ok(p.sample(18000,2,true,false,0)==PlaybackRecoveryPolicy.Action.RECONNECT,"Initial stall auto retry");
         ok(p.attempts()==1,"Attempt counted");
         ok(p.sample(19000,2,true,false,0)==PlaybackRecoveryPolicy.Action.WAIT,"Wait for cooldown");
-        ok(p.sample(33000,2,true,false,0)==PlaybackRecoveryPolicy.Action.RECONNECT,"Second stall");
-        ok(p.sample(48000,2,true,false,0)==PlaybackRecoveryPolicy.Action.RECONNECT,"Third stall");
-        ok(p.sample(63000,2,true,false,0)==PlaybackRecoveryPolicy.Action.GIVE_UP,"Bounded recovery");
+        ok(p.sample(36000,2,true,false,0)==PlaybackRecoveryPolicy.Action.RECONNECT,"Second stall");
+        ok(p.sample(54000,2,true,false,0)==PlaybackRecoveryPolicy.Action.RECONNECT,"Third stall");
+        ok(p.sample(72000,2,true,false,0)==PlaybackRecoveryPolicy.Action.GIVE_UP,"Bounded recovery");
         p.resetManually();
         ok(p.attempts()==0,"Manual retry resets budget");
 
