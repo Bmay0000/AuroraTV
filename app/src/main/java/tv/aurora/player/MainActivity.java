@@ -369,7 +369,7 @@ public class MainActivity extends Activity {
   root.addView(top,new LinearLayout.LayoutParams(-1,dp(
       TvLayout.clamp(metrics.heightDp/12,40,53))));
   TextView mark=brand(TvLayout.clamp(metrics.widthDp/48,19,29));
-  mark.setText(new android.text.SpannableStringBuilder(mark.getText()).append("  1.0"));
+  mark.setText(new android.text.SpannableStringBuilder(mark.getText()).append("  1.1"));
   LinearLayout.LayoutParams brandSize=new LinearLayout.LayoutParams(-2,-2);
   brandSize.setMargins(dp(2),0,dp(12),0);
   top.addView(mark,brandSize);
