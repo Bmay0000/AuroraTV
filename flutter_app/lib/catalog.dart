@@ -5,7 +5,7 @@ import 'package:sqflite/sqflite.dart';
 enum MediaKind { live, movie, series }
 
 class MediaEntry {
-  final String id, title, category, artwork, extension, streamId, directUrl;
+  final String id, title, category, artwork, extension, streamId, directUrl, epgId;
   final MediaKind kind;
   final int year;
   final double rating;
@@ -13,7 +13,7 @@ class MediaEntry {
   const MediaEntry({
     required this.id, required this.title, required this.kind,
     this.category = '', this.artwork = '', this.extension = '',
-    this.streamId = '', this.directUrl = '', this.year = 0, this.rating = 0,
+    this.streamId = '', this.directUrl = '', this.epgId = '', this.year = 0, this.rating = 0,
     this.favorite = false, this.hidden = false,
   });
 
@@ -25,7 +25,7 @@ class MediaEntry {
     artwork: v['artwork'] as String? ?? '',
     extension: v['extension'] as String? ?? '',
     streamId: v['stream_id'] as String? ?? '',
-    directUrl: v['direct_url'] as String? ?? '',
+    directUrl: v['direct_url'] as String? ?? '', epgId: v['epg_id'] as String? ?? '',
     year: v['year'] as int? ?? 0,
     rating: (v['rating'] as num?)?.toDouble() ?? 0,
     favorite: (v['favorite'] as int? ?? 0) == 1,
@@ -35,7 +35,7 @@ class MediaEntry {
   Map<String, Object?> toRow() => {
     'id': id, 'title': title, 'kind': kind.name, 'category': category,
     'artwork': artwork, 'extension': extension, 'stream_id': streamId,
-    'direct_url': directUrl, 'year': year, 'rating': rating,
+    'direct_url': directUrl, 'epg_id': epgId, 'year': year, 'rating': rating,
     'favorite': favorite ? 1 : 0, 'hidden': hidden ? 1 : 0,
   };
 
@@ -74,17 +74,18 @@ class TvProgramme {
 class CatalogDatabase {
   Database? _db;
   Future<void> open() async {
-    _db ??= await openDatabase(path.join(await getDatabasesPath(), 'aurora_flutter_2.db'), version: 2,
+    _db ??= await openDatabase(path.join(await getDatabasesPath(), 'aurora_flutter_2.db'), version: 3,
       onCreate: (db, version) async {
-        await db.execute('CREATE TABLE media (id TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL, category TEXT, artwork TEXT, extension TEXT, stream_id TEXT, direct_url TEXT, year INTEGER DEFAULT 0, rating REAL DEFAULT 0, favorite INTEGER DEFAULT 0, hidden INTEGER DEFAULT 0)');
+        await db.execute('CREATE TABLE media (id TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL, category TEXT, artwork TEXT, extension TEXT, stream_id TEXT, direct_url TEXT, epg_id TEXT, year INTEGER DEFAULT 0, rating REAL DEFAULT 0, favorite INTEGER DEFAULT 0, hidden INTEGER DEFAULT 0)');
         await db.execute('CREATE INDEX idx_media_kind ON media(kind, hidden, category)');
         await db.execute('CREATE INDEX idx_media_title ON media(kind, title)');
         await db.execute('CREATE TABLE programme (channel_id TEXT, start_ms INTEGER, end_ms INTEGER, title TEXT, description TEXT, PRIMARY KEY(channel_id,start_ms))');
         await db.execute('CREATE INDEX idx_programme_time ON programme(channel_id,start_ms,end_ms)');
       }, onUpgrade: (db, old, now) async {
-        if (old < 2) {
+        if (old < 3) {
           await db.execute('CREATE TABLE IF NOT EXISTS programme (channel_id TEXT, start_ms INTEGER, end_ms INTEGER, title TEXT, description TEXT, PRIMARY KEY(channel_id,start_ms))');
           await db.execute('CREATE INDEX IF NOT EXISTS idx_programme_time ON programme(channel_id,start_ms,end_ms)');
+          if (old >= 2) await db.execute('ALTER TABLE media ADD COLUMN epg_id TEXT');
         }
       });
   }
