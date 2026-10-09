@@ -81,6 +81,7 @@ public final class PlaybackScreen {
     private TextView state;
     private Button playPause;
     private Button optionsButton;
+    private Button speedButton;
     private TextView centerStatus;
     private LinearLayout centerBanner;
     private ProgressBar loadingIndicator;
@@ -173,7 +174,9 @@ public final class PlaybackScreen {
         Button b = new Button(activity);
         b.setAllCaps(false);
         b.setText(text);
-        b.setTextSize(17);
+        float dpWidth=activity.getResources().getDisplayMetrics().widthPixels/
+            Math.max(.5f,activity.getResources().getDisplayMetrics().density);
+        b.setTextSize(dpWidth<780?12:dpWidth<1050?14:16);
         b.setTextColor(Color.WHITE);
         b.setBackground(shape(0xd91b344a, 12));
         b.setPadding(dp(10),0,dp(10),0);
@@ -351,8 +354,8 @@ public final class PlaybackScreen {
         tools.topMargin=dp(7);
         controlsOverlay.addView(extras,tools);
         if(!"live".equals(type)){
-            Button velocity=control("SPEED  1×",v->chooseSpeed());
-            extras.addView(velocity,new LinearLayout.LayoutParams(0,-1,1));
+            speedButton=control("SPEED  1×",v->chooseSpeed());
+            extras.addView(speedButton,new LinearLayout.LayoutParams(0,-1,1));
             Button subtitles=control("CC / SUBTITLES",v->chooseTrack(true));
             extras.addView(subtitles,new LinearLayout.LayoutParams(0,-1,1));
             Button audio=control("AUDIO",v->chooseTrack(false));
@@ -693,6 +696,7 @@ public final class PlaybackScreen {
         new AlertDialog.Builder(activity).setTitle("Playback speed")
             .setSingleChoiceItems(labels,selected,(d,n)->{
                 speed=speeds[n];
+                if(speedButton!=null)speedButton.setText("SPEED  "+speeds[n]+"×");
                 if(player!=null)player.setPlaybackSpeed(speed);
                 state.setText("Playback speed  "+labels[n]);
                 d.dismiss();scheduleHide();
