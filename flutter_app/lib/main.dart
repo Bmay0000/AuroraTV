@@ -64,6 +64,7 @@ class _AuroraShellState extends State<AuroraShell>{
   final Map<MediaKind,List<MediaEntry>> shelves={};
   final Map<MediaKind,List<MediaEntry>> trends={};
   final Map<MediaKind,Map<String,List<MediaEntry>>> popularGenres={};
+  final Map<MediaKind,List<MediaEntry>> discoverToday={};
   final Map<MediaKind,List<String>> groups={};
   final Map<MediaKind,List<MediaEntry>> favorites={};
   List<MediaEntry> live=[];
@@ -109,25 +110,27 @@ class _AuroraShellState extends State<AuroraShell>{
     if(next.id!='empty')_feature(next);
   }
   Future<void> _getTrends() async{
-    if(tmdb.apiKey.isEmpty)return;
-    for(final kind in [MediaKind.movie,MediaKind.series]){
-      final names=await tmdb.trending(kind);
-      if(names.isEmpty)continue;
-      final matched=await db.matchTitles(kind,names);
+    if(tmdb.apiKey.isEmpty){if(mounted)setState((){});return;}
+    // Display actual TMDB entries; don't hide entire shelves when no IPTV match.
+    for(final kind in [MediaKind.series,MediaKind.movie]){
+      final daily=await tmdb.discovery(kind);
       if(!mounted)return;
-      setState((){trends[kind]=matched;});
-      if(kind==MediaKind.movie&&matched.isNotEmpty&&page==0)_feature(matched.first);
+      setState(()=>discoverToday[kind]=daily);
     }
-    // Weekly lists use TMDB's genre IDs, not inconsistent IPTV category labels.
-    for(final kind in [MediaKind.movie,MediaKind.series]){
-      final weekly=await tmdb.weeklyGenres(kind);
-      final mapped=<String,List<MediaEntry>>{};
-      for(final entry in weekly.entries){
+    // Fetch each genre independently so every genre has its own ranked row.
+    // Space the requests to avoid burst-loading lower-end devices.
+    for(final kind in [MediaKind.series,MediaKind.movie]){
+      final grouped=<String,List<MediaEntry>>{};
+      for(final genre in TmdbClient.genres.entries){
+        if(kind==MediaKind.movie&&genre.key>=10759)continue;
+        if(kind==MediaKind.series&&(genre.key==10749||genre.key==878||genre.key==10770))continue;
+        final matches=await tmdb.discovery(kind,window:'week',genreId:genre.key);
         if(!mounted)return;
-        final matches=await db.matchTitles(kind,entry.value);
-        if(matches.isNotEmpty)mapped[entry.key]=matches;
+        if(matches.isNotEmpty){
+          grouped[genre.value]=matches;
+          setState(()=>popularGenres[kind]=Map.from(grouped));
+        }
       }
-      if(mounted)setState(()=>popularGenres[kind]=mapped);
     }
   }
   void _feature(MediaEntry item){
@@ -258,6 +261,15 @@ class _AuroraShellState extends State<AuroraShell>{
         })),
       ])),
     ));
+  }
+  Future<void> _openDiscovery(MediaEntry item)async{
+    if(!item.id.startsWith('tmdb:')){_details(item);return;}
+    final matches=await db.matchTitles(item.kind,[item.title]);
+    if(!mounted)return;
+    if(matches.isNotEmpty){_details(matches.first);return;}
+    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
+      title:Text(item.title),content:const Text('Trending on TMDB. This title was not found in your IPTV library.'),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Close'))]));
   }
   void _details(MediaEntry item){
     showDialog<void>(context:context,builder:(ctx)=>Dialog(
@@ -399,9 +411,9 @@ class _AuroraShellState extends State<AuroraShell>{
   }
 
   Widget _discovery(MediaKind kind,{bool home=false}){
-    final mainKind=home?MediaKind.movie:kind;
+    final mainKind=home?MediaKind.series:kind;
     final items=shelves[mainKind]??[];
-    final ranked=trends[mainKind]??[];
+    final ranked=discoverToday[mainKind]??[];
     final english=items.where((v)=>v.likelyEnglish).toList();
     final recent=english.isNotEmpty?english:items;
     final title=home?'TRENDING MOVIES TODAY':mainKind==MediaKind.movie?'TOP MOVIES TODAY':'TOP TV SHOWS TODAY';
@@ -425,13 +437,16 @@ class _AuroraShellState extends State<AuroraShell>{
             const Spacer(),
             AuroraButton(text:'All Titles  →',onPressed:()=>_openCatalog(kind)),
           ])),
-        if(home&&(trends[MediaKind.series]?.isNotEmpty??false))
-          _shelf('TOP 20 TRENDING TV SHOWS TODAY',trends[MediaKind.series]!,MediaKind.series,ranked:true),
+        if(home&&ranked.isNotEmpty)
+          _shelf('POPULAR TODAY · TV SHOWS',ranked,MediaKind.series,ranked:true),
         if(!home&&ranked.isNotEmpty)
           _shelf(title,ranked,mainKind,ranked:true),
         if(recentHistory.isNotEmpty)
           _shelf('RECENTLY WATCHED',recentHistory.where((e)=>home||e.kind==mainKind).toList(),mainKind),
-        if(home&&ranked.isEmpty)
+        if(home&&tmdb.apiKey.isEmpty)
+          Padding(padding:const EdgeInsets.symmetric(horizontal:34,vertical:12),child:TextButton(
+            onPressed:_settings,child:const Text('Enable Popular Today & genre rankings — add your TMDB API key in Settings'))),
+        if(home&&ranked.isEmpty&&tmdb.apiKey.isNotEmpty)
           _shelf('POPULAR TV SHOWS',shelves[MediaKind.series]??[],MediaKind.series),
         if(!home&&ranked.isEmpty)
           _shelf('EXPLORE ${mainKind==MediaKind.movie?'MOVIES':'TV SHOWS'}',recent,mainKind),
@@ -495,7 +510,7 @@ class _AuroraShellState extends State<AuroraShell>{
         itemCount:math.min(items.length,20),itemBuilder:(ctx,i){
           final item=items[i];
           return MediaCard(item:item,index:ranked?i+1:0,
-            onFocused:()=>_feature(item),onOpen:()=>_details(item));
+            onFocused:()=>_feature(item),onOpen:()=>_openDiscovery(item));
         })),
     ]));
   }
