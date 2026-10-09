@@ -450,8 +450,18 @@ public final class LibraryStore extends SQLiteOpenHelper {
           Set<String> hidden,Set<String> hiddenCategories,Set<String> favorites,
           Set<String> allowed,boolean hideUnknown,Set<String> manual,
           Set<String> restoredCategories){
+        int rev=revision();
+        String cleanQuery=query==null?"":query.trim().toLowerCase(java.util.Locale.ROOT);
+        String tabName=tab==null?"North America":tab;
+        String cacheKey="directory:"+tabName+"|"+cleanQuery;
+        boolean allowCache=cleanQuery.isEmpty() &&
+            !"All".equals(tabName)&&!"More North America".equals(tabName)&&
+            !"International".equals(tabName)&&!"Other".equals(tabName);
+        if(allowCache){
+            List<LibraryCore.Item> prior=cached(cacheKey,rev);
+            if(prior!=null)return prior;
+        }
         List<LibraryCore.Item> matches=new ArrayList<>();
-        String pattern=query==null?"":query.toLowerCase(java.util.Locale.ROOT).trim();
         try(Cursor cursor=getReadableDatabase().rawQuery(
                 "SELECT "+FIELDS+" FROM entries WHERE type='live' ORDER BY row_id",null)){
             while(cursor.moveToNext()){
@@ -459,26 +469,44 @@ public final class LibraryStore extends SQLiteOpenHelper {
                 LibraryCore.Item channel=item(cursor);
                 if(!LibraryCore.visible(channel,hidden,hiddenCategories,favorites,
                     allowed,hideUnknown,manual,restoredCategories))continue;
-                if("My Channels".equals(tab)&&!favorites.contains(channel.id))continue;
-                if(!"My Channels".equals(tab)&&!ChannelDiscovery.matchesGuideSection(channel,tab))continue;
-                if(!pattern.isEmpty()&&!channel.name.toLowerCase(java.util.Locale.ROOT).contains(pattern)
-                        &&!channel.category.toLowerCase(java.util.Locale.ROOT).contains(pattern))continue;
+                if("My Channels".equals(tabName)&&!favorites.contains(channel.id))continue;
+                if(!"My Channels".equals(tabName)&&
+                    !ChannelDiscovery.matchesGuideSection(channel,tabName))continue;
+                if(!cleanQuery.isEmpty()&&!channel.name.toLowerCase(java.util.Locale.ROOT).contains(cleanQuery)
+                        &&!channel.category.toLowerCase(java.util.Locale.ROOT).contains(cleanQuery))continue;
                 matches.add(channel);
             }
         }
-        // Cache expensive normalization and language decisions once per item.
-        java.util.HashMap<String,Integer> ranks=new java.util.HashMap<>(matches.size()*2+1);
-        java.util.HashMap<String,String> names=new java.util.HashMap<>(matches.size()*2+1);
-        for(LibraryCore.Item channel:matches){
-            ranks.put(channel.id,ChannelDiscovery.priority(channel));
-            names.put(channel.id,ChannelDiscovery.canonicalName(channel.name));
+        if(Thread.currentThread().isInterrupted())return new ArrayList<>();
+        List<LibraryCore.Item> selected=ChannelDiscovery.curate(matches,tabName,!cleanQuery.isEmpty());
+        if(allowCache&&selected.size()<650)cache(cacheKey,selected,rev);
+        return selected;
+    }
+
+    /** An intentional user action can open ALL provider renditions of a
+     * familiar network. The guide itself shows only the best primary stream. */
+    public List<LibraryCore.Item> alternateStreams(LibraryCore.Item primary,
+          Set<String> hidden,Set<String> hiddenCategories,Set<String> favorites,
+          Set<String> allowed,boolean hideUnknown,Set<String> manual,
+          Set<String> restoredCategories){
+        final String identity=ChannelDiscovery.lineupIdentity(primary);
+        List<LibraryCore.Item> choices=new ArrayList<>();
+        if(identity.isEmpty())return choices;
+        try(Cursor c=getReadableDatabase().rawQuery(
+                "SELECT "+FIELDS+" FROM entries WHERE type='live' ORDER BY row_id",null)){
+            while(c.moveToNext()){
+                if(Thread.currentThread().isInterrupted())break;
+                LibraryCore.Item item=item(c);
+                if(!identity.equals(ChannelDiscovery.lineupIdentity(item)))continue;
+                if(!LibraryCore.visible(item,hidden,hiddenCategories,favorites,allowed,
+                        hideUnknown,manual,restoredCategories))continue;
+                choices.add(item);
+            }
         }
-        matches.sort((a,b)->{
-            int score=Integer.compare(ranks.get(a.id),ranks.get(b.id));
-            if(score!=0)return score;
-            return names.get(a.id).compareTo(names.get(b.id));
-        });
-        return matches;
+        choices.sort((a,b)->Integer.compare(
+                ChannelDiscovery.renditionScore(b),ChannelDiscovery.renditionScore(a)));
+        if(choices.size()>24)return new ArrayList<>(choices.subList(0,24));
+        return choices;
     }
 
     /** Prioritize real English media; unknown is a separate lower-priority
