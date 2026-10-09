@@ -49,6 +49,8 @@ jobs:
           java -cp build/core-tests XtreamReferenceTest
           javac -cp build/core-tests -d build/core-tests app/src/main/java/tv/aurora/player/MediaDiscovery.java tests/MediaDiscoveryTest.java
           java -cp build/core-tests MediaDiscoveryTest
+          javac -cp build/core-tests -d build/core-tests app/src/main/java/tv/aurora/player/ChannelDiscovery.java tests/ChannelDiscoveryTest.java
+          java -cp build/core-tests ChannelDiscoveryTest
 
       - name: Build signed debug APK
         run: |
