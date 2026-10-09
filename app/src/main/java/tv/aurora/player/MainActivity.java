@@ -23,7 +23,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 public class MainActivity extends Activity {
  final int BG=0xff070c17,PANEL=0xff142033,ACCENT=0xff5debd0,MUTED=0xff9badc1,SURFACE=0xff101b2d;
- LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false,browseAll=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;
+ LinearLayout root,body,nav;TextView subtitle;SharedPreferences prefs;ExecutorService io=Executors.newSingleThreadExecutor(),catalogReadIO=Executors.newFixedThreadPool(2),importIO=Executors.newSingleThreadExecutor();List<LibraryCore.Item> items=new ArrayList<>();List<Provider.Program> guide=new ArrayList<>();Map<String,List<Provider.Program>> guideIndex=new HashMap<>();Set<String> hidden,categories,favorites,allowed,shown,shownCategories;boolean hideUnknown;String section="live",query="",category="All";boolean editing=false,favOnly=false,hiddenOnly=false,browseAll=false;LibraryCore.Item selected,playing;PlaybackScreen playbackScreen;PlaybackDiagnostics playbackDiagnostics;boolean restoreLibraryOnResume=false;boolean loading=false;int generation=0;volatile int browseToken=0;int page=0;static final int PAGE_SIZE=200;LibraryStore store;GuideEngine epg;int guidePage=0;String guideFilter="North America",guideQuery="";String guideSelectedId="";ExecutorService epgRefreshIO=Executors.newSingleThreadExecutor(),shortEpgIO=Executors.newSingleThreadExecutor();Map<String,String> guideSummary=new HashMap<>();String screen="login",screenBeforePlayer="home";TextView loadingStatus;PosterLoader posters;PreviewWindow livePreview;GuidePreviewPane guidePreview;boolean focusSearchNext=false;Map<String,Button> navButtons=new LinkedHashMap<>();Handler uiHandler=new Handler(Looper.getMainLooper());Runnable pendingGuideUpdate;boolean guideSyncBusy=false;
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("library",MODE_PRIVATE);store=new LibraryStore(this);posters=new PosterLoader(this);playbackDiagnostics=new PlaybackDiagnostics(this);epg=new GuideEngine(this);hidden=set("hidden");categories=set("categories");favorites=set("favorites");allowed=set("allowed");shown=set("shown");shownCategories=set("shownCategories");hideUnknown=prefs.getBoolean("unknown",false);
    if(!prefs.getBoolean("smartFilterV3",false)){
     // Prior versions auto-enabled strict mode for English-only libraries,
@@ -1462,7 +1462,7 @@ public class MainActivity extends Activity {
      directory.addView(columns,new LinearLayout.LayoutParams(-1,dp(28)));
      int leftWidth=Math.max(380,metrics.contentWidth()-paneWidth-20);
      int channelW=(int)(leftWidth*.40),nowW=(int)(leftWidth*.36),nextW=leftWidth-channelW-nowW;
-     TextView channelHeader=text("CHANNEL",11);channelHeader.setTextColor(ACCENT);
+     TextView channelHeader=text(metrics.widthDp>950?"CHANNEL · US REFERENCE ORDER":"CHANNEL",11);channelHeader.setTextColor(ACCENT);
      columns.addView(channelHeader,new LinearLayout.LayoutParams(0,-2,.40f));
      TextView nowHeader=text("ON NOW",11);nowHeader.setTextColor(ACCENT);
      columns.addView(nowHeader,new LinearLayout.LayoutParams(0,-2,.36f));
@@ -1514,7 +1514,8 @@ public class MainActivity extends Activity {
         row.setLayoutParams(new AbsListView.LayoutParams(-1,dp(lineHeight)));
        }
        LibraryCore.Item item=channels.get(position);
-       holder.channel.setText(item.name);
+       int satelliteRef=ChannelDiscovery.satelliteNumber(item);
+       holder.channel.setText(satelliteRef>0?satelliteRef+"  "+item.name:item.name);
        GuideEngine.Slot available=slots.get(item.id);
        holder.programme.setText(available!=null&&available.now!=null?
            available.now.title:"Programme information unavailable");
@@ -1554,6 +1555,7 @@ public class MainActivity extends Activity {
        if(position<0||position>=channels.size())return;
        LibraryCore.Item chosen=channels.get(position);
        focused[0]=chosen;
+       guideSelectedId=chosen.id;
        preview.highlight(chosen,slots.get(chosen.id));
        fetchGuideSchedules(token,channels,Math.max(0,position-5),26,slots,pending,adapter,
          chosen.id,preview);
@@ -1578,6 +1580,7 @@ public class MainActivity extends Activity {
       listing.setSelection(0);
       listing.requestFocus();
       focused[0]=channels.get(0);
+      guideSelectedId=channels.get(0).id;
       preview.highlight(channels.get(0),slots.get(channels.get(0).id));
       fetchGuideSchedules(token,channels,0,32,slots,pending,adapter,
         channels.get(0).id,preview);
@@ -1617,7 +1620,8 @@ public class MainActivity extends Activity {
     if(isDestroyed()||token!=browseToken||!screen.equals("guide"))return;
     cache.putAll(filled);
     adapter.notifyDataSetChanged();
-    if(selectedId!=null&&filled.containsKey(selectedId)&&preview==guidePreview)
+    if(selectedId!=null&&selectedId.equals(guideSelectedId)&&
+       filled.containsKey(selectedId)&&preview==guidePreview)
      preview.updateSchedule(filled.get(selectedId));
    });
   });
