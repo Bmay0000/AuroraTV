@@ -111,6 +111,57 @@ class TmdbClient {
    }catch(_){}
    return result;
  }
+ /// Discovery cards are TMDB titles, not falsely advertised IPTV streams.
+ /// Results can be displayed even when the user's provider does not carry them.
+ Future<List<MediaEntry>> discovery(MediaKind kind,{String window='day',int? genreId}) async {
+   if(apiKey.isEmpty)return [];
+   final media=kind==MediaKind.movie?'movie':'tv';
+   final cacheKey='tmdb.discovery.v3.$media.$window.${genreId??0}';
+   final prefs=await SharedPreferences.getInstance();
+   final stored=prefs.getString(cacheKey);
+   if(stored!=null){
+     try{return (jsonDecode(stored) as List).map((v)=>_discoveryEntry(v as Map<String,dynamic>,kind)).toList();}
+     catch(_){}
+   }
+   final all=<Map<String,dynamic>>[];
+   try{
+     for(var page=1;page<=2;page++){
+       final uri=genreId==null
+         ?Uri.https('api.themoviedb.org','/3/trending/$media/$window',
+             {'api_key':apiKey,'language':'en-US','page':'$page'})
+         :Uri.https('api.themoviedb.org','/3/discover/$media',{
+             'api_key':apiKey,'language':'en-US','page':'$page',
+             'sort_by':'popularity.desc','with_genres':'$genreId',
+             'watch_region':'US','with_original_language':'en'});
+       final response=await _client.get(uri).timeout(const Duration(seconds:9));
+       if(response.statusCode!=200)break;
+       final results=(jsonDecode(response.body) as Map)['results'] as List? ?? [];
+       for(final value in results){
+         if(value is! Map)continue;
+         final entry=Map<String,dynamic>.from(value);
+         if(entry['original_language']!='en')continue;
+         if((entry[media=='movie'?'title':'name']?.toString()??'').isEmpty)continue;
+         all.add(entry);
+         if(all.length>=40)break;
+       }
+       if(all.length>=40)break;
+     }
+     if(all.isNotEmpty)await prefs.setString(cacheKey,jsonEncode(all));
+   }catch(_){}
+   return all.map((v)=>_discoveryEntry(v,kind)).toList();
+ }
+ static MediaEntry _discoveryEntry(Map<String,dynamic> v,MediaKind kind){
+   final title=(v[kind==MediaKind.movie?'title':'name']??'').toString();
+   final poster=(v['poster_path']??'').toString();
+   final backdrop=(v['backdrop_path']??'').toString();
+   final date=(v[kind==MediaKind.movie?'release_date':'first_air_date']??'').toString();
+   return MediaEntry(
+     id:'tmdb:${kind.name}:${v['id']}',kind:kind,title:title,
+     category:'TMDB discovery',year:date.length>=4?int.tryParse(date.substring(0,4))??0:0,
+     artwork:poster.startsWith('/')?'https://image.tmdb.org/t/p/w342$poster':
+       backdrop.startsWith('/')?'https://image.tmdb.org/t/p/w780$backdrop':'',
+     rating:(v['vote_average'] as num?)?.toDouble()??0);
+ }
  Future<MovieMeta> details(MediaEntry item) async {
    if(apiKey.isEmpty||item.kind==MediaKind.live)return const MovieMeta();
    final media=item.kind==MediaKind.movie?'movie':'tv';
