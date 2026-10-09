@@ -103,15 +103,16 @@ public class MainActivity extends Activity {
  }
 
  void start(){
-  if(store.hasLibrary()){
-   // The local catalog is already indexed. Never block startup on a network
-   // EPG refresh or COUNT(*) across a six-figure provider collection.
-   shell();
-   home();
-  }else restoreAccountOrLogin();
-  if(store.hasLibrary()&&!prefs.getString("import.pending","").isEmpty()
-      &&"xtream".equals(prefs.getString("mode","")))
-   continueCatalogImport(generation);
+  // Repair v0.4 staged imports. Do not claim Movies/TV Shows are empty
+  // merely because an interrupted import left only Live TV in the database.
+  if(store.hasLibrary()&&!prefs.getString("import.pending","").isEmpty()){
+   loadingScreen("RESTORING YOUR COMPLETE LIBRARY",
+     "Updating Live TV, Movies and TV Shows together. Your existing catalog stays safe.");
+   refresh();
+   return;
+  }
+  if(store.hasLibrary()){shell();home();}
+  else restoreAccountOrLogin();
  }
  void restoreAccountOrLogin(){
   String mode=prefs.getString("mode","");
@@ -1043,7 +1044,6 @@ public class MainActivity extends Activity {
  }
  void tvGuide(){
   stopGuidePreview();
-  pauseCatalogForVideo();
   if(!store.hasLibrary()){loginScreen(false);return;}
   screen="guide";section="live";refreshSidebar();
   final int token=++browseToken;
@@ -1884,59 +1884,53 @@ public class MainActivity extends Activity {
 
 
  void importSource(String mode,String url,String user,String pass){
-  if(loading){toast("A library update is already underway");return;}
+  if(loading){toast("Your catalog is already updating");return;}
   loading=true;
-  final boolean alreadyReady=store.hasLibrary();
-  final long importStart=SystemClock.elapsedRealtime();
+  final long started=SystemClock.elapsedRealtime();
+  final boolean existing=store.hasLibrary();
+  final boolean repairing=!prefs.getString("import.pending","").isEmpty();
   final int token=++generation;
-  if(!alreadyReady)loadingScreen("CONNECTING YOUR LIBRARY",
-      "Importing Live TV first — Movies and TV Shows will follow in the background");
-  else toast("Refreshing your catalog in the background. You can keep browsing.");
+  if(!existing||repairing||"loading".equals(screen))
+   loadingScreen("PREPARING YOUR COMPLETE LIBRARY",
+       "Importing Live TV, Movies and TV Shows. This will run just once.");
+  else toast("Refreshing the complete catalog. Your current library remains available.");
   importIO.execute(()->{
    try{
-    final String sealedUrl=Vault.seal(url),sealedUser=Vault.seal(user),sealedPass=Vault.seal(pass);
+    // All three Xtream media sections use ONE authenticated streaming import,
+    // ONE indexed staging transaction and ONE atomic catalog replacement.
+    // We never show an incomplete provider library as complete.
+    long stageStart=SystemClock.elapsedRealtime();
+    final String[] lastStage={""};
+    final long[] stageOpenedAt={stageStart};
     final String[] discoveredGuide={null};
-    if(!alreadyReady&&mode.equals("xtream")){
-     int liveCount;
-     try(LibraryStore.Writer live=store.writer()){
-      liveCount=Provider.xtreamStreamKinds(url,user,pass,live,
-        (stage,total)->status("LIVE TV  ·  "+String.format(Locale.US,"%,d channels",total)),
-        "live");
-      if(liveCount==0)throw new IOException("Provider has no Live TV channels");
-      status("Making Live TV available…");
-      live.commit();
-     }
-     long liveDuration=SystemClock.elapsedRealtime()-importStart;
-     prefs.edit().putLong("import.live_ms",liveDuration).putLong("import.active_ms",liveDuration).apply();
-     if(token!=generation||Thread.currentThread().isInterrupted())return;
-     if(!prefs.edit().putString("mode",mode).putString("url",sealedUrl)
-         .putString("user",sealedUser).putString("pass",sealedPass)
-         .putString("import.pending","vod,series").remove("items").commit())
-      throw new IOException("Could not save account settings");
-     runOnUiThread(()->{
-      if(token!=generation||isDestroyed())return;
-      page=0;category="All";query="";hiddenOnly=false;favOnly=false;editing=false;
-      shell();home();
-      subtitle.setText("Live TV ready · Adding Movies and TV Shows");
-     });
-     importRemainingKinds(token,url,user,pass);
-     return;
-    }
-    int count;
+    final int count;
     try(LibraryStore.Writer writer=store.writer()){
-     if(mode.equals("xtream")){
-      count=Provider.xtreamStream(url,user,pass,writer,(stage,total)->
-        status(stage.toUpperCase(Locale.US)+"  ·  "+String.format(Locale.US,"%,d items",total)));
+     if("xtream".equals(mode)){
+      count=Provider.xtreamStream(url,user,pass,writer,(stage,done)->{
+       if(!stage.equals(lastStage[0])){
+        if(!lastStage[0].isEmpty()){
+         prefs.edit().putLong("import.stage."+lastStage[0]+".ms",
+           SystemClock.elapsedRealtime()-stageOpenedAt[0]).apply();
+        }
+        lastStage[0]=stage;
+        stageOpenedAt[0]=SystemClock.elapsedRealtime();
+       }
+       String label=stage.equals("live")?"Live TV":stage.equals("vod")?"Movies":"TV Shows";
+       status(label+"  •  "+String.format(Locale.US,"%,d",done)+
+         " titles processed · Preparing all 3 sections");
+      });
      }else{
-      status("Reading M3U playlist…");
-      count=Provider.m3uStream(url,writer,(stage,total)->
-        status(String.format(Locale.US,"%,d playlist entries",total)),
-        xmltv->discoveredGuide[0]=xmltv);
+      count=Provider.m3uStream(url,writer,(stage,done)->
+        status("Reading playlist  •  "+String.format(Locale.US,"%,d",done)+
+           " titles processed"),xmltv->discoveredGuide[0]=xmltv);
      }
-     if(count==0)throw new IOException("No supported media was returned by this provider");
-     status("Finishing your local library…");
+     if(count<=0)throw new IOException("No media titles were supplied by this provider");
+     status("Finalizing your complete catalog…");
      writer.commit();
     }
+    if(!lastStage[0].isEmpty())
+     prefs.edit().putLong("import.stage."+lastStage[0]+".ms",
+       SystemClock.elapsedRealtime()-stageOpenedAt[0]).apply();
     boolean changed=true;
     try{
      changed=!mode.equals(prefs.getString("mode",""))||
@@ -1944,93 +1938,47 @@ public class MainActivity extends Activity {
        !user.equals(Vault.open(prefs.getString("user","")))||
        !pass.equals(Vault.open(prefs.getString("pass","")));
     }catch(Exception ignored){}
-    if(changed){
-     epg.clearProvider();
-     prefs.edit().remove("guide.attempt.provider").remove("guide.updated.provider").apply();
-    }
+    // Keep provider credentials sealed once. Xtream entries store only compact
+    // references and reconstruct the full URL on selection.
+    SharedPreferences.Editor edit=prefs.edit()
+      .putString("mode",mode)
+      .putString("url",Vault.seal(url))
+      .putString("user",Vault.seal(user))
+      .putString("pass",Vault.seal(pass))
+      .putLong("import.total_ms",SystemClock.elapsedRealtime()-started)
+      .putInt("import.total_items",count)
+      .remove("import.pending").remove("items");
     if(discoveredGuide[0]!=null&&!prefs.contains("guide.external1"))
-     prefs.edit().putString("guide.external1",Vault.seal(discoveredGuide[0])).apply();
-    prefs.edit().putString("mode",mode).putString("url",sealedUrl)
-      .putString("user",sealedUser).putString("pass",sealedPass)
-      .putLong("import.total_ms",SystemClock.elapsedRealtime()-importStart)
-      .remove("import.pending").remove("items").commit();
+     edit.putString("guide.external1",Vault.seal(discoveredGuide[0]));
+    if(changed)edit.remove("guide.attempt.provider").remove("guide.updated.provider");
+    if(!edit.commit())throw new IOException("Unable to save account details");
+    if(changed)epg.clearProvider();
     runOnUiThread(()->{
-     if(token!=generation||isDestroyed())return;
-     loading=false;items.clear();page=0;category="All";query="";
-     hiddenOnly=false;favOnly=false;editing=false;
-     if(!alreadyReady){shell();home();}
-     else if("home".equals(screen))home();
-     else if("browse".equals(screen))browse();
-     else if("guide".equals(screen))tvGuide();
-     toast("Your library has been updated");
+     if(isDestroyed()||token!=generation)return;
+     loading=false;page=0;category="All";query="";
+     hiddenOnly=false;favOnly=false;editing=false;items.clear();
+     if(!existing||repairing||screen.equals("loading")){shell();home();}
+     else if(screen.equals("home"))home();
+     else if(screen.equals("browse"))browse();
+     else if(screen.equals("guide"))tvGuide();
+     toast("All "+String.format(Locale.US,"%,d",count)+" titles are now available.");
     });
    }catch(Exception error){
     runOnUiThread(()->{
      if(isDestroyed()||token!=generation)return;
      loading=false;
-     toast("Catalog update failed: "+error.getClass().getSimpleName());
-     if(!alreadyReady && store.hasLibrary()){shell();home();}
-     else if(!alreadyReady)loginScreen(mode.equals("m3u"));
+     // Errors are displayed without stream URLs, usernames, or passwords.
+     String kind=error.getClass().getSimpleName();
+     if(store.hasLibrary()&&!repairing){
+      toast("Catalog refresh failed ("+kind+"). Your previous library is unchanged.");
+      if(screen.equals("loading")){shell();home();}
+     }else{
+      loadingScreen("LIBRARY IMPORT INTERRUPTED",
+        "The provider or device interrupted the import. Your saved titles have not been deleted.");
+      root.addView(button("RETRY COMPLETE IMPORT",()->refresh()));
+      if(existing)root.addView(button("OPEN PREVIOUS LIBRARY",()->{shell();home();}));
+     }
     });
-   }
-  });
- }
- void importRemainingKinds(int token,String host,String username,String password){
-  // Keep live navigation and guide decoders responsive during VOD indexing.
-  try{android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);}
-  catch(Exception ignored){}
-  try{
-   for(String kind:new String[]{"vod","series"}){
-    if(Thread.currentThread().isInterrupted()||token!=generation)return;
-    if(!Arrays.asList(prefs.getString("import.pending","").split(",")).contains(kind))continue;
-    long stageStart=SystemClock.elapsedRealtime();
-    try(LibraryStore.Writer writer=store.appendWriter()){
-     int count=Provider.xtreamStreamKinds(host,username,password,writer,
-        (stage,total)->runOnUiThread(()->{
-         if(token==generation&&!isDestroyed()&&"home".equals(screen))
-          subtitle.setText((kind.equals("vod")?"Movies":"TV Shows")+" · "+
-             String.format(Locale.US,"%,d items imported",total));
-        }),kind);
-     if(count>0)writer.commit();
-    }
-    long completedMs=prefs.getLong("import.active_ms",0)+
-       (SystemClock.elapsedRealtime()-stageStart);
-    prefs.edit().putLong("import.active_ms",completedMs).putLong("import.total_ms",completedMs)
-      .putString("import.pending",kind.equals("vod")?"series":"").commit();
-    runOnUiThread(()->{
-     if(token!=generation||isDestroyed())return;
-     if("home".equals(screen))home();
-    });
-   }
-   runOnUiThread(()->{
-    if(token!=generation||isDestroyed())return;
-    loading=false;
-    if("home".equals(screen))subtitle.setText("●  YOUR LIBRARY IS READY");
-   });
-  }catch(Exception error){
-   // Interrupted imports roll back. Resume the pending media type next launch.
-   runOnUiThread(()->{
-    if(token!=generation||isDestroyed())return;
-    loading=false;
-    if("home".equals(screen))subtitle.setText("Live TV ready · Finish other media from Sources");
-    toast("Some media is still importing. Live TV remains available.");
-   });
-  }finally{
-   try{android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT);}
-   catch(Exception ignored){}
-  }
- }
- void continueCatalogImport(int token){
-  if(loading)return;
-  loading=true;
-  importIO.execute(()->{
-   try{
-    importRemainingKinds(token,
-      Vault.open(prefs.getString("url","")),
-      Vault.open(prefs.getString("user","")),
-      Vault.open(prefs.getString("pass","")));
-   }catch(Exception ignored){
-    runOnUiThread(()->{if(token==generation)loading=false;});
    }
   });
  }
@@ -2063,23 +2011,6 @@ public class MainActivity extends Activity {
   * Stop memory-heavy EPG/short-guide downloads while decoding video.
   * Interrupted XMLTV imports roll back their DB transaction and retry later.
   */
- void pauseCatalogForVideo(){
-  if(loading&&!prefs.getString("import.pending","").isEmpty()){
-   generation++;
-   importIO.shutdownNow();
-   importIO=Executors.newSingleThreadExecutor();
-   loading=false;
-   subtitle.setText("Catalog paused while video is playing");
-  }
- }
- void scheduleCatalogResume(){
-  if(!prefs.getString("import.pending","").isEmpty()&&!loading){
-   uiHandler.postDelayed(()->{
-    if(!isDestroyed() && playbackScreen==null && guidePreview==null
-      && !loading && store.hasLibrary())continueCatalogImport(generation);
-   },12000L);
-  }
- }
  void pauseBackgroundGuidesForPlayback(){
   epgRefreshIO.shutdownNow();
   shortEpgIO.shutdownNow();
@@ -2089,7 +2020,6 @@ public class MainActivity extends Activity {
  }
  void play(LibraryCore.Item media){
   stopGuidePreview();
-  pauseCatalogForVideo();
   if(media==null||media.url==null||media.url.isEmpty()){
    toast("No playable stream URL is available");return;
   }
@@ -2115,7 +2045,6 @@ public class MainActivity extends Activity {
   if(previous.equals("guide"))tvGuide();
   else if(previous.equals("home"))home();
   else browse();
-  scheduleCatalogResume();
  }
  void release(){
   if(playbackScreen!=null){
@@ -2149,7 +2078,6 @@ public class MainActivity extends Activity {
  }
  @Override protected void onStop(){
   stopGuidePreview();
-  pauseCatalogForVideo();
   if(livePreview!=null){livePreview.dismiss();livePreview=null;}
   // Never keep a hardware video decoder or wake lock running in background.
   if(playbackScreen!=null){
