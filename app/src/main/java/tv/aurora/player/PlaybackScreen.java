@@ -27,6 +27,9 @@ import android.content.res.ColorStateList;
 import android.text.TextUtils;
 
 import androidx.media3.common.C;
+import androidx.media3.common.Tracks;
+import androidx.media3.common.TrackSelectionOverride;
+import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.MimeTypes;
@@ -84,6 +87,9 @@ public final class PlaybackScreen {
     private SeekBar playbackSeekbar;
     private TextView clockText;
     private boolean scrubbing;
+    private Runnable queuedSeek;
+    private int resizeMode=AspectRatioFrameLayout.RESIZE_MODE_FIT;
+    private float speed=1f;
     private View primaryButton;
     private boolean closed;
     private boolean overlayVisible;
@@ -283,9 +289,21 @@ public final class PlaybackScreen {
                        player.getDuration()>0 && player.getDuration()!=C.TIME_UNSET)
                         clockText.setText(time((long)(player.getDuration()*progress/1000d))+
                             "  /  "+time(player.getDuration()));
+                    if(user && !scrubbing && player!=null && player.isCurrentMediaItemSeekable()
+                          && player.getDuration()>0 && player.getDuration()!=C.TIME_UNSET){
+                        if(queuedSeek!=null)handler.removeCallbacks(queuedSeek);
+                        final long wanted=(long)(player.getDuration()*progress/1000d);
+                        queuedSeek=()->{
+                            queuedSeek=null;
+                            if(!closed && player!=null)player.seekTo(wanted);
+                        };
+                        handler.postDelayed(queuedSeek,350);
+                        scheduleHide();
+                    }
                 }
                 @Override public void onStopTrackingTouch(SeekBar bar){
                     scrubbing=false;
+                    if(queuedSeek!=null){handler.removeCallbacks(queuedSeek);queuedSeek=null;}
                     if(player!=null&&player.isCurrentMediaItemSeekable() &&
                             player.getDuration()>0 && player.getDuration()!=C.TIME_UNSET)
                         player.seekTo((long)(player.getDuration()*bar.getProgress()/1000d));
@@ -294,37 +312,56 @@ public final class PlaybackScreen {
             });
         }
 
-        LinearLayout buttons = new LinearLayout(activity);
+        LinearLayout buttons=new LinearLayout(activity);
         buttons.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(52));
-        actions.topMargin=dp(8);controlsOverlay.addView(buttons,actions);
-        playPause = control("Ⅱ  PAUSE",v -> togglePlay());
-        primaryButton = playPause;
+        LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(49));
+        actions.topMargin=dp(8);
+        controlsOverlay.addView(buttons,actions);
+        if(!"live".equals(type)){
+            Button back30=control("↶  30s",v->seekRelative(-30000));
+            buttons.addView(back30,new LinearLayout.LayoutParams(0,-1,1));
+        }
+        playPause=control("Ⅱ  PAUSE",v->togglePlay());
+        primaryButton=playPause;
         buttons.addView(playPause,new LinearLayout.LayoutParams(0,-1,1));
-
         if("live".equals(type)){
-            Button live=control("◉  GO LIVE",v ->{
+            Button goLive=control("◉  GO LIVE",v->{
                 if(player==null)return;
                 manualPause=false;
-                if(player.isCurrentMediaItemLive() && player.isCurrentMediaItemSeekable()){
+                if(player.isCurrentMediaItemLive()&&player.isCurrentMediaItemSeekable()){
                     player.seekToDefaultPosition();player.play();
                 }else retry();
-                scheduleHide();
             });
-            buttons.addView(live,new LinearLayout.LayoutParams(0,-1,1));
-        } else {
-            Button rewind=control("↶  −30 SEC",v ->{
-                if(player!=null && player.isCurrentMediaItemSeekable())
-                    player.seekTo(Math.max(0,player.getCurrentPosition()-30000));
-            });
-            buttons.addView(rewind,new LinearLayout.LayoutParams(0,-1,1));
+            buttons.addView(goLive,new LinearLayout.LayoutParams(0,-1,1));
+        }else{
+            Button back10=control("−10s",v->seekRelative(-10000));
+            buttons.addView(back10,new LinearLayout.LayoutParams(0,-1,1));
+            Button forward10=control("+10s",v->seekRelative(10000));
+            buttons.addView(forward10,new LinearLayout.LayoutParams(0,-1,1));
+            Button forward30=control("+30s  ↷",v->seekRelative(30000));
+            buttons.addView(forward30,new LinearLayout.LayoutParams(0,-1,1));
         }
-        Button reconnect=control("⟳  RECONNECT",v ->retry());
+        Button reconnect=control("⟳  RECONNECT",v->retry());
         buttons.addView(reconnect,new LinearLayout.LayoutParams(0,-1,1));
-        optionsButton=control("⚙  OPTIONS",v->showSettings());
-        buttons.addView(optionsButton,new LinearLayout.LayoutParams(0,-1,1));
         Button back=control("←  EXIT",v->exit.goBack());
         buttons.addView(back,new LinearLayout.LayoutParams(0,-1,1));
+        LinearLayout extras=new LinearLayout(activity);
+        extras.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams tools=new LinearLayout.LayoutParams(-1,dp(44));
+        tools.topMargin=dp(7);
+        controlsOverlay.addView(extras,tools);
+        if(!"live".equals(type)){
+            Button velocity=control("SPEED  1×",v->chooseSpeed());
+            extras.addView(velocity,new LinearLayout.LayoutParams(0,-1,1));
+            Button subtitles=control("CC / SUBTITLES",v->chooseTrack(true));
+            extras.addView(subtitles,new LinearLayout.LayoutParams(0,-1,1));
+            Button audio=control("AUDIO",v->chooseTrack(false));
+            extras.addView(audio,new LinearLayout.LayoutParams(0,-1,1));
+        }
+        Button aspect=control("ASPECT",v->cycleAspect());
+        extras.addView(aspect,new LinearLayout.LayoutParams(0,-1,1));
+        optionsButton=control("⚙  SETTINGS",v->showSettings());
+        extras.addView(optionsButton,new LinearLayout.LayoutParams(0,-1,1));
         setControlsVisible(false);
         activity.setContentView(root);
         root.requestFocus();
@@ -434,6 +471,7 @@ public final class PlaybackScreen {
             player.prepare();
             if(!"live".equals(type) && resumePosition>0)player.seekTo(resumePosition);
             player.play();
+            if(!"live".equals(type) && speed!=1f)player.setPlaybackSpeed(speed);
             handler.removeCallbacks(sampleHealth);
             handler.postDelayed(sampleHealth,HEALTH_INTERVAL_MS);
             handler.removeCallbacks(watchdog);
@@ -622,6 +660,80 @@ public final class PlaybackScreen {
         handler.removeCallbacks(watchdog);
         startPlayer(position);
     }
+    private void seekRelative(long delta) {
+        if (player==null)return;
+        if (!player.isCurrentMediaItemSeekable()){
+            Toast.makeText(activity,"This stream does not support seeking",
+                    Toast.LENGTH_SHORT).show();return;
+        }
+        long duration=player.getDuration();
+        long target=Math.max(0,player.getCurrentPosition()+delta);
+        if(duration!=C.TIME_UNSET&&duration>0)target=Math.min(target,duration);
+        player.seekTo(target);
+        state.setText("Seek to "+time(target));
+        scheduleHide();
+    }
+    private void cycleAspect(){
+        if(resizeMode==AspectRatioFrameLayout.RESIZE_MODE_FIT)
+            resizeMode=AspectRatioFrameLayout.RESIZE_MODE_ZOOM;
+        else if(resizeMode==AspectRatioFrameLayout.RESIZE_MODE_ZOOM)
+            resizeMode=AspectRatioFrameLayout.RESIZE_MODE_FILL;
+        else resizeMode=AspectRatioFrameLayout.RESIZE_MODE_FIT;
+        view.setResizeMode(resizeMode);
+        state.setText(resizeMode==AspectRatioFrameLayout.RESIZE_MODE_FIT?"Aspect: original":
+            resizeMode==AspectRatioFrameLayout.RESIZE_MODE_ZOOM?"Aspect: zoom":"Aspect: stretch");
+    }
+    private void chooseSpeed(){
+        if("live".equals(type)){toastShort("Speed adjustment is for movies and episodes");return;}
+        final float[] speeds={0.5f,0.75f,1f,1.25f,1.5f,2f,3f,4f};
+        final String[] labels={"0.5× Slow","0.75× Slow","1× Normal",
+            "1.25×","1.5×","2× Fast","3× Fast","4× Fast"};
+        int selected=2;
+        for(int i=0;i<speeds.length;i++)if(Math.abs(speed-speeds[i])<.01f)selected=i;
+        new AlertDialog.Builder(activity).setTitle("Playback speed")
+            .setSingleChoiceItems(labels,selected,(d,n)->{
+                speed=speeds[n];
+                if(player!=null)player.setPlaybackSpeed(speed);
+                state.setText("Playback speed  "+labels[n]);
+                d.dismiss();scheduleHide();
+            }).setNegativeButton("CLOSE",null).show();
+    }
+    private void toastShort(String message){
+        Toast.makeText(activity,message,Toast.LENGTH_SHORT).show();
+    }
+    private void chooseTrack(boolean subtitles){
+        if(player==null)return;
+        int typeToShow=subtitles?C.TRACK_TYPE_TEXT:C.TRACK_TYPE_AUDIO;
+        java.util.ArrayList<String> options=new java.util.ArrayList<>();
+        java.util.ArrayList<TrackSelectionOverride> overrides=new java.util.ArrayList<>();
+        options.add(subtitles?"Off":"System default");
+        overrides.add(null);
+        for(Tracks.Group group:player.getCurrentTracks().getGroups()){
+            if(group.getType()!=typeToShow)continue;
+            for(int j=0;j<group.length;j++){
+                if(!group.isTrackSupported(j))continue;
+                Format format=group.getTrackFormat(j);
+                String language=format.language==null||format.language.isEmpty()?"Unknown":format.language;
+                String label=(format.label==null||format.label.isEmpty()?
+                    (subtitles?"Subtitles ":"Audio ")+language:format.label);
+                options.add(label+(group.isTrackSelected(j)?" ✓":""));
+                overrides.add(new TrackSelectionOverride(group.getMediaTrackGroup(),j));
+            }
+        }
+        if(options.size()==1 && !subtitles){toastShort("No alternate audio tracks available");return;}
+        new AlertDialog.Builder(activity)
+            .setTitle(subtitles?"Subtitles & captions":"Audio tracks")
+            .setItems(options.toArray(new String[0]),(d,n)->{
+                androidx.media3.common.TrackSelectionParameters.Builder builder=
+                    player.getTrackSelectionParameters().buildUpon();
+                builder.clearOverridesOfType(typeToShow);
+                if(subtitles)builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT,n==0);
+                if(n>0)builder.addOverride(overrides.get(n));
+                player.setTrackSelectionParameters(builder.build());
+                scheduleHide();
+            }).setNegativeButton("CANCEL",null).show();
+    }
+
     private void togglePlay(){
         if(player==null)return;
         if(recoveryExhausted || player.getPlayerError()!=null){
@@ -761,6 +873,7 @@ public final class PlaybackScreen {
         handler.removeCallbacks(sampleHealth);
         handler.removeCallbacks(watchdog);
         handler.removeCallbacks(updateClock);
+        if(queuedSeek!=null){handler.removeCallbacks(queuedSeek);queuedSeek=null;}
         long position = 0;
         try {
             if (player != null) {
