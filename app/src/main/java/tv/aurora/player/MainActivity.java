@@ -642,6 +642,7 @@ public class MainActivity extends Activity {
   return card;
  }
  void showLivePreview(LibraryCore.Item selectedChannel){
+  final int token=browseToken;
   // Resolve the encrypted URL and guide entry off the UI thread. Preview
   // networking only begins if the user explicitly selects muted playback.
   io.execute(()->{
@@ -649,7 +650,7 @@ public class MainActivity extends Activity {
     LibraryCore.Item resolved=store.resolve(selectedChannel);
     GuideEngine.Slot entry=epg.nowNext(selectedChannel);
     runOnUiThread(()->{
-     if(isDestroyed() || isFinishing() || screen.equals("player"))return;
+     if(isDestroyed() || isFinishing() || screen.equals("player") || token!=browseToken)return;
      new PreviewWindow(this,resolved,entry,posters,()->play(resolved));
     });
    }catch(Exception error){
@@ -1357,12 +1358,14 @@ public class MainActivity extends Activity {
 
  void moreGuide(LibraryCore.Item channel){
   new AlertDialog.Builder(this).setTitle(channel.name)
-   .setItems(new String[]{"Preview channel","Full programme schedule","Match this channel to an EPG source",
+   .setItems(new String[]{"Preview channel","Full programme schedule",
+     "Match this channel to an EPG source",
      favorites.contains(channel.id)?"Remove favorite":"Add favorite","Hide channel"},
     (d,n)->{
-     if(n==0){showChannelSchedule(channel);return;}
-     if(n==1){chooseGuideMatch(channel);return;}
-     if(n==2){
+     if(n==0){showLivePreview(channel);return;}
+     if(n==1){showChannelSchedule(channel);return;}
+     if(n==2){chooseGuideMatch(channel);return;}
+     if(n==3){
       if(!favorites.add(channel.id))favorites.remove(channel.id);
       save();tvGuide();return;
      }
