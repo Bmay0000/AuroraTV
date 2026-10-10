@@ -1398,24 +1398,8 @@ class TvSearchField extends StatelessWidget {
  const TvSearchField({super.key,required this.controller,required this.hint,
    required this.onSubmitted});
  Future<void> _edit(BuildContext context) async {
-   final draft=TextEditingController(text:controller.text);
-   String? query;
-   try {
-     query=await showDialog<String>(context:context,builder:(ctx)=>AlertDialog(
-       backgroundColor:C.surface,title:const Text('Search'),
-       content:SizedBox(width:490,child:TextField(
-         controller:draft,autofocus:true,textInputAction:TextInputAction.search,
-         decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:hint),
-         onSubmitted:(value)=>Navigator.pop(ctx,value))),
-       actions:[
-         TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Cancel')),
-         FilledButton(onPressed:()=>Navigator.pop(ctx,draft.text),
-           child:const Text('Search')),
-       ],
-     ));
-   } finally {
-     WidgetsBinding.instance.addPostFrameCallback((_){draft.dispose();});
-   }
+   final query=await showDialog<String>(context:context,
+     builder:(_)=>_TvSearchDialog(initial:controller.text,hint:hint));
    if(query==null||!context.mounted)return;
    controller.value=TextEditingValue(text:query,
      selection:TextSelection.collapsed(offset:query.length));
@@ -1438,6 +1422,32 @@ class TvSearchField extends StatelessWidget {
        width:states.contains(WidgetState.focused)?2.5:1,
        color:states.contains(WidgetState.focused)?C.aqua:Colors.white24)),
    ),
+ );
+}
+
+/// Owns its text controller for the entire modal route lifetime.
+/// Disposing a controller immediately after Navigator.pop can crash on TV,
+/// because the closing keyboard still references EditableText briefly.
+class _TvSearchDialog extends StatefulWidget {
+ final String initial,hint;
+ const _TvSearchDialog({required this.initial,required this.hint});
+ @override State<_TvSearchDialog> createState()=>_TvSearchDialogState();
+}
+class _TvSearchDialogState extends State<_TvSearchDialog>{
+ late final TextEditingController draft;
+ @override void initState(){super.initState();draft=TextEditingController(text:widget.initial);}
+ @override void dispose(){draft.dispose();super.dispose();}
+ @override Widget build(BuildContext context)=>AlertDialog(
+   backgroundColor:C.surface,title:const Text('Search'),
+   content:SizedBox(width:490,child:TextField(
+     controller:draft,autofocus:true,textInputAction:TextInputAction.search,
+     decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:widget.hint),
+     onSubmitted:(value)=>Navigator.pop(context,value))),
+   actions:[
+     TextButton(onPressed:()=>Navigator.pop(context),child:const Text('Cancel')),
+     FilledButton(onPressed:()=>Navigator.pop(context,draft.text),
+       child:const Text('Search')),
+   ],
  );
 }
 
