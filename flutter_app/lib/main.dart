@@ -695,8 +695,9 @@ class AuroraButton extends StatelessWidget{
 
 class MediaCard extends StatefulWidget{
   final MediaEntry item;final int index;final VoidCallback onFocused,onOpen;
+  final FocusNode? focusNode;
   const MediaCard({super.key,required this.item,required this.index,
-    required this.onFocused,required this.onOpen});
+    required this.onFocused,required this.onOpen,this.focusNode});
   @override State<MediaCard> createState()=>_MediaCardState();
 }
 class _MediaCardState extends State<MediaCard>{
@@ -704,7 +705,7 @@ class _MediaCardState extends State<MediaCard>{
  @override Widget build(BuildContext context)=>Padding(
   padding:const EdgeInsets.symmetric(horizontal:5,vertical:4),
   child:InkWell(
-    canRequestFocus:true,
+    canRequestFocus:true,focusNode:widget.focusNode,
     onTap:widget.onOpen,
     onFocusChange:(hasFocus){
       if(!mounted)return;
@@ -1378,6 +1379,58 @@ class _GuideScreenState extends State<GuideScreen>{
  String _clock(DateTime time)=>TimeOfDay.fromDateTime(time).format(context);
 }
 
+/// Search is a selectable control on TV. D-pad focus does not summon a
+/// virtual keyboard until the user actually presses Select.
+class TvSearchField extends StatelessWidget {
+ final TextEditingController controller;
+ final String hint;
+ final Future<void> Function(String query) onSubmitted;
+ const TvSearchField({super.key,required this.controller,required this.hint,
+   required this.onSubmitted});
+ Future<void> _edit(BuildContext context) async {
+   final draft=TextEditingController(text:controller.text);
+   String? query;
+   try {
+     query=await showDialog<String>(context:context,builder:(ctx)=>AlertDialog(
+       backgroundColor:C.surface,title:const Text('Search'),
+       content:SizedBox(width:490,child:TextField(
+         controller:draft,autofocus:true,textInputAction:TextInputAction.search,
+         decoration:InputDecoration(prefixIcon:const Icon(Icons.search),hintText:hint),
+         onSubmitted:(value)=>Navigator.pop(ctx,value))),
+       actions:[
+         TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Cancel')),
+         FilledButton(onPressed:()=>Navigator.pop(ctx,draft.text),
+           child:const Text('Search')),
+       ],
+     ));
+   } finally {
+     WidgetsBinding.instance.addPostFrameCallback((_){draft.dispose();});
+   }
+   if(query==null||!context.mounted)return;
+   controller.value=TextEditingValue(text:query,
+     selection:TextSelection.collapsed(offset:query.length));
+   await onSubmitted(query);
+ }
+ @override Widget build(BuildContext context)=>OutlinedButton.icon(
+   onPressed:()=>_edit(context),icon:const Icon(Icons.search,size:22),
+   label:Align(alignment:Alignment.centerLeft,child:Text(
+     controller.text.isEmpty?hint:controller.text,
+     maxLines:1,overflow:TextOverflow.ellipsis,
+     style:TextStyle(color:controller.text.isEmpty?C.secondary:C.ink))),
+   style:ButtonStyle(
+     minimumSize:const WidgetStatePropertyAll(Size(130,51)),
+     padding:const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal:14)),
+     backgroundColor:WidgetStatePropertyAll(C.surface.withValues(alpha:.85)),
+     alignment:Alignment.centerLeft,
+     shape:WidgetStatePropertyAll(RoundedRectangleBorder(
+       borderRadius:BorderRadius.circular(9))),
+     side:WidgetStateProperty.resolveWith((states)=>BorderSide(
+       width:states.contains(WidgetState.focused)?2.5:1,
+       color:states.contains(WidgetState.focused)?C.aqua:Colors.white24)),
+   ),
+ );
+}
+
 class _SearchContent extends StatefulWidget{
  final CatalogDatabase db;
  final void Function(MediaEntry) onOpen,onFocused;
@@ -1385,26 +1438,35 @@ class _SearchContent extends StatefulWidget{
  @override State<_SearchContent> createState()=>_SearchContentState();
 }
 class _SearchContentState extends State<_SearchContent>{
- final input=TextEditingController();List<MediaEntry> results=[];Timer? timer;
- @override void dispose(){timer?.cancel();input.dispose();super.dispose();}
- Future<void> _search() async {
-   if(input.text.trim().isEmpty){setState(()=>results=[]);return;}
-   final movies=await widget.db.list(MediaKind.movie,search:input.text,limit:55);
-   final series=await widget.db.list(MediaKind.series,search:input.text,limit:40);
-   final live=await widget.db.list(MediaKind.live,search:input.text,limit:20);
-   if(mounted)setState(()=>results=[...movies,...series,...live]);
+ final input=TextEditingController();
+ final firstResult=FocusNode(debugLabel:'Search first result');
+ List<MediaEntry> results=[];
+ int request=0;
+ @override void dispose(){++request;input.dispose();firstResult.dispose();super.dispose();}
+ Future<void> _search(String text) async {
+   final revision=++request;
+   final term=text.trim();
+   if(term.isEmpty){if(mounted)setState(()=>results=[]);return;}
+   final movies=await widget.db.list(MediaKind.movie,search:term,limit:55);
+   final series=await widget.db.list(MediaKind.series,search:term,limit:40);
+   final live=await widget.db.list(MediaKind.live,search:term,limit:20);
+   if(!mounted||revision!=request)return;
+   setState(()=>results=[...movies,...series,...live]);
+   if(results.isNotEmpty)WidgetsBinding.instance.addPostFrameCallback((_){
+     if(mounted&&revision==request)firstResult.requestFocus();
+   });
  }
  @override Widget build(BuildContext context)=>Padding(padding:const EdgeInsets.all(30),
    child:Column(children:[
-     TextField(controller:input,onChanged:(_){
-       timer?.cancel();timer=Timer(const Duration(milliseconds:260),_search);
-     },decoration:const InputDecoration(prefixIcon:Icon(Icons.search),labelText:'Search your entire IPTV library')),
+     TvSearchField(controller:input,hint:'Search movies, shows and channels',
+       onSubmitted:_search),
      const SizedBox(height:16),
      Expanded(child:GridView.builder(
        gridDelegate:const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent:265,
          mainAxisSpacing:12,crossAxisSpacing:10,childAspectRatio:1.6),
        itemCount:results.length,
        itemBuilder:(ctx,i)=>MediaCard(item:results[i],index:0,
+         focusNode:i==0?firstResult:null,
          onFocused:()=>widget.onFocused(results[i]),onOpen:()=>widget.onOpen(results[i])))),
    ]));
 }
@@ -1466,11 +1528,8 @@ class _LibraryContentState extends State<_LibraryContent>{
      ]),
      const SizedBox(height:12),
      Row(children:[
-       Expanded(child:TextField(controller:search,onChanged:(_){
-         debounce?.cancel();
-         debounce=Timer(const Duration(milliseconds:250),()=>_load(reset:true));
-       },decoration:const InputDecoration(
-         prefixIcon:Icon(Icons.search),hintText:'Filter library titles'))),
+       Expanded(child:TvSearchField(controller:search,hint:'Filter library titles',
+         onSubmitted:(_)=>_load(reset:true))),
        const SizedBox(width:14),
        FilterChip(label:const Text('Show hidden'),selected:hiddenOnly,
          onSelected:(v){setState(()=>hiddenOnly=v);_load(reset:true);}),
@@ -1548,10 +1607,8 @@ class _CatalogBrowseState extends State<CatalogBrowseScreen>{
        const SizedBox(width:10),
        Expanded(child:Text(widget.kind==MediaKind.movie?'MOVIE LIBRARY':'TV SERIES LIBRARY',
          style:const TextStyle(fontSize:24,fontWeight:FontWeight.w800))),
-       SizedBox(width:260,child:TextField(controller:search,
-         decoration:const InputDecoration(prefixIcon:Icon(Icons.search),hintText:'Find a title'),
-         onChanged:(_){debounce?.cancel();debounce=Timer(const Duration(milliseconds:250),
-           ()=>_next(reset:true));})),
+       SizedBox(width:260,child:TvSearchField(controller:search,
+         hint:'Find a title',onSubmitted:(_)=>_next(reset:true))),
        const SizedBox(width:16),
        DropdownButton<String>(value:category,dropdownColor:C.surface,
          items:categories.map((g)=>DropdownMenuItem(value:g,child:Text(g,
