@@ -1222,9 +1222,9 @@ class _GuideScreenState extends State<GuideScreen>{
    if(!mounted||widget.channels.isEmpty)return;
    final generation=guideGeneration;
    final request=++guideLoadRequest;
-   final clamped=first.clamp(0,widget.channels.length-1);
+   final clamped=first<0?0:first>=widget.channels.length?widget.channels.length-1:first;
    final start=clamped>8?clamped-8:0;
-   final end=(clamped+38).clamp(0,widget.channels.length);
+   final end=clamped+38>widget.channels.length?widget.channels.length:clamped+38;
    final stations=widget.channels.sublist(start,end);
    final ids=stations.expand((e)=>[
      if(e.epgId.isNotEmpty)e.epgId,
@@ -1235,7 +1235,7 @@ class _GuideScreenState extends State<GuideScreen>{
      final data=await widget.db.schedules(ids,begin,begin.add(const Duration(hours:3)));
      if(!mounted||generation!=guideGeneration||request!=guideLoadRequest)return;
      setState((){
-       if(reset)programs.clear();
+       if(reset)programs.removeWhere((key,_)=>!key.startsWith('stream:'));
        // Limit data retained from previously visited guide windows.
        if(programs.length>520){
          programs.removeWhere((key,_)=>!key.startsWith('stream:'));
