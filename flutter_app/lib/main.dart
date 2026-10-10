@@ -13,6 +13,10 @@ import 'channel_lineup.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Fire TV sticks have tight graphics memory limits. Limit retained decoded
+  // images, independently of the small on-disk poster cache.
+  PaintingBinding.instance.imageCache.maximumSizeBytes=64*1024*1024;
+  PaintingBinding.instance.imageCache.maximumSize=140;
   SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft,DeviceOrientation.landscapeRight]);
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const AuroraApp());
@@ -474,8 +478,8 @@ class _AuroraShellState extends State<AuroraShell>{
           color:C.canvas,
           child:isCinema&&featured!=null
           ?meta.backdrop.isNotEmpty
-            ?SizedBox.expand(child:artwork(meta.backdrop,fit:BoxFit.cover))
-            :SizedBox.expand(child:artwork(featured!.artwork,fit:BoxFit.cover))
+            ?SizedBox.expand(child:artwork(meta.backdrop,fit:BoxFit.cover,memoryWidth:1280))
+            :SizedBox.expand(child:artwork(featured!.artwork,fit:BoxFit.cover,memoryWidth:1280))
           :const SizedBox.shrink())))),
       if(isCinema)Positioned.fill(child:DecoratedBox(decoration:BoxDecoration(
         gradient:LinearGradient(begin:Alignment.centerLeft,end:Alignment.centerRight,
@@ -487,25 +491,30 @@ class _AuroraShellState extends State<AuroraShell>{
             Colors.black.withValues(alpha:.12),Colors.black.withValues(alpha:.90)])))),
       SafeArea(child:Column(children:[
         _navBar(media.width),
-        // No nested FocusScope here: it previously trapped D-pad navigation
-        // within the content and stopped Up reaching the app header.
-        Expanded(child:IndexedStack(index:page,children:[
-          ExcludeFocus(excluding:page!=0,child:_discovery(MediaKind.movie,home:true)),
-          ExcludeFocus(excluding:page!=1,child:GuideScreen(
-            db:db,channels:live,groups:groups[MediaKind.live]??[],
-            group:channelGroup,onGroup:_loadLive,onPlay:_open,previewOn:previewOn,
-            source:source,provider:provider,refreshEpg:()=>_refreshEpg(),revision:guideRevision)),
-          ExcludeFocus(excluding:page!=2,child:_discovery(MediaKind.movie)),
-          ExcludeFocus(excluding:page!=3,child:_discovery(MediaKind.series)),
-          ExcludeFocus(excluding:page!=4,child:_myList()),
-          ExcludeFocus(excluding:page!=5,child:_searchPage()),
-          ExcludeFocus(excluding:page!=6,child:_libraryPage()),
-        ])),
+        // Render only the active section. IndexedStack kept all pages alive,
+        // including Live TV's decoder and several poster-heavy genre pages
+        // while the viewer was elsewhere, consuming Fire TV graphics memory.
+        Expanded(child:_activePage()),
       ])),
       if(loading)Positioned(left:0,right:0,bottom:0,child:Container(
         color:Colors.black87,padding:const EdgeInsets.all(12),
         child:Text(status,textAlign:TextAlign.center))),
     ])))); 
+  }
+  Widget _activePage(){
+    switch(page){
+      case 0: return _discovery(MediaKind.movie,home:true);
+      case 1: return GuideScreen(
+        db:db,channels:live,groups:groups[MediaKind.live]??[],
+        group:channelGroup,onGroup:_loadLive,onPlay:_open,previewOn:previewOn,
+        source:source,provider:provider,refreshEpg:()=>_refreshEpg(),revision:guideRevision);
+      case 2: return _discovery(MediaKind.movie);
+      case 3: return _discovery(MediaKind.series);
+      case 4: return _myList();
+      case 5: return _searchPage();
+      case 6: return _libraryPage();
+      default: return _discovery(MediaKind.movie,home:true);
+    }
   }
   Widget _navBar(double width){
     const labels=['Home','Live TV & Guide','Movies','TV Shows','My List','Search','Edit Library'];
@@ -658,11 +667,12 @@ class _AuroraShellState extends State<AuroraShell>{
     onFavorite:_toggle);
 }
 
-Widget artwork(String url,{BoxFit fit=BoxFit.cover}){
+Widget artwork(String url,{BoxFit fit=BoxFit.cover,int memoryWidth=640}){
   if(url.isEmpty||!url.startsWith('http'))return const DecoratedBox(
     decoration:BoxDecoration(gradient:LinearGradient(colors:[Color(0xff172a38),Color(0xff07121d)])),
     child:Center(child:Icon(Icons.movie_creation_outlined,size:39,color:Color(0xff35505d))));
-  return CachedNetworkImage(imageUrl:url,fit:fit,memCacheWidth:1280,maxWidthDiskCache:1280,
+  return CachedNetworkImage(imageUrl:url,fit:fit,
+    memCacheWidth:memoryWidth,maxWidthDiskCache:memoryWidth>720?1280:720,
     fadeInDuration:const Duration(milliseconds:120),errorWidget:(_,__,___)=>const ColoredBox(
     color:Color(0xff14232d),child:Center(child:Icon(Icons.movie_outlined,color:C.secondary))),
     placeholder:(_,__)=>const ColoredBox(color:Color(0xff13202b)));
