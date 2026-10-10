@@ -1160,8 +1160,11 @@ class _GuideScreenState extends State<GuideScreen>{
  final Set<String> epgRequested=<String>{};
  final List<MediaEntry> epgQueue=<MediaEntry>[];
  final ScrollController guideScroll=ScrollController();
+ Timer? guideScrollTimer;
+ final Set<String> coveredStations=<String>{};
  int epgInFlight=0;
  int guideGeneration=0;
+ int guideLoadRequest=0;
  // Xtream servers often rate-limit bursts. Fetch only rows close to the viewport.
  static const int epgConcurrency=3;
  void _queueVisibleGuides(int first){
@@ -1187,7 +1190,10 @@ class _GuideScreenState extends State<GuideScreen>{
        try{
          final data=await widget.provider.shortEpg(widget.source!,item);
          if(mounted&&generation==guideGeneration&&data.isNotEmpty){
-           setState(()=>programs['stream:${item.streamId}']=data);
+           setState((){
+             programs['stream:${item.streamId}']=data;
+             coveredStations.add(item.id);
+           });
          }
        }catch(_){
          // A missing provider guide should not block any other channel.
@@ -1200,7 +1206,54 @@ class _GuideScreenState extends State<GuideScreen>{
  }
  void _onGuideScroll(){
    if(!guideScroll.hasClients)return;
-   _queueVisibleGuides((guideScroll.offset/44).floor());
+   guideScrollTimer?.cancel();
+   guideScrollTimer=Timer(const Duration(milliseconds:140),(){
+     if(!mounted||!guideScroll.hasClients)return;
+     final first=(guideScroll.offset/44).floor();
+     _queueVisibleGuides(first);
+     _loadVisibleEpg(first);
+   });
+ }
+ int _firstVisible()=>guideScroll.hasClients?(guideScroll.offset/44).floor():0;
+ /// Query SQLite for only the visible guide rows. The previous version
+ /// loaded the entire 6,000+ channel EPG, repeatedly, on the UI isolate.
+ /// All existing XMLTV and per-channel provider fallback sources remain.
+ Future<void> _loadVisibleEpg(int first,{bool reset=false})async{
+   if(!mounted||widget.channels.isEmpty)return;
+   final generation=guideGeneration;
+   final request=++guideLoadRequest;
+   final clamped=first.clamp(0,widget.channels.length-1);
+   final start=clamped>8?clamped-8:0;
+   final end=(clamped+38).clamp(0,widget.channels.length);
+   final stations=widget.channels.sublist(start,end);
+   final ids=stations.expand((e)=>[
+     if(e.epgId.isNotEmpty)e.epgId,
+     'name:${GuideNames.canonical(e.cleanTitle)}',
+   ]).toSet().toList();
+   final begin=anchor;
+   try{
+     final data=await widget.db.schedules(ids,begin,begin.add(const Duration(hours:3)));
+     if(!mounted||generation!=guideGeneration||request!=guideLoadRequest)return;
+     setState((){
+       if(reset)programs.clear();
+       // Limit data retained from previously visited guide windows.
+       if(programs.length>520){
+         programs.removeWhere((key,_)=>!key.startsWith('stream:'));
+         if(programs.length>520)programs.clear();
+         coveredStations.clear();
+       }
+       programs.addAll(data);
+       for(final item in stations){
+         if((programs[item.epgId]?.isNotEmpty??false)||
+             (programs['name:${GuideNames.canonical(item.cleanTitle)}']?.isNotEmpty??false)||
+             (programs['stream:${item.streamId}']?.isNotEmpty??false)){
+           coveredStations.add(item.id);
+         }
+       }
+     });
+   }catch(_){
+     // Keep channel navigation and provider short EPG available on DB failure.
+   }
  }
  String key(MediaEntry item){
    if(item.epgId.isNotEmpty&&(programs[item.epgId]?.isNotEmpty??false))return item.epgId;
@@ -1214,7 +1267,11 @@ class _GuideScreenState extends State<GuideScreen>{
    final data=await widget.provider.shortEpg(widget.source!,item);
    if(!mounted||data.isEmpty)return;
    final entry='stream:${item.streamId}';
-   setState(()=>programs[entry]=data);
+   if(!mounted)return;
+   setState((){
+     programs[entry]=data;
+     coveredStations.add(item.id);
+   });
  }
  MediaEntry? focused;Timer? debounce;VideoPlayerController? preview;
  bool previewEnabled=true;
@@ -1236,6 +1293,12 @@ class _GuideScreenState extends State<GuideScreen>{
    super.didUpdateWidget(old);
    if(old.channels!=widget.channels||old.group!=widget.group){
      guideGeneration++;
+     guideLoadRequest++;
+     guideScrollTimer?.cancel();
+     _cancelPreview();
+     focused=null;
+     programs.clear();
+     coveredStations.clear();
      epgQueue.clear();
      epgRequested.clear();
      if(guideScroll.hasClients)guideScroll.jumpTo(0);
@@ -1245,21 +1308,12 @@ class _GuideScreenState extends State<GuideScreen>{
  Future<void> _load()async{
    final now=DateTime.now();
    anchor=DateTime(now.year,now.month,now.day,now.hour,now.minute<30?0:30);
-   final result=await widget.db.schedules(widget.channels.expand((e)=>[if(e.epgId.isNotEmpty)e.epgId,'name:${GuideNames.canonical(e.cleanTitle)}']).toSet().toList(),
-     anchor,anchor.add(const Duration(hours:3)));
-   if(mounted){
-     setState(()=>programs=result);
-     // Start the embedded Live TV preview immediately on guide entry.
-     // No separate picture-in-picture action is required.
-     if(widget.channels.isNotEmpty&&focused==null){
-       _queueVisibleGuides(0);
-       WidgetsBinding.instance.addPostFrameCallback((_){
-         if(mounted)_focus(widget.channels.first);
-       });
-     }
-     // Prefetch the active viewport regardless of whether a channel is focused.
+   await _loadVisibleEpg(0,reset:true);
+   if(!mounted)return;
+   if(widget.channels.isNotEmpty&&focused==null){
+     _queueVisibleGuides(0);
      WidgetsBinding.instance.addPostFrameCallback((_){
-       if(mounted)_queueVisibleGuides(guideScroll.hasClients?(guideScroll.offset/44).floor():0);
+       if(mounted&&widget.channels.isNotEmpty&&focused==null)_focus(widget.channels.first);
      });
    }
  }
@@ -1285,7 +1339,8 @@ class _GuideScreenState extends State<GuideScreen>{
            await controller.dispose();return;
          }
          await controller.setVolume(0);
-         await controller.setLooping(true);
+         // Live transport streams are already continuous; looping may
+         // reinitialize the native codec on several Fire TV builds.
          await controller.play();
          if(!mounted||request!=previewRequest||focused?.id!=item.id){
            await controller.dispose();return;
@@ -1299,6 +1354,7 @@ class _GuideScreenState extends State<GuideScreen>{
  }
  @override void dispose(){
    _cancelPreview();
+   guideScrollTimer?.cancel();
    widget.revision.removeListener(_loadForAnchor);
    guideScroll.removeListener(_onGuideScroll);
    guideScroll.dispose();
@@ -1308,7 +1364,7 @@ class _GuideScreenState extends State<GuideScreen>{
    final channels=widget.channels;
    final selected=focused??(channels.isNotEmpty?channels.first:null);
    final now=DateTime.now();
-   final channelsWithEpg=widget.channels.where((e)=>programs[key(e)]?.isNotEmpty??false).length;
+   final channelsWithEpg=coveredStations.length;
    final categoryGroups=['North America','All','Favorites',...widget.groups.take(12)].toSet().toList();
    return Padding(padding:const EdgeInsets.symmetric(horizontal:18,vertical:8),child:Column(children:[
      SizedBox(height:143,child:Row(children:[
@@ -1325,9 +1381,13 @@ class _GuideScreenState extends State<GuideScreen>{
        const SizedBox(width:16),
        IconButton(tooltip:previewEnabled?'Turn off automatic preview':'Turn on automatic preview',
          onPressed:(){
-           setState(()=>previewEnabled=!previewEnabled);
-           if(!previewEnabled)_cancelPreview();
-           else if(selected!=null){focused=null;_focus(selected);}
+           if(previewEnabled){
+             _cancelPreview();
+             setState(()=>previewEnabled=false);
+           }else{
+             setState(()=>previewEnabled=true);
+             if(selected!=null){focused=null;_focus(selected);}
+           }
          },
          icon:Icon(previewEnabled?Icons.picture_in_picture:Icons.picture_in_picture_alt)),
        SizedBox(width:265,height:136,child:ClipRRect(borderRadius:BorderRadius.circular(9),
@@ -1400,17 +1460,9 @@ class _GuideScreenState extends State<GuideScreen>{
    ]));
  }
  Future<void> _loadForAnchor()async{
-   final data=await widget.db.schedules(widget.channels.expand((e)=>[if(e.epgId.isNotEmpty)e.epgId,'name:${GuideNames.canonical(e.cleanTitle)}']).toSet().toList(),
-     anchor,anchor.add(const Duration(hours:3)));
-   if(mounted){
-     setState((){
-       // Preserve per-channel Xtream fallbacks when changing the time window or
-       // refreshing the main XMLTV cache.
-       final perStream=Map<String,List<TvProgramme>>.fromEntries(programs.entries.where((e)=>e.key.startsWith('stream:')));
-       programs={...data,...perStream};
-     });
-     _queueVisibleGuides(guideScroll.hasClients?(guideScroll.offset/44).floor():0);
-   }
+   await _loadVisibleEpg(_firstVisible(),reset:true);
+   if(!mounted)return;
+   _queueVisibleGuides(_firstVisible());
  }
  TvProgramme? _currentProgram(MediaEntry? item,DateTime clock){
    if(item==null)return null;
