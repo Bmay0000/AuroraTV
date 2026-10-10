@@ -62,6 +62,7 @@ class _AuroraShellState extends State<AuroraShell>{
   final List<FocusNode> navFocus=List.generate(7,(i)=>FocusNode(debugLabel:'Nav $i'));
   final ScrollController navScroll=ScrollController();
   bool ready=false,loading=false,showLogin=false,trailers=false,previewOn=true;
+  bool epgSyncing=false;
   String status='',epgUrl='';
   MediaEntry? featured;
   MovieMeta meta=const MovieMeta();
@@ -157,7 +158,11 @@ class _AuroraShellState extends State<AuroraShell>{
         if(mounted&&!showLogin)_focusNavigation(0);
       });
       _getTrends();
-      if(source!=null) _refreshEpg(silent:true);
+      // The EPG can be tens of MB. Do not re-download, decompress and
+      // reinsert it on every app launch; keep the persisted guide for 8 hours.
+      final lastEpg=prefs.getInt('epg.last_success')??0;
+      if(source!=null&&DateTime.now().millisecondsSinceEpoch-lastEpg>
+          const Duration(hours:8).inMilliseconds)_refreshEpg(silent:true);
     }catch(e){if(mounted)setState((){status='Startup failed: $e';ready=true;showLogin=true;});}
   }
   Future<void> _reload() async{
@@ -253,6 +258,7 @@ class _AuroraShellState extends State<AuroraShell>{
         if(mounted&&!showLogin)_focusNavigation(0);
       });
       _getTrends();
+      (await SharedPreferences.getInstance()).remove('epg.last_success');
       _refreshEpg(silent:true);
     }catch(e){if(mounted)setState((){loading=false;status=e.toString();});}
   }
@@ -269,13 +275,20 @@ class _AuroraShellState extends State<AuroraShell>{
     }catch(e){if(mounted)setState((){loading=false;status='Refresh failed: $e';});}
   }
   Future<void> _refreshEpg({bool silent=false}) async{
-    if(source==null)return;
-    if(!silent)setState((){loading=true;status='Importing programme information…';});
+    if(source==null||epgSyncing)return;
+    epgSyncing=true;
+    if(!silent&&mounted)setState((){loading=true;status='Importing programme information…';});
     try{
       final count=await epg.refresh(source!,db,externalUrl:epgUrl);
-      if(mounted){if(!silent)setState((){loading=false;status='Updated $count real EPG programmes';});
-        guideRevision.value++;}
-    }catch(e){if(mounted&&!silent)setState((){loading=false;status='EPG error: $e';});}
+      await (await SharedPreferences.getInstance()).setInt(
+        'epg.last_success',DateTime.now().millisecondsSinceEpoch);
+      if(mounted){
+        if(!silent)setState((){loading=false;status='Updated $count real EPG programmes';});
+        guideRevision.value++;
+      }
+    }catch(e){
+      if(mounted&&!silent)setState((){loading=false;status='EPG error: $e';});
+    }finally{epgSyncing=false;}
   }
   void _openCatalog(MediaKind kind){
     Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>CatalogBrowseScreen(
