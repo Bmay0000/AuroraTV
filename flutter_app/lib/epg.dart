@@ -41,16 +41,22 @@ class XmltvService {
    final response=await _client.get(url).timeout(const Duration(seconds:65));
    if(response.statusCode!=200)throw Exception('EPG HTTP ${response.statusCode}');
    if(response.bodyBytes.length>50000000)throw Exception('EPG file too large for this device');
-   final bytes=response.bodyBytes;
-   final uncompressed=bytes.length>2&&bytes[0]==0x1f&&bytes[1]==0x8b
-       ?gzip.decode(bytes):bytes;
-   if(uncompressed.length>90000000)throw Exception('EPG uncompressed file exceeds safety limit');
-   final programs=await compute(_parseXmltv,utf8.decode(uncompressed,allowMalformed:true));
+   // Decompression, UTF-8 decoding and XMLTV parsing all run off the UI
+   // isolate. The previous implementation expanded up to 90 MB on the same
+   // thread as the live preview and guide animations.
+   final programs=await compute(_parseXmltvBytes,response.bodyBytes);
    if(programs.isEmpty)throw Exception('No valid current XMLTV programmes found; existing guide retained');
    await db.writePrograms(programs);
    return programs.length;
  }
  void dispose()=>_client.close();
+}
+
+List<TvProgramme> _parseXmltvBytes(List<int> bytes){
+ final unpacked=bytes.length>2&&bytes[0]==0x1f&&bytes[1]==0x8b
+   ?gzip.decode(bytes):bytes;
+ if(unpacked.length>90000000)throw const FormatException('EPG decompressed file exceeds limit');
+ return _parseXmltv(utf8.decode(unpacked,allowMalformed:true));
 }
 
 List<TvProgramme> _parseXmltv(String raw){
