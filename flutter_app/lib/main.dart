@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:ui' show PlatformDispatcher;
+import 'crash_diagnostics.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -13,10 +15,17 @@ import 'channel_lineup.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Fire TV sticks have tight graphics memory limits. Limit retained decoded
-  // images, independently of the small on-disk poster cache.
-  PaintingBinding.instance.imageCache.maximumSizeBytes=64*1024*1024;
-  PaintingBinding.instance.imageCache.maximumSize=140;
+  FlutterError.onError=(details){
+    CrashDiagnostics.record('Flutter framework',details.exception,details.stack);
+    FlutterError.presentError(details);
+  };
+  PlatformDispatcher.instance.onError=(error,stack){
+    CrashDiagnostics.record('Platform',error,stack);
+    return true;
+  };
+  CrashDiagnostics.mark('Launch');
+  PaintingBinding.instance.imageCache.maximumSizeBytes=48*1024*1024;
+  PaintingBinding.instance.imageCache.maximumSize=110;
   SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft,DeviceOrientation.landscapeRight]);
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const AuroraApp());
@@ -142,6 +151,7 @@ class _AuroraShellState extends State<AuroraShell>{
     return KeyEventResult.ignored;
   }
   Future<void> _restore() async{
+    CrashDiagnostics.mark('Restoring library');
     try{
       await db.open();
       await tmdb.restore();
@@ -296,6 +306,7 @@ class _AuroraShellState extends State<AuroraShell>{
   }
   void _choose(int index){
     if(page==index)return;
+    CrashDiagnostics.mark('Navigation tab $index');
     FocusManager.instance.primaryFocus?.unfocus();
     setState(()=>page=index);
     WidgetsBinding.instance.addPostFrameCallback((_){
@@ -343,6 +354,7 @@ class _AuroraShellState extends State<AuroraShell>{
     if(mounted)setState((){});
   }
   void _open(MediaEntry item) async{
+    CrashDiagnostics.mark('Opening ${item.kind.name}');
     await _recordHistory(item);
     final src=source;
     if(src==null)return;
@@ -426,6 +438,23 @@ class _AuroraShellState extends State<AuroraShell>{
       ),
     ));
   }
+  Future<void> _showCrashReport() async{
+    final report=await CrashDiagnostics.report();
+    if(!mounted)return;
+    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
+      backgroundColor:C.surface,
+      title:const Text('Crash diagnostics'),
+      content:SizedBox(width:650,height:370,
+        child:SingleChildScrollView(child:SelectableText(report))),
+      actions:[
+        TextButton(onPressed:(){
+          Clipboard.setData(ClipboardData(text:report));
+          Navigator.pop(ctx);
+        },child:const Text('Copy report')),
+        TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Close')),
+      ],
+    ));
+  }
   void _settings(){
     final key=TextEditingController(text:tmdb.apiKey);
     final guide=TextEditingController(text:epgUrl);
@@ -447,6 +476,10 @@ class _AuroraShellState extends State<AuroraShell>{
             onChanged:null),
         ]))),
         actions:[
+          TextButton(onPressed:(){
+            Navigator.pop(ctx);
+            _showCrashReport();
+          },child:const Text('Crash diagnostics')),
           TextButton(onPressed:(){Navigator.pop(ctx);setState(()=>showLogin=true);},child:const Text('Change provider')),
           TextButton(onPressed:(){Navigator.pop(ctx);_refresh();},child:const Text('Refresh library')),
           TextButton(onPressed:(){Navigator.pop(ctx);_refreshEpg();},child:const Text('Refresh EPG')),
@@ -945,7 +978,11 @@ class _PlayerScreenState extends State<PlayerScreen>{
  static const pipChannel=MethodChannel('aurora.tv/picture_in_picture');
  Timer? hideTimer;
  int attempt=0;
- @override void initState(){super.initState();_init();}
+ @override void initState(){
+  super.initState();
+  CrashDiagnostics.mark(widget.live?'Playing live TV':'Playing on-demand video');
+  _init();
+ }
  Future<void> _init() async{
   final revision=++attempt;
   final previous=video;
@@ -1319,6 +1356,7 @@ class _GuideScreenState extends State<GuideScreen>{
  }
  void _focus(MediaEntry item){
    if(focused?.id==item.id&&preview!=null)return;
+   CrashDiagnostics.mark('Guide preview');
    _cancelPreview();
    final request=previewRequest;
    setState(()=>focused=item);
