@@ -1210,6 +1210,12 @@ class _GuideScreenState extends State<GuideScreen>{
    if(channels.isEmpty)return;
    final start=first<0?0:(first>=channels.length?channels.length-1:first);
    final end=start+25>channels.length?channels.length:start+25;
+   // Prioritize the current viewport. Rapid scrolling must not accumulate
+   // thousands of obsolete EPG HTTP requests in the background.
+   for(final dropped in epgQueue){
+     epgRequested.remove(dropped.id);
+   }
+   epgQueue.clear();
    for(var i=start;i<end;i++){
      final item=channels[i];
      if(item.streamId.isEmpty||item.id.startsWith('lineup:')||
@@ -1247,7 +1253,6 @@ class _GuideScreenState extends State<GuideScreen>{
    guideScrollTimer=Timer(const Duration(milliseconds:140),(){
      if(!mounted||!guideScroll.hasClients)return;
      final first=(guideScroll.offset/44).floor();
-     _queueVisibleGuides(first);
      _loadVisibleEpg(first);
    });
  }
@@ -1288,6 +1293,7 @@ class _GuideScreenState extends State<GuideScreen>{
          }
        }
      });
+     _queueVisibleGuides(clamped);
    }catch(_){
      // Keep channel navigation and provider short EPG available on DB failure.
    }
@@ -1323,7 +1329,13 @@ class _GuideScreenState extends State<GuideScreen>{
    debounce?.cancel();
    final old=preview;
    preview=null;
-   if(old!=null)_serialPreview(() async{await old.dispose();});
+   if(old!=null)_serialPreview(() async{
+     // Wait until VideoPlayer is removed from the rebuilt widget tree.
+     // Avoid tearing down an Android surface still referenced by this frame.
+     await WidgetsBinding.instance.endOfFrame;
+     try{await old.pause();}catch(_){}
+     try{await old.dispose();}catch(_){}
+   });
  }
  @override void initState(){super.initState();previewEnabled=widget.previewOn;widget.revision.addListener(_loadForAnchor);guideScroll.addListener(_onGuideScroll);_load();}
  @override void didUpdateWidget(covariant GuideScreen old){
