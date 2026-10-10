@@ -1218,6 +1218,19 @@ class _GuideScreenState extends State<GuideScreen>{
  }
  MediaEntry? focused;Timer? debounce;VideoPlayerController? preview;
  bool previewEnabled=true;
+ // Decoder initialization and release must be serialized on Android TV.
+ // Rapid guide navigation must not create multiple simultaneous decoders.
+ Future<void> previewSerial=Future<void>.value();
+ void _serialPreview(Future<void> Function() operation){
+   previewSerial=previewSerial.then((_)=>operation()).catchError((Object _){});
+ }
+ void _cancelPreview(){
+   ++previewRequest;
+   debounce?.cancel();
+   final old=preview;
+   preview=null;
+   if(old!=null)_serialPreview(() async{await old.dispose();});
+ }
  @override void initState(){super.initState();previewEnabled=widget.previewOn;widget.revision.addListener(_loadForAnchor);guideScroll.addListener(_onGuideScroll);_load();}
  @override void didUpdateWidget(covariant GuideScreen old){
    super.didUpdateWidget(old);
@@ -1252,37 +1265,44 @@ class _GuideScreenState extends State<GuideScreen>{
  }
  void _focus(MediaEntry item){
    if(focused?.id==item.id&&preview!=null)return;
-   final request=++previewRequest;
+   _cancelPreview();
+   final request=previewRequest;
    setState(()=>focused=item);
    _shortGuide(item);
-   debounce?.cancel();
-   final old=preview;
-   preview=null;
-   old?.dispose();
    if(!previewEnabled||widget.source==null||item.id.startsWith('lineup:'))return;
-   debounce=Timer(const Duration(milliseconds:450),()async{
-     VideoPlayerController? controller;
-     try{
-       final uri=Uri.parse(widget.source!.playback(item));
-       controller=VideoPlayerController.networkUrl(uri);
-       await controller.initialize().timeout(const Duration(seconds:12));
-       if(!mounted||request!=previewRequest||focused?.id!=item.id){
-         await controller.dispose();return;
+   // Give the D-pad time to settle, then wait for the previous decoder to
+   // finish releasing before creating a new native VideoPlayerController.
+   debounce=Timer(const Duration(milliseconds:850),(){
+     _serialPreview(() async{
+       if(!mounted||request!=previewRequest||!previewEnabled||
+          focused?.id!=item.id||widget.source==null)return;
+       VideoPlayerController? controller;
+       try{
+         final uri=Uri.parse(widget.source!.playback(item));
+         controller=VideoPlayerController.networkUrl(uri);
+         await controller.initialize().timeout(const Duration(seconds:12));
+         if(!mounted||request!=previewRequest||focused?.id!=item.id){
+           await controller.dispose();return;
+         }
+         await controller.setVolume(0);
+         await controller.setLooping(true);
+         await controller.play();
+         if(!mounted||request!=previewRequest||focused?.id!=item.id){
+           await controller.dispose();return;
+         }
+         setState(()=>preview=controller);
+       }catch(_){
+         await controller?.dispose();
        }
-       await controller.setVolume(0);
-       await controller.setLooping(true);
-       await controller.play();
-       if(mounted&&request==previewRequest)setState(()=>preview=controller);
-     }catch(_){
-       await controller?.dispose();
-       // Keep navigation available if the provider stream cannot preview.
-     }
+     });
    });
  }
  @override void dispose(){
-   ++previewRequest;
+   _cancelPreview();
    widget.revision.removeListener(_loadForAnchor);
-   debounce?.cancel();preview?.dispose();guideScroll.dispose();super.dispose();
+   guideScroll.removeListener(_onGuideScroll);
+   guideScroll.dispose();
+   super.dispose();
  }
  @override Widget build(BuildContext context){
    final channels=widget.channels;
@@ -1304,9 +1324,11 @@ class _GuideScreenState extends State<GuideScreen>{
        ])),
        const SizedBox(width:16),
        IconButton(tooltip:previewEnabled?'Turn off automatic preview':'Turn on automatic preview',
-         onPressed:(){setState(()=>previewEnabled=!previewEnabled);
-           if(!previewEnabled){++previewRequest;debounce?.cancel();preview?.dispose();preview=null;}
-           else if(selected!=null){focused=null;_focus(selected);}},
+         onPressed:(){
+           setState(()=>previewEnabled=!previewEnabled);
+           if(!previewEnabled)_cancelPreview();
+           else if(selected!=null){focused=null;_focus(selected);}
+         },
          icon:Icon(previewEnabled?Icons.picture_in_picture:Icons.picture_in_picture_alt)),
        SizedBox(width:265,height:136,child:ClipRRect(borderRadius:BorderRadius.circular(9),
          child:ColoredBox(color:Colors.black,child:preview?.value.isInitialized==true?
