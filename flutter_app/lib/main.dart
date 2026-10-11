@@ -1212,6 +1212,13 @@ class _GuideScreenState extends State<GuideScreen>{
  static const Duration epgPause=Duration(milliseconds:750);
  static const Duration guideScrollPause=Duration(milliseconds:380);
  bool get epgLoading=>epgInFlight>0||epgQueue.isNotEmpty;
+ void _updateEpgIndicator(){
+   // Focus changes can arrive while Flutter is laying out guide rows.
+   // Do not call setState synchronously during focus traversal.
+   WidgetsBinding.instance.addPostFrameCallback((_){
+     if(mounted)setState((){});
+   });
+ }
  void _queueVisibleGuides(int first,{MediaEntry? priority}){
    if(!mounted||widget.source?.kind!='xtream')return;
    final channels=widget.channels;
@@ -1234,7 +1241,7 @@ class _GuideScreenState extends State<GuideScreen>{
    // The progress count is for the current visible batch only.
    epgLoaded=0;
    epgWork=epgQueue.length+epgInFlight;
-   setState((){});
+   _updateEpgIndicator();
    _drainEpg();
  }
  void _drainEpg(){
@@ -1244,7 +1251,7 @@ class _GuideScreenState extends State<GuideScreen>{
    final source=widget.source;
    if(source==null)return;
    epgInFlight=1;
-   setState((){});
+   _updateEpgIndicator();
    () async{
      try{
        final data=await widget.provider.shortEpg(source,item);
@@ -1490,7 +1497,7 @@ class _GuideScreenState extends State<GuideScreen>{
          const SizedBox(width:7),
          Text('EPG loading ${loadingDone}/${epgWork}',
            style:const TextStyle(color:C.aqua,fontSize:12)),
-       ])else const Text('EPG ready',
+       ])else const Text('EPG idle',
          style:TextStyle(color:C.secondary,fontSize:12)),
        const SizedBox(width:10),
        IconButton(onPressed:(){setState(()=>anchor=anchor.subtract(const Duration(hours:1)));_loadForAnchor();},
