@@ -74,6 +74,10 @@ class _AuroraShellState extends State<AuroraShell>{
   bool epgSyncing=false;
   String status='',epgUrl='';
   MediaEntry? featured;
+  MediaEntry? detailItem;
+  Future<TmdbTitleDetails?>? detailFuture;
+  Future<List<MediaEntry>>? detailRelated;
+  final FocusNode detailPlayFocus=FocusNode(debugLabel:'Details play');
   MovieMeta meta=const MovieMeta();
   final Map<MediaKind,List<MediaEntry>> shelves={};
   final Map<MediaKind,List<MediaEntry>> trends={};
@@ -104,6 +108,13 @@ class _AuroraShellState extends State<AuroraShell>{
     });
   }
   void _backToNavigation(){
+    if(detailItem!=null){
+      setState(()=>detailItem=null);
+      WidgetsBinding.instance.addPostFrameCallback((_){
+        if(mounted)_focusNavigation(page);
+      });
+      return;
+    }
     if(navFocus.any((n)=>n.hasFocus) && page!=0){
       _choose(0);
     }else{
@@ -305,6 +316,8 @@ class _AuroraShellState extends State<AuroraShell>{
       db:db,kind:kind,onPlay:_open,onFocus:_feature)));
   }
   void _choose(int index){
+    if(page==index&&detailItem==null)return;
+    if(detailItem!=null)setState(()=>detailItem=null);
     if(page==index)return;
     CrashDiagnostics.mark('Navigation tab $index');
     FocusManager.instance.primaryFocus?.unfocus();
@@ -413,30 +426,132 @@ class _AuroraShellState extends State<AuroraShell>{
       actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Close'))]));
   }
   void _details(MediaEntry item){
-    showDialog<void>(context:context,builder:(ctx)=>Dialog(
-      backgroundColor:const Color(0xff0e1821),
-      shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(18)),
-      child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:770,maxHeight:500),
-        child:Padding(padding:const EdgeInsets.all(24),child:Row(children:[
-          SizedBox(width:200,child:artwork(item.artwork,fit:BoxFit.contain)),
-          const SizedBox(width:28),
-          Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-            Text(item.cleanTitle,style:Theme.of(context).textTheme.headlineLarge),
-            const SizedBox(height:14),
-            Text('${item.year>0?item.year:''}  ${meta.genres}',style:const TextStyle(color:C.gold)),
-            const SizedBox(height:16),
-            Expanded(child:SingleChildScrollView(child:Text(meta.overview.isNotEmpty?meta.overview:item.category,
-              style:const TextStyle(color:C.secondary,fontSize:16)))),
-            Row(children:[
-              AuroraButton(text:'▶  Play',onPressed:(){Navigator.pop(ctx);_open(item);},primary:true),
-              const SizedBox(width:12),
-              AuroraButton(text:item.favorite?'♥ In My List':'+ My List',
-                onPressed:(){Navigator.pop(ctx);_toggle(item);}),
-            ]),
-          ])),
+    if(item.kind==MediaKind.live){_open(item);return;}
+    detailFuture=tmdb.fullDetails(item);
+    detailRelated=detailFuture!.then((details)async{
+      if(details==null||details.related.isEmpty)return <MediaEntry>[];
+      final matches=await db.matchTitleMap(item.kind,
+        details.related.map((e)=>e.title).toList());
+      return [
+        for(final related in details.related)
+          if(matches[related.title]!=null)
+            _withTmdbArt(matches[related.title]!,related),
+      ].take(18).toList();
+    });
+    setState(()=>detailItem=item);
+    final route=ModalRoute.of(context);
+    if(route!=null&&!route.isCurrent&&Navigator.of(context).canPop()){
+      Navigator.of(context).pop();
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_){
+      if(mounted&&detailItem?.id==item.id)detailPlayFocus.requestFocus();
+    });
+  }
+  Widget _titlePage(MediaEntry item){
+    return FutureBuilder<TmdbTitleDetails?>(
+      future:detailFuture,builder:(ctx,snapshot){
+      final info=snapshot.data;
+      final backdrop=info?.backdrop.isNotEmpty==true?info!.backdrop:item.artwork;
+      return ListView(padding:const EdgeInsets.only(bottom:55),children:[
+        SizedBox(height:245,child:Stack(children:[
+          Positioned.fill(child:artwork(backdrop,memoryWidth:1280)),
+          const Positioned.fill(child:DecoratedBox(decoration:BoxDecoration(
+            gradient:LinearGradient(
+              colors:[Color(0xff070e16),Color(0xe6070e16),Color(0x22070e16)],
+              stops:[0,.56,1])))),
+          Positioned(left:28,top:12,child:TextButton.icon(
+            onPressed:()=>_backToNavigation(),
+            icon:const Icon(Icons.arrow_back),label:const Text('BACK TO BROWSE'))),
+          Positioned(left:32,right:260,bottom:24,child:Column(
+            crossAxisAlignment:CrossAxisAlignment.start,mainAxisSize:MainAxisSize.min,
+            children:[
+              Text(item.cleanTitle,maxLines:2,overflow:TextOverflow.ellipsis,
+                style:const TextStyle(color:Colors.white,fontSize:32,
+                  fontWeight:FontWeight.w800,height:1.06)),
+              const SizedBox(height:9),
+              Text([
+                if(item.year>0)'${item.year}',
+                if(info?.runtime!=null&&info!.runtime>0)'${info.runtime} min',
+                if(info!=null&&info.rating>0)'★ ${info.rating.toStringAsFixed(1)}',
+                if(info?.genres.isNotEmpty==true)info!.genres,
+              ].join('  ·  '),maxLines:1,overflow:TextOverflow.ellipsis,
+                style:const TextStyle(color:C.gold,fontSize:13)),
+              if(info?.tagline.isNotEmpty==true)Padding(
+                padding:const EdgeInsets.only(top:6),
+                child:Text(info!.tagline,maxLines:1,overflow:TextOverflow.ellipsis,
+                  style:const TextStyle(color:C.secondary,fontSize:13))),
+            ])),
         ])),
-      ),
-    ));
+        Padding(padding:const EdgeInsets.fromLTRB(32,8,32,12),
+          child:Row(children:[
+            OutlinedButton.icon(focusNode:detailPlayFocus,
+              onPressed:()=>_open(item),icon:const Icon(Icons.play_arrow),
+              label:Text(item.kind==MediaKind.series?'View episodes':'Play movie'),
+              style:const ButtonStyle(
+                backgroundColor:WidgetStatePropertyAll(C.aqua),
+                foregroundColor:WidgetStatePropertyAll(Colors.black),
+                padding:WidgetStatePropertyAll(EdgeInsets.symmetric(
+                  horizontal:20,vertical:12)))),
+            const SizedBox(width:12),
+            OutlinedButton.icon(onPressed:()async{
+              await _toggle(item);
+              if(mounted&&detailItem?.id==item.id){
+                _details(MediaEntry(id:item.id,title:item.title,kind:item.kind,
+                  category:item.category,artwork:item.artwork,extension:item.extension,
+                  streamId:item.streamId,directUrl:item.directUrl,epgId:item.epgId,
+                  year:item.year,rating:item.rating,favorite:!item.favorite));
+              }
+            },icon:Icon(item.favorite?Icons.check:Icons.add),
+              label:Text(item.favorite?'In My List':'My List')),
+            const Spacer(),
+            const Text('SOURCE: IPTV PROVIDER',
+              style:TextStyle(fontSize:11,color:C.secondary,letterSpacing:1.3)),
+          ])),
+        if(snapshot.connectionState==ConnectionState.waiting)
+          const Padding(padding:EdgeInsets.symmetric(horizontal:32,vertical:6),
+            child:LinearProgressIndicator(minHeight:2,color:C.aqua)),
+        Padding(padding:const EdgeInsets.fromLTRB(32,8,32,18),child:Column(
+          crossAxisAlignment:CrossAxisAlignment.start,children:[
+            const Text('OVERVIEW',style:TextStyle(fontSize:14,
+              color:C.aqua,fontWeight:FontWeight.w800,letterSpacing:1.3)),
+            const SizedBox(height:7),
+            Text(info?.overview.isNotEmpty==true?info!.overview:
+              'No verified TMDB description for this provider title. '
+              'Playback uses the actual IPTV catalog entry.',
+              style:const TextStyle(fontSize:14,height:1.5,color:C.ink)),
+          ])),
+        if(info?.cast.isNotEmpty==true)...[
+          const Padding(padding:EdgeInsets.fromLTRB(32,0,32,9),child:Text('CAST',
+            style:TextStyle(fontSize:17,fontWeight:FontWeight.w700))),
+          SizedBox(height:118,child:ListView.separated(
+            scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:32),
+            itemCount:info!.cast.length,
+            separatorBuilder:(_,__)=>const SizedBox(width:12),
+            itemBuilder:(ctx,i){
+              final actor=info.cast[i];
+              return SizedBox(width:160,child:Row(children:[
+                SizedBox(width:45,height:66,child:ClipRRect(
+                  borderRadius:BorderRadius.circular(7),
+                  child:artwork(actor.photo,fit:BoxFit.cover,memoryWidth:185))),
+                const SizedBox(width:7),
+                Expanded(child:Column(mainAxisAlignment:MainAxisAlignment.center,
+                  crossAxisAlignment:CrossAxisAlignment.start,children:[
+                  Text(actor.name,maxLines:2,overflow:TextOverflow.ellipsis,
+                    style:const TextStyle(fontSize:12,fontWeight:FontWeight.w700)),
+                  Text(actor.character,maxLines:2,overflow:TextOverflow.ellipsis,
+                    style:const TextStyle(fontSize:11,color:C.secondary)),
+                ])),
+              ]));
+            })),
+        ],
+        FutureBuilder<List<MediaEntry>>(future:detailRelated,
+          builder:(ctx,results){
+            final related=results.data??[];
+            return related.isEmpty?const SizedBox.shrink():
+              _shelf('MORE LIKE THIS · IN YOUR LIBRARY',related,item.kind);
+          }),
+      ]);
+    });
   }
   Future<void> _showCrashReport() async{
     final report=await CrashDiagnostics.report();
@@ -499,7 +614,7 @@ class _AuroraShellState extends State<AuroraShell>{
   }
   @override void dispose(){
     db.close();provider.dispose();tmdb.dispose();epg.dispose();
-    heroVersion.dispose();guideRevision.dispose();
+    heroVersion.dispose();guideRevision.dispose();detailPlayFocus.dispose();
     for(final node in navFocus){node.dispose();}
     navScroll.dispose();
     super.dispose();
@@ -548,6 +663,7 @@ class _AuroraShellState extends State<AuroraShell>{
     ])))); 
   }
   Widget _activePage(){
+    if(detailItem!=null)return _titlePage(detailItem!);
     switch(page){
       case 0: return _discovery(MediaKind.movie,home:true);
       case 1: return GuideScreen(
