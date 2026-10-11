@@ -410,7 +410,8 @@ class _AuroraShellState extends State<AuroraShell>{
     if(stream.isEmpty)return;
     if(!mounted)return;
     await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder:(_)=>PlayerScreen(title:item.cleanTitle,url:stream,live:item.kind==MediaKind.live)));
+      builder:(_)=>PlayerScreen(title:item.cleanTitle,url:stream,live:item.kind==MediaKind.live,
+        alternatives:item.kind==MediaKind.live?null:()=>provider.playbackOptions(src,item))));
   }
   void _episodes(MediaEntry item,List<MediaEntry> episodes){
     Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>
@@ -1079,66 +1080,222 @@ class _EpisodeBrowserState extends State<EpisodeBrowser>{
  }
 }
 
-class PlayerScreen extends StatefulWidget{
- final String title,url;final bool live;
- final List<MediaEntry> episodes;final MediaEntry? episode;final IptvSource? source;
+class PlayerScreen extends StatefulWidget {
+ final String title,url;
+ final bool live;
+ final List<MediaEntry> episodes;
+ final MediaEntry? episode;
+ final IptvSource? source;
+ final Future<List<String>> Function()? alternatives;
  const PlayerScreen({super.key,required this.title,required this.url,this.live=false,
-   this.episodes=const [],this.episode,this.source});
+   this.episodes=const [],this.episode,this.source,this.alternatives});
  @override State<PlayerScreen> createState()=>_PlayerScreenState();
 }
 class _PlayerScreenState extends State<PlayerScreen>{
  VideoPlayerController? video;
- String error='';
- String? episodeTitle,episodeUrl;
- bool buffering=true,controls=true,muted=false,fillScreen=false;
- double playbackSpeed=1;
+ final FocusNode surfaceFocus=FocusNode(debugLabel:'Player video');
+ final FocusNode playFocus=FocusNode(debugLabel:'Player controls');
+ final FocusNode backFocus=FocusNode(debugLabel:'Back from player');
  static const pipChannel=MethodChannel('aurora.tv/picture_in_picture');
+ static const externalChannel=MethodChannel('aurora.tv/external_playback');
+ bool controls=true,buffering=true,muted=false;
+ int displayMode=0,attempt=0;
+ double playbackSpeed=1;
+ String error='',status='Opening video…',lastUrl='';
+ String? episodeTitle,episodeUrl;
  Timer? hideTimer;
- int attempt=0;
  @override void initState(){
-  super.initState();
-  CrashDiagnostics.mark(widget.live?'Playing live TV':'Playing on-demand video');
-  _init();
+   super.initState();
+   CrashDiagnostics.mark(widget.live?'Playing live TV':'Playing VOD');
+   _init();
  }
- Future<void> _init() async{
-  final revision=++attempt;
-  final previous=video;
-  video=null;
-  previous?.removeListener(_monitor);
-  await previous?.dispose();
-  if(!mounted||revision!=attempt)return;
-  setState((){buffering=true;error='';});
-  final controller=VideoPlayerController.networkUrl(Uri.parse(episodeUrl??widget.url));
-  video=controller;
-  controller.addListener(_monitor);
-  try{
-    await controller.initialize().timeout(const Duration(seconds:22));
-    if(!mounted||revision!=attempt){await controller.dispose();return;}
-    await controller.play();
-    _showControls();
-    setState(()=>buffering=false);
-  }catch(e){
-    if(mounted&&revision==attempt)setState((){
-      error='Unable to play stream. Check your provider or retry.';
-      buffering=false;
-    });
-  }
+ Future<void> _init()async{
+   final revision=++attempt;
+   hideTimer?.cancel();
+   final previous=video;
+   video=null;
+   previous?.removeListener(_monitor);
+   try{await previous?.dispose();}catch(_){}
+   if(!mounted||revision!=attempt)return;
+   setState((){error='';buffering=true;controls=true;status='Opening video…';});
+   final candidates=<String>[episodeUrl??widget.url];
+   var expanded=false;
+   Object? lastFailure;
+   for(var i=0;i<candidates.length && i<5;i++){
+     if(!mounted||revision!=attempt)return;
+     final url=candidates[i];
+     lastUrl=url;
+     VideoPlayerController? controller;
+     try{
+       setState(()=>status=i==0?'Connecting to provider…':
+         'Trying provider format \${i+1} of \${candidates.length}…');
+       controller=VideoPlayerController.networkUrl(Uri.parse(url));
+       video=controller;
+       controller.addListener(_monitor);
+       await controller.initialize().timeout(const Duration(seconds:14));
+       if(!mounted||revision!=attempt){
+         controller.removeListener(_monitor);
+         await controller.dispose();
+         return;
+       }
+       await controller.setVolume(muted?0:1);
+       try{await controller.setPlaybackSpeed(playbackSpeed);}catch(_){}
+       await controller.play();
+       if(!mounted||revision!=attempt)return;
+       setState((){buffering=false;error='';status='';controls=true;});
+       _showControls();
+       return;
+     }catch(e){
+       lastFailure=e;
+       controller?.removeListener(_monitor);
+       if(identical(video,controller))video=null;
+       try{await controller?.dispose();}catch(_){}
+       if(!mounted||revision!=attempt)return;
+       if(!expanded && widget.alternatives!=null && episodeUrl==null){
+         expanded=true;
+         try{
+           final options=await widget.alternatives!()
+             .timeout(const Duration(seconds:10));
+           for(final next in options){
+             if(next!=url&&!candidates.contains(next)&&
+                (next.startsWith('http://')||next.startsWith('https://'))){
+               candidates.add(next);
+             }
+           }
+         }catch(_){}
+       }
+     }
+   }
+   if(!mounted||revision!=attempt)return;
+   final safe=(lastFailure??'Unknown stream error').toString()
+     .replaceAll(RegExp(r'https?://[^\s,)\]]+'),'[provider URL hidden]')
+     .replaceAll(RegExp(r'(username|password|token)=[^\s&,]+',caseSensitive:false),
+       '[credential hidden]');
+   setState((){
+     buffering=false;controls=true;
+     status='';
+     error='Unable to decode or load this IPTV stream. '
+       'The provider may require a different container or codec.'
+       '\n\${safe.length>210?safe.substring(0,210):safe}';
+   });
+   CrashDiagnostics.record('Playback error',error,null);
  }
  void _monitor(){
-  final v=video;
-  if(!mounted||v==null)return;
-  if(v.value.hasError&&error.isEmpty){
-    setState(()=>error=v.value.errorDescription??'Playback error');
-  }
-  if(buffering!=v.value.isBuffering && v.value.isInitialized){
-    setState(()=>buffering=v.value.isBuffering);
-  }
+   final v=video;
+   if(!mounted||v==null)return;
+   if(v.value.hasError&&error.isEmpty){
+     final message=(v.value.errorDescription??'Decoder error').replaceAll(
+       RegExp(r'https?://[^\s,)\]]+'),'[provider URL hidden]');
+     setState(()=>error=message);
+   }else if(v.value.isInitialized){
+     setState(()=>buffering=v.value.isBuffering);
+   }
+ }
+ void _showControls(){
+   hideTimer?.cancel();
+   if(mounted)setState(()=>controls=true);
+   hideTimer=Timer(const Duration(seconds:12),(){
+     if(mounted&&surfaceFocus.hasFocus&&video?.value.isPlaying==true){
+       setState(()=>controls=false);
+     }
+   });
+ }
+ void _playPause(){
+   final v=video;
+   if(v==null||!v.value.isInitialized)return;
+   v.value.isPlaying?v.pause():v.play();
+   _showControls();
+ }
+ void _seek(Duration delta){
+   final v=video;
+   if(v==null||!v.value.isInitialized||v.value.duration.inSeconds<=0)return;
+   final target=v.value.position+delta;
+   final clamped=target<Duration.zero?Duration.zero:
+     target>v.value.duration?v.value.duration:target;
+   v.seekTo(clamped);
+   _showControls();
+ }
+ KeyEventResult _surfaceKey(FocusNode node,KeyEvent event){
+   if(event is! KeyDownEvent)return KeyEventResult.ignored;
+   final key=event.logicalKey;
+   if(key==LogicalKeyboardKey.arrowDown){
+     _showControls();
+     playFocus.requestFocus();
+     return KeyEventResult.handled;
+   }
+   if(key==LogicalKeyboardKey.arrowUp){
+     _showControls();
+     backFocus.requestFocus();
+     return KeyEventResult.handled;
+   }
+   if(key==LogicalKeyboardKey.select||key==LogicalKeyboardKey.enter||
+      key==LogicalKeyboardKey.space){
+     _playPause();
+     return KeyEventResult.handled;
+   }
+   if(key==LogicalKeyboardKey.arrowLeft){
+     _seek(const Duration(seconds:-10));return KeyEventResult.handled;
+   }
+   if(key==LogicalKeyboardKey.arrowRight){
+     _seek(const Duration(seconds:10));return KeyEventResult.handled;
+   }
+   return KeyEventResult.ignored;
+ }
+ Future<void> _pip()async{
+   if(!widget.live)return;
+   try{await pipChannel.invokeMethod<void>('enter');}
+   catch(_){if(mounted)ScaffoldMessenger.of(context).showSnackBar(
+     const SnackBar(content:Text('Picture-in-picture unavailable.')));}
+ }
+ Future<void> _external()async{
+   final url=lastUrl.isNotEmpty?lastUrl:widget.url;
+   try{
+     await externalChannel.invokeMethod<bool>('open',{'url':url});
+   }catch(_){
+     if(mounted)ScaffoldMessenger.of(context).showSnackBar(
+       const SnackBar(content:Text('Install a compatible player such as VLC '
+         'to open this provider stream externally.')));
+   }
+ }
+ Future<void> _aspectMenu()async{
+   await showModalBottomSheet<void>(context:context,
+     backgroundColor:const Color(0xff101c29),
+     builder:(ctx)=>SafeArea(child:Column(mainAxisSize:MainAxisSize.min,children:[
+       const Padding(padding:EdgeInsets.all(16),child:Text('DISPLAY MODE',
+         style:TextStyle(fontSize:18,fontWeight:FontWeight.w800))),
+       for(var i=0;i<3;i++)
+         ListTile(
+           leading:Icon(displayMode==i?Icons.check_circle:Icons.radio_button_unchecked,
+             color:displayMode==i?C.aqua:C.secondary),
+           title:Text(['Fit · Original ratio','Fill · Crop edges','Stretch · Entire screen'][i]),
+           onTap:(){setState(()=>displayMode=i);Navigator.pop(ctx);_showControls();}),
+     ]))));
+ }
+ Future<void> _speedMenu()async{
+   await showModalBottomSheet<void>(context:context,
+     backgroundColor:const Color(0xff101c29),
+     builder:(ctx)=>SafeArea(child:Column(mainAxisSize:MainAxisSize.min,children:[
+       const Padding(padding:EdgeInsets.all(12),child:Text('PLAYBACK SPEED',
+         style:TextStyle(fontSize:18,fontWeight:FontWeight.w800))),
+       for(final value in <double>[.5,.75,1,1.25,1.5,2])
+         ListTile(
+           leading:Icon(playbackSpeed==value?Icons.check_circle:Icons.radio_button_unchecked,
+             color:playbackSpeed==value?C.aqua:C.secondary),
+           title:Text('\${value}×'),
+           onTap:()async{
+             playbackSpeed=value;
+             try{await video?.setPlaybackSpeed(value);}catch(_){}
+             if(ctx.mounted)Navigator.pop(ctx);
+             _showControls();
+           }),
+     ]))));
  }
  void _selectEpisode(MediaEntry episode){
-  final src=widget.source;
-  if(src==null)return;
-  setState((){episodeTitle=episode.title;episodeUrl=src.playback(episode);});
-  _init();
+   final src=widget.source;
+   if(src==null)return;
+   episodeTitle=episode.title;
+   episodeUrl=src.playback(episode);
+   _init();
  }
  Future<void> _episodePicker()async{
   if(widget.episodes.isEmpty)return;
@@ -1176,122 +1333,144 @@ class _PlayerScreenState extends State<PlayerScreen>{
    });
   if(picked!=null&&mounted)_selectEpisode(picked);
  }
- void _showControls(){
-  hideTimer?.cancel();
-  if(mounted)setState(()=>controls=true);
-  hideTimer=Timer(const Duration(seconds:7),(){
-    if(mounted&&video?.value.isPlaying==true)setState(()=>controls=false);
-  });
+
+ Widget _action(IconData icon,String label,VoidCallback action,{FocusNode? node}){
+   return Padding(padding:const EdgeInsets.only(right:8),
+     child:OutlinedButton.icon(
+       focusNode:node,onPressed:action,icon:Icon(icon,size:20),
+       label:Text(label,style:const TextStyle(fontSize:12,fontWeight:FontWeight.w600)),
+       style:ButtonStyle(
+         padding:const WidgetStatePropertyAll(
+           EdgeInsets.symmetric(horizontal:13,vertical:12)),
+         backgroundColor:WidgetStateProperty.resolveWith((states)=>
+           states.contains(WidgetState.focused)?
+             C.aqua.withValues(alpha:.35):Colors.white.withValues(alpha:.09)),
+         side:WidgetStateProperty.resolveWith((states)=>BorderSide(
+           width:states.contains(WidgetState.focused)?2:1,
+           color:states.contains(WidgetState.focused)?C.aqua:Colors.white24)),
+         foregroundColor:const WidgetStatePropertyAll(Colors.white),
+         shape:WidgetStatePropertyAll(RoundedRectangleBorder(
+           borderRadius:BorderRadius.circular(10))),
+       )));
  }
- Future<void> _pip()async{
-  if(!widget.live)return;
-  try{
-    await pipChannel.invokeMethod<void>('enter');
-  }catch(_){
-    if(mounted)ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content:Text('System picture-in-picture is unavailable on this device.')));
-  }
- }
- void _seek(Duration delta){
-  final v=video;
-  if(v==null||!v.value.isInitialized||v.value.duration.inSeconds<=0)return;
-  final position=v.value.position+delta;
-  final bounded=position<Duration.zero?Duration.zero:
-    position>v.value.duration?v.value.duration:position;
-  v.seekTo(bounded);_showControls();
+ String _time(Duration v){
+   final h=v.inHours,m=v.inMinutes.remainder(60),s=v.inSeconds.remainder(60);
+   final mm=m.toString().padLeft(2,'0'),ss=s.toString().padLeft(2,'0');
+   return h>0?'$h:$mm:$ss':'$m:$ss';
  }
  @override void dispose(){
-  ++attempt;hideTimer?.cancel();
-  video?.removeListener(_monitor);video?.dispose();
-  super.dispose();
+   ++attempt;
+   hideTimer?.cancel();
+   surfaceFocus.dispose();playFocus.dispose();backFocus.dispose();
+   video?.removeListener(_monitor);
+   video?.dispose();
+   super.dispose();
  }
  @override Widget build(BuildContext context){
-  final v=video;
-  final initialized=v?.value.isInitialized==true;
-  final duration=initialized?v!.value.duration:Duration.zero;
-  final position=initialized?v!.value.position:Duration.zero;
-  final seekable=duration.inSeconds>0&&duration< const Duration(days:1);
-  return Scaffold(body:Focus(
-   autofocus:true,onKeyEvent:(_,event){
-     if(event is! KeyDownEvent)return KeyEventResult.ignored;
-     if(event.logicalKey==LogicalKeyboardKey.arrowLeft&&seekable){
-       _seek(const Duration(seconds:-10));return KeyEventResult.handled;
-     }
-     if(event.logicalKey==LogicalKeyboardKey.arrowRight&&seekable){
-       _seek(const Duration(seconds:10));return KeyEventResult.handled;
-     }
-     if(event.logicalKey==LogicalKeyboardKey.select ||
-       event.logicalKey==LogicalKeyboardKey.enter ||
-       event.logicalKey==LogicalKeyboardKey.space){
-       if(v!=null&&initialized){v.value.isPlaying?v.pause():v.play();_showControls();}
-       return KeyEventResult.handled;
-     }
-     _showControls();return KeyEventResult.ignored;
-   },
-   child:GestureDetector(
-    behavior:HitTestBehavior.opaque,
-    onTap:_showControls,
-    child:Stack(children:[
-      Positioned.fill(child:initialized?
-       FittedBox(fit:fillScreen?BoxFit.cover:BoxFit.contain,child:SizedBox(
-         width:v!.value.size.width,height:v.value.size.height,child:VideoPlayer(v))):
-       const ColoredBox(color:Colors.black)),
-      if(controls||error.isNotEmpty)Positioned(top:0,left:0,right:0,
-        child:Container(padding:const EdgeInsets.symmetric(vertical:12,horizontal:20),
-          color:Colors.black54,child:Row(children:[
-          IconButton(onPressed:()=>Navigator.pop(context),icon:const Icon(Icons.arrow_back)),
-          Expanded(child:Text(episodeTitle??widget.title,maxLines:1,overflow:TextOverflow.ellipsis,
-            style:const TextStyle(fontSize:19,fontWeight:FontWeight.w700))),
-          if(widget.episodes.isNotEmpty)IconButton(tooltip:'Seasons and episodes',
-            onPressed:_episodePicker,icon:const Icon(Icons.video_library_outlined)),
-          IconButton(tooltip:'Retry playback',onPressed:_init,icon:const Icon(Icons.refresh)),
-          if(widget.live)IconButton(tooltip:'Picture-in-picture',onPressed:_pip,
-            icon:const Icon(Icons.picture_in_picture_alt_outlined)),
-        ]))),
-      if(buffering)const Center(child:CircularProgressIndicator(color:C.aqua)),
-      if(error.isNotEmpty)Center(child:Container(
-        padding:const EdgeInsets.all(26),color:Colors.black87,
-        child:Column(mainAxisSize:MainAxisSize.min,children:[
-          Text(error,textAlign:TextAlign.center),
-          const SizedBox(height:12),
-          AuroraButton(text:'Retry',onPressed:_init),
-        ]))),
-      if(controls&&initialized&&error.isEmpty)Positioned(
-        left:28,right:28,bottom:22,child:Container(
-          padding:const EdgeInsets.all(10),color:Colors.black54,
-          child:Row(children:[
-            IconButton(onPressed:(){
-              v.value.isPlaying?v.pause():v.play();_showControls();
-            },icon:Icon(v!.value.isPlaying?Icons.pause:Icons.play_arrow,size:30)),
-            IconButton(tooltip:muted?'Unmute':'Mute',onPressed:(){
-              muted=!muted;v.setVolume(muted?0:1);_showControls();
-            },icon:Icon(muted?Icons.volume_off:Icons.volume_up)),
-            if(widget.episodes.isNotEmpty)IconButton(tooltip:'Episodes',
-              onPressed:_episodePicker,icon:const Icon(Icons.playlist_play)),
-            IconButton(tooltip:'Aspect ratio',onPressed:(){
-              setState(()=>fillScreen=!fillScreen);_showControls();
-            },icon:Icon(fillScreen?Icons.fit_screen:Icons.aspect_ratio)),
-            if(seekable)...[
-              IconButton(onPressed:()=>_seek(const Duration(seconds:-10)),
-                icon:const Icon(Icons.replay_10)),
-              Expanded(child:Slider(
-                value:position.inMilliseconds.clamp(0,duration.inMilliseconds).toDouble(),
-                max:math.max(1,duration.inMilliseconds).toDouble(),
-                onChanged:(n){v.seekTo(Duration(milliseconds:n.round()));_showControls();})),
-              IconButton(onPressed:()=>_seek(const Duration(seconds:10)),
-                icon:const Icon(Icons.forward_10)),
-              PopupMenuButton<double>(tooltip:'Playback speed',initialValue:playbackSpeed,
-                onSelected:(speed){playbackSpeed=speed;v.setPlaybackSpeed(speed);_showControls();},
-                itemBuilder:(_)=><double>[.5,1,1.25,1.5,2].map((speed)=>PopupMenuItem<double>(
-                  value:speed,child:Text('${speed}x'))).toList(),
-                child:Padding(padding:const EdgeInsets.all(9),child:Text('${playbackSpeed}x'))),
-            ]else const Expanded(child:Text('LIVE',style:TextStyle(color:C.aqua,
-              fontWeight:FontWeight.w800))),
-          ]),
-        )),
-    ]),
-   ),
-  ));
+   final v=video;
+   final initialized=v?.value.isInitialized==true;
+   final seekable=initialized&&!widget.live&&v!.value.duration.inSeconds>0&&
+     v.value.duration< const Duration(days:1);
+   final duration=initialized?v!.value.duration:Duration.zero;
+   final position=initialized?v!.value.position:Duration.zero;
+   final progress=seekable&&duration.inMilliseconds>0?
+     (position.inMilliseconds/duration.inMilliseconds).clamp(0.0,1.0):0.0;
+   return Scaffold(backgroundColor:Colors.black,body:FocusTraversalGroup(
+     child:Stack(children:[
+       Positioned.fill(child:Focus(
+         focusNode:surfaceFocus,autofocus:true,onKeyEvent:_surfaceKey,
+         child:GestureDetector(behavior:HitTestBehavior.opaque,onTap:_showControls,
+           child:initialized?FittedBox(
+             fit:[BoxFit.contain,BoxFit.cover,BoxFit.fill][displayMode],
+             child:SizedBox(width:v!.value.size.width>0?v.value.size.width:640,
+               height:v.value.size.height>0?v.value.size.height:360,
+               child:VideoPlayer(v))):
+             const ColoredBox(color:Colors.black)))),
+       if(buffering)Center(child:Column(mainAxisSize:MainAxisSize.min,children:[
+         const CircularProgressIndicator(color:C.aqua),
+         const SizedBox(height:15),
+         Text(status,style:const TextStyle(color:C.secondary,fontSize:14)),
+       ])),
+       if(controls||error.isNotEmpty)Positioned(top:0,left:0,right:0,
+         child:Container(padding:const EdgeInsets.fromLTRB(20,14,20,18),
+           decoration:const BoxDecoration(gradient:LinearGradient(
+             begin:Alignment.topCenter,end:Alignment.bottomCenter,
+             colors:[Color(0xdd070d15),Color(0x00070d15)])),
+           child:Row(children:[
+             _action(Icons.arrow_back,'Back',()=>Navigator.pop(context),node:backFocus),
+             const SizedBox(width:12),
+             Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,
+               mainAxisSize:MainAxisSize.min,children:[
+               Text(episodeTitle??widget.title,maxLines:1,
+                 overflow:TextOverflow.ellipsis,
+                 style:const TextStyle(fontSize:20,fontWeight:FontWeight.w800)),
+               Text(widget.live?'LIVE · IPTV PROVIDER':'ON DEMAND · IPTV PROVIDER',
+                 style:const TextStyle(fontSize:11,color:C.secondary,letterSpacing:1.4)),
+             ])),
+             _action(Icons.refresh,'Retry',_init),
+             if(widget.live)_action(Icons.picture_in_picture_alt_outlined,'PiP',_pip),
+           ]))),
+       if(controls&&initialized&&error.isEmpty)Positioned(
+         bottom:0,left:0,right:0,
+         child:Container(padding:const EdgeInsets.fromLTRB(25,25,25,18),
+           decoration:const BoxDecoration(gradient:LinearGradient(
+             begin:Alignment.topCenter,end:Alignment.bottomCenter,
+             colors:[Color(0x00070d15),Color(0xf2070d15)])),
+           child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+             Row(children:[
+               Text(widget.live?'LIVE':_time(position),
+                 style:const TextStyle(fontSize:12,color:C.secondary)),
+               const SizedBox(width:12),
+               Expanded(child:ClipRRect(borderRadius:BorderRadius.circular(3),
+                 child:LinearProgressIndicator(value:seekable?progress:null,
+                   minHeight:4,color:C.aqua,
+                   backgroundColor:Colors.white24))),
+               const SizedBox(width:12),
+               Text(widget.live?'ON AIR':_time(duration),
+                 style:const TextStyle(fontSize:12,color:C.secondary)),
+             ]),
+             const SizedBox(height:12),
+             SingleChildScrollView(scrollDirection:Axis.horizontal,child:Row(children:[
+               _action(v!.value.isPlaying?Icons.pause:Icons.play_arrow,
+                 v.value.isPlaying?'Pause':'Play',_playPause,node:playFocus),
+               if(seekable)_action(Icons.replay_10,'Back 10s',
+                 ()=>_seek(const Duration(seconds:-10))),
+               if(seekable)_action(Icons.forward_10,'Forward 10s',
+                 ()=>_seek(const Duration(seconds:10))),
+               _action(muted?Icons.volume_off:Icons.volume_up,
+                 muted?'Unmute':'Mute',(){
+                   setState(()=>muted=!muted);
+                   v.setVolume(muted?0:1);
+                   _showControls();
+                 }),
+               _action(Icons.aspect_ratio,'Aspect ratio',_aspectMenu),
+               if(!widget.live)_action(Icons.speed,'Speed',_speedMenu),
+               if(widget.episodes.isNotEmpty)_action(
+                 Icons.video_library_outlined,'Seasons & episodes',_episodePicker),
+               if(!widget.live)_action(Icons.open_in_new,'External player',_external),
+             ])),
+           ]))),
+       if(error.isNotEmpty)Center(child:Container(
+         width:math.min(MediaQuery.sizeOf(context).width*.68,650),
+         padding:const EdgeInsets.all(23),
+         decoration:BoxDecoration(color:const Color(0xf5111b27),
+           borderRadius:BorderRadius.circular(18),border:Border.all(color:Colors.white24)),
+         child:Column(mainAxisSize:MainAxisSize.min,children:[
+           const Icon(Icons.warning_amber_rounded,size:36,color:C.gold),
+           const SizedBox(height:8),
+           const Text('STREAM COULD NOT PLAY',
+             style:TextStyle(fontSize:18,fontWeight:FontWeight.w800)),
+           const SizedBox(height:8),
+           Text(error,textAlign:TextAlign.center,
+             style:const TextStyle(fontSize:12.5,color:C.secondary)),
+           const SizedBox(height:14),
+           Row(mainAxisAlignment:MainAxisAlignment.center,children:[
+             _action(Icons.refresh,'Retry formats',_init),
+             _action(Icons.open_in_new,'External player',_external),
+             _action(Icons.arrow_back,'Back',()=>Navigator.pop(context)),
+           ]),
+         ]))),
+     ])));
  }
 }
 
