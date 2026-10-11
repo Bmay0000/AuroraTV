@@ -229,12 +229,8 @@ class TmdbClient {
    if(apiKey.isEmpty||item.kind==MediaKind.live)return null;
    final media=item.kind==MediaKind.movie?'movie':'tv';
    var title=item.cleanTitle;
-   title=title.replaceAll(RegExp(r'\s*\((?:19|20)\d{2}\).*
-}
-,caseSensitive:false),'');
-   title=title.replaceAll(RegExp(r'\s*[-|:]\s*(?:VOD|ENGLISH|4K|UHD|FHD|HD).*
-}
-,caseSensitive:false),'');
+   title=title.replaceAll(RegExp(r'\s*\((?:19|20)\d{2}\).*',caseSensitive:false),'');
+   title=title.replaceAll(RegExp(r'\s*[-|:]\s*(?:VOD|ENGLISH|4K|UHD|FHD|HD).*',caseSensitive:false),'');
    title=title.trim();
    if(title.isEmpty)return null;
    final cacheKey='$media:${CatalogDatabase.matchKey(title)}:${item.year}';
