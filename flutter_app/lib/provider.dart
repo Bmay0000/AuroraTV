@@ -180,6 +180,52 @@ class ProviderClient {
     return total;
   }
 
+  /// Obtain playback alternatives using the provider's actual stream ID.
+  /// TMDB is never queried for stream URLs. Some Xtream servers serve VOD
+  /// using a different container extension from the catalog listing.
+  Future<List<String>> playbackOptions(IptvSource source,MediaEntry item) async {
+    final primary=source.playback(item);
+    if(source.kind!='xtream'||item.kind==MediaKind.live||
+       item.streamId.isEmpty)return [primary];
+    final urls=<String>[primary];
+    void add(String candidate){
+      if(candidate.isNotEmpty&&!urls.contains(candidate))urls.add(candidate);
+    }
+    if(item.kind==MediaKind.movie){
+      try{
+        final response=await _http.get(source.action('get_vod_info',
+          {'vod_id':item.streamId})).timeout(const Duration(seconds:8));
+        if(response.statusCode==200 && response.bodyBytes.length<2000000){
+          final data=await compute(_decodeJson,response.body);
+          if(data is Map){
+            final movie=data['movie_data'];
+            final info=data['info'];
+            if(movie is Map){
+              final extension=_string(movie['container_extension'])
+                .replaceAll(RegExp(r'[^a-zA-Z0-9]'),'');
+              if(extension.isNotEmpty&&extension.length<=5){
+                add('${source.base}/movie/${Uri.encodeComponent(source.username)}/${Uri.encodeComponent(source.password)}/${item.streamId}.$extension');
+              }
+              final direct=_string(movie['direct_source']);
+              final parsed=Uri.tryParse(direct);
+              if(parsed!=null&&['http','https'].contains(parsed.scheme))add(direct);
+            }
+            if(info is Map){
+              final direct=_string(info['direct_source']);
+              final parsed=Uri.tryParse(direct);
+              if(parsed!=null&&['http','https'].contains(parsed.scheme))add(direct);
+            }
+          }
+        }
+      }catch(_){/* Continue with provider path alternatives. */}
+    }
+    final folder=item.kind==MediaKind.movie?'movie':'series';
+    for(final ext in const ['mp4','mkv','ts']){
+      add('${source.base}/$folder/${Uri.encodeComponent(source.username)}/${Uri.encodeComponent(source.password)}/${item.streamId}.$ext');
+    }
+    return urls.take(5).toList();
+  }
+
   // Xtream short EPG is a useful fallback when xmltv.php is disabled.
   // Data is fetched only for the stations being viewed, not thousands at once.
   Future<List<TvProgramme>> shortEpg(IptvSource source,MediaEntry station)async{
