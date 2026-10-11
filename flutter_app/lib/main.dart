@@ -1200,6 +1200,7 @@ class _GuideScreenState extends State<GuideScreen>{
  Timer? guideScrollTimer;
  final Set<String> coveredStations=<String>{};
  int epgInFlight=0;
+ bool guideDbLoading=false;
  int guideGeneration=0;
  int guideLoadRequest=0;
  int epgLoaded=0;
@@ -1211,7 +1212,7 @@ class _GuideScreenState extends State<GuideScreen>{
  static const int epgConcurrency=1;
  static const Duration epgPause=Duration(milliseconds:750);
  static const Duration guideScrollPause=Duration(milliseconds:380);
- bool get epgLoading=>epgInFlight>0||epgQueue.isNotEmpty;
+ bool get epgLoading=>guideDbLoading||epgInFlight>0||epgQueue.isNotEmpty;
  void _updateEpgIndicator(){
    // Focus changes can arrive while Flutter is laying out guide rows.
    // Do not call setState synchronously during focus traversal.
@@ -1306,6 +1307,8 @@ class _GuideScreenState extends State<GuideScreen>{
      'name:${GuideNames.canonical(e.cleanTitle)}',
    ]).toSet().toList();
    final begin=anchor;
+   guideDbLoading=true;
+   _updateEpgIndicator();
    try{
      final data=await widget.db.schedules(ids,begin,begin.add(const Duration(hours:3)));
      if(!mounted||generation!=guideGeneration||request!=guideLoadRequest)return;
@@ -1329,6 +1332,11 @@ class _GuideScreenState extends State<GuideScreen>{
      _queueVisibleGuides(clamped);
    }catch(_){
      // Keep channel navigation and provider short EPG available on DB failure.
+   }finally{
+     if(mounted&&generation==guideGeneration&&request==guideLoadRequest){
+       guideDbLoading=false;
+       _updateEpgIndicator();
+     }
    }
  }
  String key(MediaEntry item){
@@ -1373,6 +1381,7 @@ class _GuideScreenState extends State<GuideScreen>{
      guideLoadRequest++;
      guideLastWindow=-1;
      guideLastAnchor=null;
+     guideDbLoading=false;
      epgLoaded=0;
      epgWork=0;
      guideScrollTimer?.cancel();
@@ -1495,7 +1504,9 @@ class _GuideScreenState extends State<GuideScreen>{
          const SizedBox(width:12,height:12,child:CircularProgressIndicator(
            strokeWidth:2,color:C.aqua)),
          const SizedBox(width:7),
-         Text('EPG loading ${loadingDone}/${epgWork}',
+         Text(guideDbLoading&&epgWork==0
+           ?'EPG loading…'
+           :'EPG loading ${loadingDone}/${epgWork}',
            style:const TextStyle(color:C.aqua,fontSize:12)),
        ])else const Text('EPG idle',
          style:TextStyle(color:C.secondary,fontSize:12)),
