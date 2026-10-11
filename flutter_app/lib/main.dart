@@ -1128,7 +1128,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
      VideoPlayerController? controller;
      try{
        setState(()=>status=i==0?'Connecting to provider…':
-         'Trying provider format \${i+1} of \${candidates.length}…');
+         'Trying provider format ${i+1} of ${candidates.length}…');
        controller=VideoPlayerController.networkUrl(Uri.parse(url));
        video=controller;
        controller.addListener(_monitor);
@@ -1176,7 +1176,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
      status='';
      error='Unable to decode or load this IPTV stream. '
        'The provider may require a different container or codec.'
-       '\n\${safe.length>210?safe.substring(0,210):safe}';
+       '\n${safe.length>210?safe.substring(0,210):safe}';
    });
    CrashDiagnostics.record('Playback error',error,null);
  }
@@ -1281,7 +1281,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
          ListTile(
            leading:Icon(playbackSpeed==value?Icons.check_circle:Icons.radio_button_unchecked,
              color:playbackSpeed==value?C.aqua:C.secondary),
-           title:Text('\${value}×'),
+           title:Text('${value}×'),
            onTap:()async{
              playbackSpeed=value;
              try{await video?.setPlaybackSpeed(value);}catch(_){}
