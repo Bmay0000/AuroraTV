@@ -596,15 +596,16 @@ class _AuroraShellState extends State<AuroraShell>{
     final genresForPage=popularGenres[mainKind]??{};
     return LayoutBuilder(builder:(ctx,c){
       final available=c.maxHeight;
-      final heroHeight=(available*.64).clamp(245.0,540.0);
+      // Compact featured area leaves room for multiple shelves on TV screens.
+      final heroHeight=(available*.38).clamp(190.0,295.0);
       return ListView(padding:EdgeInsets.zero,children:[
         SizedBox(height:heroHeight,child:ValueListenableBuilder<int>(valueListenable:heroVersion,
           builder:(_,__,___)=>Stack(children:[
           Align(alignment:Alignment.centerLeft,
-            child:Padding(padding:const EdgeInsets.fromLTRB(34,12,0,6),
+            child:Padding(padding:const EdgeInsets.fromLTRB(26,8,0,8),
               child:ConstrainedBox(
-                constraints:BoxConstraints(maxWidth:math.min(c.maxWidth*.49,680)),
-                child:_heroText()))),
+                constraints:BoxConstraints(maxWidth:math.min(c.maxWidth*.48,570)),
+                child:_heroText(heroHeight)))),
         ]))),
         if(!home)Padding(padding:const EdgeInsets.fromLTRB(30,0,30,12),
           child:Row(children:[
@@ -642,47 +643,47 @@ class _AuroraShellState extends State<AuroraShell>{
       ]);
     });
   }
-  Widget _heroText(){
+  Widget _heroText(double heroHeight){
     final current=featured;
     if(current==null)return const Text('Connect your IPTV library to discover entertainment',
       style:TextStyle(fontSize:24,color:C.ink));
     final hasMeta=meta.rating>0||current.rating>0;
     final rating=meta.rating>0?meta.rating:current.rating;
     return Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
-      Text('AURORATV  /  FEATURED',style:TextStyle(fontSize:11,letterSpacing:3,
+      Text('AURORATV  /  FEATURED',style:TextStyle(fontSize:10,letterSpacing:2.1,
         fontWeight:FontWeight.w700,color:C.aqua.withValues(alpha:.95))),
-      const SizedBox(height:13),
+      const SizedBox(height:6),
       Text(current.cleanTitle.toUpperCase(),maxLines:2,overflow:TextOverflow.ellipsis,
-        style:TextStyle(fontSize:math.min(48,MediaQuery.sizeOf(context).height*.074),
-          fontWeight:FontWeight.w800,height:1.05,letterSpacing:1.2,color:Colors.white,
+        style:TextStyle(fontSize:math.min(32,MediaQuery.sizeOf(context).height*.055),
+          fontWeight:FontWeight.w800,height:1.04,letterSpacing:.7,color:Colors.white,
           shadows:const [Shadow(blurRadius:12,color:Colors.black)])),
-      const SizedBox(height:13),
+      const SizedBox(height:7),
       Text('${hasMeta?'★ ${rating.toStringAsFixed(1)}     ':''}${current.year>0?'${current.year}    ':''}${meta.genres.isNotEmpty?meta.genres:current.kind==MediaKind.series?'TV SERIES':'MOVIE'}',
-        style:const TextStyle(color:C.gold,fontSize:15,fontWeight:FontWeight.w600)),
-      if(meta.overview.isNotEmpty)...[
-        const SizedBox(height:15),
-        Text(meta.overview,maxLines:3,overflow:TextOverflow.ellipsis,
-          style:const TextStyle(fontSize:16,height:1.48,color:C.ink)),
+        style:const TextStyle(color:C.gold,fontSize:12.5,fontWeight:FontWeight.w600)),
+      if(meta.overview.isNotEmpty&&heroHeight>=250)...[
+        const SizedBox(height:7),
+        Text(meta.overview,maxLines:2,overflow:TextOverflow.ellipsis,
+          style:const TextStyle(fontSize:12.5,height:1.26,color:C.ink)),
       ],
-      const SizedBox(height:23),
+      const SizedBox(height:12),
       Row(mainAxisSize:MainAxisSize.min,children:[
-        AuroraButton(text:'▶  Watch Now',primary:true,onPressed:()=>_open(current)),
-        const SizedBox(width:10),
-        AuroraButton(text:'ⓘ  More Info',onPressed:()=>_details(current)),
+        SizedBox(height:38,child:AuroraButton(text:'▶  Watch Now',primary:true,onPressed:()=>_open(current))),
+        const SizedBox(width:8),
+        SizedBox(height:38,child:AuroraButton(text:'ⓘ  More Info',onPressed:()=>_details(current))),
       ]),
     ]);
   }
   Widget _shelf(String heading,List<MediaEntry> items,MediaKind kind,{bool ranked=false}){
     if(items.isEmpty)return const SizedBox.shrink();
-    return Padding(padding:const EdgeInsets.only(top:8,bottom:12),child:Column(
+    return Padding(padding:const EdgeInsets.only(top:4,bottom:7),child:Column(
       crossAxisAlignment:CrossAxisAlignment.start,children:[
-      Padding(padding:const EdgeInsets.fromLTRB(34,0,28,10),child:Row(children:[
-        Expanded(child:Text(heading,style:const TextStyle(fontSize:21,fontWeight:FontWeight.w700))),
+      Padding(padding:const EdgeInsets.fromLTRB(26,0,22,3),child:Row(children:[
+        Expanded(child:Text(heading,style:const TextStyle(fontSize:17,fontWeight:FontWeight.w700))),
         TextButton(onPressed:()=>_choose(kind==MediaKind.series?3:2),
-          child:const Text('See All  →',style:TextStyle(color:C.secondary,fontSize:13))),
+          child:const Text('See All  →',style:TextStyle(color:C.secondary,fontSize:12))),
       ])),
-      SizedBox(height:155,child:ListView.builder(
-        scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:30),
+      SizedBox(height:118,child:ListView.builder(
+        scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:22),
         itemCount:math.min(items.length,20),itemBuilder:(ctx,i){
           final item=items[i];
           return MediaCard(item:item,index:ranked?i+1:0,
@@ -702,9 +703,9 @@ class _AuroraShellState extends State<AuroraShell>{
     padding:const EdgeInsets.fromLTRB(32,26,32,12),
     child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
       Text(heading,style:Theme.of(context).textTheme.headlineLarge),
-      const SizedBox(height:20),
+      const SizedBox(height:12),
       Expanded(child:GridView.builder(gridDelegate:const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent:285,mainAxisSpacing:16,crossAxisSpacing:12,childAspectRatio:1.6),
+        maxCrossAxisExtent:208,mainAxisSpacing:10,crossAxisSpacing:8,childAspectRatio:1.56),
         itemCount:items.length,itemBuilder:(ctx,i)=>MediaCard(item:items[i],index:0,
           onFocused:()=>_feature(items[i]),onOpen:()=>_details(items[i])))),
     ]));
@@ -774,7 +775,7 @@ class _MediaCardState extends State<MediaCard>{
     },
     borderRadius:BorderRadius.circular(12),
     child:AnimatedContainer(duration:const Duration(milliseconds:130),
-      width:242,decoration:BoxDecoration(
+      width:184,decoration:BoxDecoration(
         borderRadius:BorderRadius.circular(12),
         border:Border.all(width:focused?3:1,color:focused?C.aqua:Colors.white12),
         boxShadow:focused?[BoxShadow(color:C.aqua.withValues(alpha:.22),blurRadius:10)]:[],
@@ -784,12 +785,12 @@ class _MediaCardState extends State<MediaCard>{
         DecoratedBox(decoration:BoxDecoration(gradient:LinearGradient(
           begin:Alignment.topCenter,end:Alignment.bottomCenter,
           colors:[Colors.transparent,Colors.black.withValues(alpha:.84)]))),
-        if(widget.index>0)Positioned(top:8,left:10,
+        if(widget.index>0)Positioned(top:5,left:8,
           child:Text('#${widget.index}',style:const TextStyle(
-            color:C.aqua,fontWeight:FontWeight.w800))),
-        Positioned(left:12,right:12,bottom:10,child:Text(widget.item.cleanTitle,
+            fontSize:12,color:C.aqua,fontWeight:FontWeight.w800))),
+        Positioned(left:9,right:9,bottom:7,child:Text(widget.item.cleanTitle,
           maxLines:2,overflow:TextOverflow.ellipsis,
-          style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700,color:Colors.white,
+          style:const TextStyle(fontSize:13,fontWeight:FontWeight.w700,color:Colors.white,
             shadows:[Shadow(color:Colors.black,blurRadius:8)]))),
       ]),
     ),
@@ -1677,8 +1678,8 @@ class _SearchContentState extends State<_SearchContent>{
        onSubmitted:_search),
      const SizedBox(height:16),
      Expanded(child:GridView.builder(
-       gridDelegate:const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent:265,
-         mainAxisSpacing:12,crossAxisSpacing:10,childAspectRatio:1.6),
+       gridDelegate:const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent:208,
+         mainAxisSpacing:9,crossAxisSpacing:8,childAspectRatio:1.56),
        itemCount:results.length,
        itemBuilder:(ctx,i)=>MediaCard(item:results[i],index:0,
          focusNode:i==0?firstResult:null,
@@ -1833,7 +1834,7 @@ class _CatalogBrowseState extends State<CatalogBrowseScreen>{
      const SizedBox(height:14),
      Expanded(child:GridView.builder(controller:scroll,
        gridDelegate:const SliverGridDelegateWithMaxCrossAxisExtent(
-         maxCrossAxisExtent:285,mainAxisSpacing:10,crossAxisSpacing:8,childAspectRatio:1.62),
+         maxCrossAxisExtent:208,mainAxisSpacing:9,crossAxisSpacing:8,childAspectRatio:1.56),
        itemCount:results.length,
        itemBuilder:(ctx,i)=>MediaCard(item:results[i],index:0,
          onFocused:()=>widget.onFocus(results[i]),onOpen:()=>widget.onPlay(results[i])))),
