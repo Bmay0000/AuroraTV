@@ -1202,55 +1202,77 @@ class _GuideScreenState extends State<GuideScreen>{
  int epgInFlight=0;
  int guideGeneration=0;
  int guideLoadRequest=0;
- // Xtream servers often rate-limit bursts. Fetch only rows close to the viewport.
- static const int epgConcurrency=3;
- void _queueVisibleGuides(int first){
+ int epgLoaded=0;
+ int epgWork=0;
+ int guideLastWindow=-1;
+ DateTime? guideLastAnchor;
+ // Small, paced queue for weak Fire TV sticks and rate-limited providers.
+ // No more than one HTTP EPG lookup at a time, with a quiet period between.
+ static const int epgConcurrency=1;
+ static const Duration epgPause=Duration(milliseconds:750);
+ static const Duration guideScrollPause=Duration(milliseconds:380);
+ bool get epgLoading=>epgInFlight>0||epgQueue.isNotEmpty;
+ void _queueVisibleGuides(int first,{MediaEntry? priority}){
    if(!mounted||widget.source?.kind!='xtream')return;
    final channels=widget.channels;
    if(channels.isEmpty)return;
-   final start=first<0?0:(first>=channels.length?channels.length-1:first);
-   final end=start+25>channels.length?channels.length:start+25;
-   // Prioritize the current viewport. Rapid scrolling must not accumulate
-   // thousands of obsolete EPG HTTP requests in the background.
-   for(final dropped in epgQueue){
-     epgRequested.remove(dropped.id);
-   }
+   final start=first<0?0:first>=channels.length?channels.length-1:first;
+   // Fill only the visible rows and a small look-ahead, not 25+ requests.
+   final end=start+16>channels.length?channels.length:start+16;
+   final candidates=<MediaEntry>[
+     if(priority!=null)priority,
+     ...channels.sublist(start,end),
+   ];
+   for(final dropped in epgQueue){epgRequested.remove(dropped.id);}
    epgQueue.clear();
-   for(var i=start;i<end;i++){
-     final item=channels[i];
+   for(final item in candidates){
      if(item.streamId.isEmpty||item.id.startsWith('lineup:')||
-         (programs[key(item)]?.isNotEmpty??false)||!epgRequested.add(item.id))continue;
+        (programs[key(item)]?.isNotEmpty??false)||
+        !epgRequested.add(item.id))continue;
      epgQueue.add(item);
    }
+   // The progress count is for the current visible batch only.
+   epgLoaded=0;
+   epgWork=epgQueue.length+epgInFlight;
+   setState((){});
    _drainEpg();
  }
  void _drainEpg(){
-   while(mounted&&epgInFlight<epgConcurrency&&epgQueue.isNotEmpty){
-     final item=epgQueue.removeAt(0);
-     final generation=guideGeneration;
-     epgInFlight++;
-     () async{
-       try{
-         final data=await widget.provider.shortEpg(widget.source!,item);
-         if(mounted&&generation==guideGeneration&&data.isNotEmpty){
-           setState((){
-             programs['stream:${item.streamId}']=data;
-             coveredStations.add(item.id);
-           });
-         }
-       }catch(_){
-         // A missing provider guide should not block any other channel.
-       }finally{
-         epgInFlight--;
-         if(mounted)_drainEpg();
+   if(!mounted||epgInFlight>=epgConcurrency||epgQueue.isEmpty)return;
+   final item=epgQueue.removeAt(0);
+   final generation=guideGeneration;
+   final source=widget.source;
+   if(source==null)return;
+   epgInFlight=1;
+   setState((){});
+   () async{
+     try{
+       final data=await widget.provider.shortEpg(source,item);
+       if(mounted&&generation==guideGeneration&&data.isNotEmpty){
+         setState((){
+           programs['stream:${item.streamId}']=data;
+           coveredStations.add(item.id);
+         });
        }
-     }();
-   }
+     }catch(_){
+       // A missing provider guide cannot block navigating channels.
+     }finally{
+       // Slow down even successful small responses; never burst through
+       // dozens of channels during focus/scroll navigation.
+       await Future<void>.delayed(epgPause);
+       epgInFlight=0;
+       if(mounted){
+         if(generation==guideGeneration)epgLoaded++;
+         setState((){});
+         _drainEpg();
+       }
+     }
+   }();
  }
  void _onGuideScroll(){
    if(!guideScroll.hasClients)return;
    guideScrollTimer?.cancel();
-   guideScrollTimer=Timer(const Duration(milliseconds:140),(){
+   guideScrollTimer=Timer(guideScrollPause,(){
      if(!mounted||!guideScroll.hasClients)return;
      final first=(guideScroll.offset/44).floor();
      _loadVisibleEpg(first);
@@ -1265,8 +1287,12 @@ class _GuideScreenState extends State<GuideScreen>{
    final generation=guideGeneration;
    final request=++guideLoadRequest;
    final clamped=first<0?0:first>=widget.channels.length?widget.channels.length-1:first;
-   final start=clamped>8?clamped-8:0;
-   final end=clamped+38>widget.channels.length?widget.channels.length:clamped+38;
+   final window=clamped~/6;
+   if(!reset&&guideLastWindow==window&&guideLastAnchor==anchor)return;
+   guideLastWindow=window;
+   guideLastAnchor=anchor;
+   final start=clamped>4?clamped-4:0;
+   final end=clamped+20>widget.channels.length?widget.channels.length:clamped+20;
    final stations=widget.channels.sublist(start,end);
    final ids=stations.expand((e)=>[
      if(e.epgId.isNotEmpty)e.epgId,
@@ -1304,17 +1330,12 @@ class _GuideScreenState extends State<GuideScreen>{
    if(programs[byName]?.isNotEmpty??false)return byName;
    return 'stream:${item.streamId}';
  }
- Future<void> _shortGuide(MediaEntry item)async{
+ void _shortGuide(MediaEntry item){
    if(widget.source?.kind!='xtream'||item.streamId.isEmpty||
-       !epgRequested.add(item.id))return;
-   final data=await widget.provider.shortEpg(widget.source!,item);
-   if(!mounted||data.isEmpty)return;
-   final entry='stream:${item.streamId}';
-   if(!mounted)return;
-   setState((){
-     programs[entry]=data;
-     coveredStations.add(item.id);
-   });
+     (programs[key(item)]?.isNotEmpty??false))return;
+   // A focused station has priority, but must use the same single-request
+   // queue rather than creating a concurrent independent network call.
+   _queueVisibleGuides(_firstVisible(),priority:item);
  }
  MediaEntry? focused;Timer? debounce;VideoPlayerController? preview;
  bool previewEnabled=true;
@@ -1343,6 +1364,10 @@ class _GuideScreenState extends State<GuideScreen>{
    if(old.channels!=widget.channels||old.group!=widget.group){
      guideGeneration++;
      guideLoadRequest++;
+     guideLastWindow=-1;
+     guideLastAnchor=null;
+     epgLoaded=0;
+     epgWork=0;
      guideScrollTimer?.cancel();
      _cancelPreview();
      focused=null;
@@ -1357,6 +1382,7 @@ class _GuideScreenState extends State<GuideScreen>{
  Future<void> _load()async{
    final now=DateTime.now();
    anchor=DateTime(now.year,now.month,now.day,now.hour,now.minute<30?0:30);
+   guideLastWindow=-1;
    await _loadVisibleEpg(0,reset:true);
    if(!mounted)return;
    if(widget.channels.isNotEmpty&&focused==null){
@@ -1415,6 +1441,8 @@ class _GuideScreenState extends State<GuideScreen>{
    final selected=focused??(channels.isNotEmpty?channels.first:null);
    final now=DateTime.now();
    final channelsWithEpg=coveredStations.length;
+   final pending=epgLoading;
+   final loadingDone=epgLoaded>epgWork?epgWork:epgLoaded;
    final categoryGroups=['North America','All','Favorites',...widget.groups.take(12)].toSet().toList();
    return Padding(padding:const EdgeInsets.symmetric(horizontal:18,vertical:8),child:Column(children:[
      SizedBox(height:143,child:Row(children:[
@@ -1453,7 +1481,17 @@ class _GuideScreenState extends State<GuideScreen>{
      Row(children:[
        TextButton(onPressed:widget.refreshEpg,child:const Text('↻ Refresh EPG')),
        const Spacer(),
-       Text('${channels.length} CHANNELS · EPG ${channelsWithEpg}/${channels.length}',style:const TextStyle(color:C.secondary,fontSize:12)),
+       Text('${channels.length} CHANNELS · EPG ${channelsWithEpg}/${channels.length}',
+         style:const TextStyle(color:C.secondary,fontSize:12)),
+       const SizedBox(width:12),
+       if(pending)Row(mainAxisSize:MainAxisSize.min,children:[
+         const SizedBox(width:12,height:12,child:CircularProgressIndicator(
+           strokeWidth:2,color:C.aqua)),
+         const SizedBox(width:7),
+         Text('EPG loading ${loadingDone}/${epgWork}',
+           style:const TextStyle(color:C.aqua,fontSize:12)),
+       ])else const Text('EPG ready',
+         style:TextStyle(color:C.secondary,fontSize:12)),
        const SizedBox(width:10),
        IconButton(onPressed:(){setState(()=>anchor=anchor.subtract(const Duration(hours:1)));_loadForAnchor();},
          icon:const Icon(Icons.chevron_left)),
@@ -1510,6 +1548,8 @@ class _GuideScreenState extends State<GuideScreen>{
    ]));
  }
  Future<void> _loadForAnchor()async{
+   guideLastWindow=-1;
+   guideLastAnchor=null;
    await _loadVisibleEpg(_firstVisible(),reset:true);
    if(!mounted)return;
    _queueVisibleGuides(_firstVisible());
