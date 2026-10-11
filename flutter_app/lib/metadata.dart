@@ -16,11 +16,27 @@ class MovieMeta {
  Map<String,dynamic> toJson()=>{'backdrop':backdrop,'overview':overview,'genres':genres,'trailer':trailer,'rating':rating};
 }
 
+class TmdbCastMember {
+ final String name,character,photo;
+ const TmdbCastMember({required this.name,required this.character,required this.photo});
+}
+class TmdbTitleDetails {
+ final String overview,backdrop,tagline,genres,date;
+ final int runtime;
+ final double rating;
+ final List<TmdbCastMember> cast;
+ final List<MediaEntry> related;
+ const TmdbTitleDetails({required this.overview,required this.backdrop,
+  required this.tagline,required this.genres,required this.date,
+  required this.runtime,required this.rating,required this.cast,required this.related});
+}
+
 class TmdbClient {
  final http.Client _client=http.Client();
  static const bundledApiKey='efd60dbd0c87183cfa868e30bad7c99e';
  String apiKey=bundledApiKey;
  final Map<String,MovieMeta> _mem={};
+ final Map<String,TmdbTitleDetails?> _fullCache={};
  final Map<String,List<String>> _trending={};
  final Map<String,Map<String,List<String>>> _weekly={};
  static const genres={
@@ -206,6 +222,97 @@ class TmdbClient {
      await prefs.setString(key,jsonEncode(movie.toJson()));
      return movie;
    }catch(_){return const MovieMeta();}
+ }
+ /// TMDB supplies only descriptive metadata. It never alters the provider
+ /// stream ID or playback URL. Reject mismatching titles or release years.
+ Future<TmdbTitleDetails?> fullDetails(MediaEntry item) async {
+   if(apiKey.isEmpty||item.kind==MediaKind.live)return null;
+   final media=item.kind==MediaKind.movie?'movie':'tv';
+   var title=item.cleanTitle;
+   title=title.replaceAll(RegExp(r'\s*\((?:19|20)\d{2}\).*
+}
+,caseSensitive:false),'');
+   title=title.replaceAll(RegExp(r'\s*[-|:]\s*(?:VOD|ENGLISH|4K|UHD|FHD|HD).*
+}
+,caseSensitive:false),'');
+   title=title.trim();
+   if(title.isEmpty)return null;
+   final cacheKey='$media:${CatalogDatabase.matchKey(title)}:${item.year}';
+   if(_fullCache.containsKey(cacheKey))return _fullCache[cacheKey];
+   try{
+     final params={'api_key':apiKey,'query':title,'language':'en-US'};
+     if(item.year>0)params[media=='movie'?'year':'first_air_date_year']='${item.year}';
+     final search=await _client.get(Uri.https('api.themoviedb.org',
+       '/3/search/$media',params)).timeout(const Duration(seconds:8));
+     if(search.statusCode!=200)return null;
+     final results=(jsonDecode(search.body) as Map)['results'] as List? ??[];
+     Map? chosen;
+     final wanted=CatalogDatabase.matchKey(title);
+     for(final row in results.take(20)){
+       if(row is! Map)continue;
+       final found=(row[media=='movie'?'title':'name']??'').toString();
+       if(CatalogDatabase.matchKey(found)!=wanted)continue;
+       final date=(row[media=='movie'?'release_date':'first_air_date']??'').toString();
+       if(item.year>0&&date.length>=4 &&
+          int.tryParse(date.substring(0,4))!=item.year)continue;
+       chosen=row;break;
+     }
+     if(chosen==null){_fullCache[cacheKey]=null;return null;}
+     final response=await _client.get(Uri.https('api.themoviedb.org',
+       '/3/$media/${chosen['id']}',
+       {'api_key':apiKey,'language':'en-US',
+        'append_to_response':'credits,recommendations,similar'}))
+       .timeout(const Duration(seconds:9));
+     if(response.statusCode!=200)return null;
+     final data=jsonDecode(response.body) as Map<String,dynamic>;
+     String image(dynamic value,String size){
+       final path=(value??'').toString();
+       return path.startsWith('/')?'https://image.tmdb.org/t/p/$size$path':'';
+     }
+     final genreNames=(data['genres'] as List? ??[])
+       .whereType<Map>().map((v)=>(v['name']??'').toString())
+       .where((v)=>v.isNotEmpty).take(5).join('  ·  ');
+     final credits=data['credits'];
+     final people=credits is Map?credits['cast'] as List? ??[]:<dynamic>[];
+     final cast=<TmdbCastMember>[];
+     for(final row in people.take(15)){
+       if(row is! Map)continue;
+       cast.add(TmdbCastMember(name:(row['name']??'').toString(),
+         character:(row['character']??'').toString(),
+         photo:image(row['profile_path'],'w185')));
+     }
+     final recommends=data['recommendations'],similar=data['similar'];
+     final recommended=recommends is Map?recommends['results'] as List? ??[]:<dynamic>[];
+     final similarItems=similar is Map?similar['results'] as List? ??[]:<dynamic>[];
+     final related=<MediaEntry>[];
+     final seen=<String>{};
+     for(final row in [...recommended,...similarItems]){
+       if(row is! Map||row['original_language']!='en')continue;
+       final name=(row[media=='movie'?'title':'name']??'').toString();
+       final id=(row['id']??'').toString();
+       if(name.isEmpty||id.isEmpty||!seen.add(id))continue;
+       final date=(row[media=='movie'?'release_date':'first_air_date']??'').toString();
+       related.add(MediaEntry(id:'tmdb:$media:$id',title:name,kind:item.kind,
+         artwork:image(row['poster_path'],'w342'),
+         year:date.length>=4?int.tryParse(date.substring(0,4))??0:0,
+         rating:(row['vote_average'] as num?)?.toDouble()??0));
+       if(related.length>=20)break;
+     }
+     final result=TmdbTitleDetails(
+       overview:(data['overview']??'').toString(),
+       backdrop:image(data['backdrop_path'],'w1280'),
+       tagline:(data['tagline']??'').toString(),
+       genres:genreNames,
+       date:(data[media=='movie'?'release_date':'first_air_date']??'').toString(),
+       runtime:media=='movie'?(data['runtime'] as num?)?.toInt()??0:
+         ((data['episode_run_time'] as List?)?.isNotEmpty==true
+           ?((data['episode_run_time'] as List).first as num?)?.toInt()??0:0),
+       rating:(data['vote_average'] as num?)?.toDouble()??0,
+       cast:cast,related:related);
+     _fullCache[cacheKey]=result;
+     if(_fullCache.length>50)_fullCache.remove(_fullCache.keys.first);
+     return result;
+   }catch(_){return null;}
  }
  void dispose()=>_client.close();
 }
