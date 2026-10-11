@@ -1269,7 +1269,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
              color:displayMode==i?C.aqua:C.secondary),
            title:Text(['Fit · Original ratio','Fill · Crop edges','Stretch · Entire screen'][i]),
            onTap:(){setState(()=>displayMode=i);Navigator.pop(ctx);_showControls();}),
-     ]))));
+     ])));
  }
  Future<void> _speedMenu()async{
    await showModalBottomSheet<void>(context:context,
@@ -1288,7 +1288,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
              if(ctx.mounted)Navigator.pop(ctx);
              _showControls();
            }),
-     ]))));
+     ])));
  }
  void _selectEpisode(MediaEntry episode){
    final src=widget.source;
