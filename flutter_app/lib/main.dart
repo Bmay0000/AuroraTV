@@ -1205,8 +1205,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
        final probe=await PlaybackProbe.inspect(url);
        if(!mounted||revision!=attempt)return;
        transport=probe.summary;
-       playbackReport+='
-'+probe.summary;
+       playbackReport+='\n'+probe.summary;
        if(probe.plausibleVideo){vlcSource=url;break;}
      }
    }
@@ -1306,14 +1305,84 @@ class _PlayerScreenState extends State<PlayerScreen>{
      setState((){});
    }
  }
+ /// The native player can initialize and then fail asynchronously when
+ /// MediaCodec receives the first frame. That error MUST enter the fallback
+ /// path instead of only displaying a failure panel.
+ Future<void> _recoverAfterNativeError(String raw)async{
+   final revision=++attempt;
+   final codec=_codecExceeded(raw);
+   _recovering=true;
+   _startingStandard=false;
+   hideTimer?.cancel();
+   playbackReport='Native playback failed after startup: ${_errorLabel(raw)}';
+   final failed=video;
+   video=null;
+   failed?.removeListener(_monitor);
+   if(!mounted||revision!=attempt)return;
+   setState((){
+     error='';
+     controls=true;
+     buffering=true;
+     status=codec?'Device cannot decode this HEVC format; switching to software…':
+       'Player reported a source error; checking IPTV stream…';
+   });
+   try{await failed?.dispose();}catch(_){}
+   if(!mounted||revision!=attempt)return;
+   final original=lastUrl.isNotEmpty?lastUrl:(episodeUrl??widget.url);
+   String? network;
+   final urls=<String>[original];
+   if(!codec&&widget.alternatives!=null&&episodeUrl==null){
+     try{
+       final extra=await widget.alternatives!()
+         .timeout(const Duration(seconds:10));
+       for(final u in extra){
+         if(!urls.contains(u)&&['http','https'].contains(Uri.tryParse(u)?.scheme)){
+           urls.add(u);
+         }
+       }
+     }catch(_){}
+   }
+   var best=urls.first;
+   if(!codec){
+     for(final u in urls.take(3)){
+       final probe=await PlaybackProbe.inspect(u);
+       if(!mounted||revision!=attempt)return;
+       network=probe.summary;
+       playbackReport+='\n'+probe.summary;
+       if(probe.plausibleVideo){best=u;break;}
+     }
+   }
+   if(await _tryCompatibility(best,revision,software:codec))return;
+   if(!mounted||revision!=attempt)return;
+   if(!codec&&urls.any((u)=>u!=best)){
+     final next=urls.firstWhere((u)=>u!=best);
+     if(await _tryCompatibility(next,revision))return;
+   }
+   if(!mounted||revision!=attempt)return;
+   setState((){
+     buffering=false;
+     status='';
+     error=codec
+       ?'The device reports that this 4K HEVC video exceeds its hardware '
+        'decoding capabilities; software playback was attempted as well.'
+       :'The stream triggered a native source error. Aurora retried '
+        'the actual provider stream using the compatibility engine.';
+     error+='\n${_errorLabel(raw)}';
+     if(network!=null)error+='\n$network';
+   });
+   CrashDiagnostics.record('Playback failure',error,null);
+ }
  void _monitor(){
    final v=video;
    if(!mounted||v==null)return;
-   if(v.value.hasError&&error.isEmpty){
-     final message=(v.value.errorDescription??'Decoder error').replaceAll(
-       RegExp(r'https?://[^\s,)\]]+'),'[provider URL hidden]');
-     setState(()=>error=message);
-   }else if(v.value.isInitialized){
+   if(v.value.hasError){
+     if(!_startingStandard&&!_recovering){
+       _recovering=true;
+       _recoverAfterNativeError(v.value.errorDescription??'Unknown native decoder error');
+     }
+     return;
+   }
+   if(v.value.isInitialized&&buffering!=v.value.isBuffering){
      setState(()=>buffering=v.value.isBuffering);
    }
  }
@@ -1624,6 +1693,17 @@ class _PlayerScreenState extends State<PlayerScreen>{
              _action(Icons.open_in_new,'External player',_external),
              _action(Icons.arrow_back,'Back',()=>Navigator.pop(context)),
            ]),
+           TextButton.icon(
+             onPressed:(){
+               Clipboard.setData(ClipboardData(text:
+                 'AuroraTV playback diagnostics\n'
+                 '${_errorLabel(error)}\n$playbackReport'));
+               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                 content:Text('Playback diagnostics copied.')));
+             },
+             icon:const Icon(Icons.copy,size:15),
+             label:const Text('Copy playback diagnostics',
+               style:TextStyle(fontSize:12,color:C.secondary))),
          ]))),
      ])));
  }
