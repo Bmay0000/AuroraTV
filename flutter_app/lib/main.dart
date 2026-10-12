@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
+import 'package:flutter_vlc_player/flutter_vlc_player.dart';
 import 'catalog.dart';
 import 'provider.dart';
 import 'metadata.dart';
@@ -1093,6 +1094,8 @@ class PlayerScreen extends StatefulWidget {
 }
 class _PlayerScreenState extends State<PlayerScreen>{
  VideoPlayerController? video;
+ VlcPlayerController? vlc;
+ bool usingVlc=false;
  final FocusNode surfaceFocus=FocusNode(debugLabel:'Player video');
  final FocusNode playFocus=FocusNode(debugLabel:'Player controls');
  final FocusNode backFocus=FocusNode(debugLabel:'Back from player');
@@ -1113,15 +1116,23 @@ class _PlayerScreenState extends State<PlayerScreen>{
    final revision=++attempt;
    hideTimer?.cancel();
    final previous=video;
+   final previousVlc=vlc;
    video=null;
+   vlc=null;
+   usingVlc=false;
    previous?.removeListener(_monitor);
+   previousVlc?.removeListener(_vlcMonitor);
+   // Release the old native view before starting another decoder.
+   if(mounted)setState((){error='';buffering=true;controls=true;status='Opening video…';});
    try{await previous?.dispose();}catch(_){}
+   try{await previousVlc?.dispose();}catch(_){}
    if(!mounted||revision!=attempt)return;
-   setState((){error='';buffering=true;controls=true;status='Opening video…';});
    final candidates=<String>[episodeUrl??widget.url];
    var expanded=false;
    Object? lastFailure;
-   for(var i=0;i<candidates.length && i<5;i++){
+   // Avoid hammering the same endpoint with many ExoPlayer variants.
+   // An independent VLC engine is attempted after the first source failure.
+   for(var i=0;i<candidates.length && i<2;i++){
      if(!mounted||revision!=attempt)return;
      final url=candidates[i];
      lastUrl=url;
@@ -1132,7 +1143,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
        controller=VideoPlayerController.networkUrl(Uri.parse(url));
        video=controller;
        controller.addListener(_monitor);
-       await controller.initialize().timeout(const Duration(seconds:14));
+       await controller.initialize().timeout(const Duration(seconds:12));
        if(!mounted||revision!=attempt){
          controller.removeListener(_monitor);
          await controller.dispose();
@@ -1167,6 +1178,8 @@ class _PlayerScreenState extends State<PlayerScreen>{
      }
    }
    if(!mounted||revision!=attempt)return;
+   if(await _tryCompatibility(candidates.first,revision))return;
+   if(!mounted||revision!=attempt)return;
    final safe=(lastFailure??'Unknown stream error').toString()
      .replaceAll(RegExp(r'https?://[^\s,)\]]+'),'[provider URL hidden]')
      .replaceAll(RegExp(r'(username|password|token)=[^\s&,]+',caseSensitive:false),
@@ -1179,6 +1192,51 @@ class _PlayerScreenState extends State<PlayerScreen>{
        '\n${safe.length>210?safe.substring(0,210):safe}';
    });
    CrashDiagnostics.record('Playback error',error,null);
+ }
+ /// LibVLC handles many MPEG-TS, MKV, nonstandard HTTP and codec combinations
+ /// that the default Flutter ExoPlayer backend cannot open.
+ Future<bool> _tryCompatibility(String url,int revision)async{
+   if(!mounted||revision!=attempt)return false;
+   final controller=VlcPlayerController.network(url,
+     hwAcc:HwAcc.auto,autoPlay:true);
+   vlc=controller;
+   usingVlc=true;
+   setState((){buffering=true;error='';
+     status='Trying built-in compatibility player…';});
+   controller.addListener(_vlcMonitor);
+   var played=false;
+   for(var i=0;i<45;i++){
+     await Future<void>.delayed(const Duration(milliseconds:400));
+     if(!mounted||revision!=attempt)return false;
+     if(controller.value.hasError)break;
+     if(controller.value.isPlaying){
+       played=true;break;
+     }
+   }
+   if(played){
+     if(mounted)setState((){buffering=false;error='';status='';});
+     _showControls();
+     CrashDiagnostics.mark('Playing using built-in compatibility player');
+     return true;
+   }
+   controller.removeListener(_vlcMonitor);
+   if(identical(vlc,controller)){vlc=null;usingVlc=false;}
+   if(mounted)setState((){status='Compatibility player could not open stream';});
+   try{await controller.dispose();}catch(_){}
+   return false;
+ }
+ void _vlcMonitor(){
+   final p=vlc;
+   if(!mounted||p==null||!usingVlc)return;
+   final isPlaying=p.value.isPlaying;
+   if(isPlaying && (buffering || status.isNotEmpty)){
+     setState((){buffering=false;status='';error='';});
+   }else if(p.value.hasError && error.isEmpty){
+     setState(()=>status='Compatibility decoder reported an error');
+   }else if(p.value.isInitialized && controls){
+     // Keep position/timing up to date for the controls.
+     setState((){});
+   }
  }
  void _monitor(){
    final v=video;
@@ -1195,24 +1253,40 @@ class _PlayerScreenState extends State<PlayerScreen>{
    hideTimer?.cancel();
    if(mounted)setState(()=>controls=true);
    hideTimer=Timer(const Duration(seconds:12),(){
-     if(mounted&&surfaceFocus.hasFocus&&video?.value.isPlaying==true){
+     if(mounted&&surfaceFocus.hasFocus&&_isPlaying){
        setState(()=>controls=false);
      }
    });
  }
+ bool get _isPlaying=>usingVlc?vlc?.value.isPlaying==true:video?.value.isPlaying==true;
  void _playPause(){
-   final v=video;
-   if(v==null||!v.value.isInitialized)return;
-   v.value.isPlaying?v.pause():v.play();
+   if(usingVlc){
+     final p=vlc;
+     if(p==null)return;
+     p.value.isPlaying?p.pause():p.play();
+   }else{
+     final v=video;
+     if(v==null||!v.value.isInitialized)return;
+     v.value.isPlaying?v.pause():v.play();
+   }
    _showControls();
  }
  void _seek(Duration delta){
-   final v=video;
-   if(v==null||!v.value.isInitialized||v.value.duration.inSeconds<=0)return;
-   final target=v.value.position+delta;
-   final clamped=target<Duration.zero?Duration.zero:
-     target>v.value.duration?v.value.duration:target;
-   v.seekTo(clamped);
+   if(usingVlc){
+     final p=vlc;
+     if(p==null||p.value.duration.inSeconds<=0)return;
+     final target=p.value.position+delta;
+     final bounded=target<Duration.zero?Duration.zero:
+       target>p.value.duration?p.value.duration:target;
+     p.seekTo(bounded);
+   }else{
+     final v=video;
+     if(v==null||!v.value.isInitialized||v.value.duration.inSeconds<=0)return;
+     final target=v.value.position+delta;
+     final clamped=target<Duration.zero?Duration.zero:
+       target>v.value.duration?v.value.duration:target;
+     v.seekTo(clamped);
+   }
    _showControls();
  }
  KeyEventResult _surfaceKey(FocusNode node,KeyEvent event){
@@ -1284,7 +1358,10 @@ class _PlayerScreenState extends State<PlayerScreen>{
            title:Text('${value}×'),
            onTap:()async{
              playbackSpeed=value;
-             try{await video?.setPlaybackSpeed(value);}catch(_){}
+             try{
+               if(usingVlc){await vlc?.setPlaybackSpeed(value);}
+               else {await video?.setPlaybackSpeed(value);}
+             }catch(_){}
              if(ctx.mounted)Navigator.pop(ctx);
              _showControls();
            }),
@@ -1364,15 +1441,19 @@ class _PlayerScreenState extends State<PlayerScreen>{
    surfaceFocus.dispose();playFocus.dispose();backFocus.dispose();
    video?.removeListener(_monitor);
    video?.dispose();
+   vlc?.removeListener(_vlcMonitor);
+   vlc?.dispose();
    super.dispose();
  }
  @override Widget build(BuildContext context){
    final v=video;
-   final initialized=v?.value.isInitialized==true;
-   final seekable=initialized&&!widget.live&&v!.value.duration.inSeconds>0&&
-     v.value.duration< const Duration(days:1);
-   final duration=initialized?v!.value.duration:Duration.zero;
-   final position=initialized?v!.value.position:Duration.zero;
+   final compat=usingVlc?vlc:null;
+   final initialized=usingVlc?compat?.value.isInitialized==true:
+     v?.value.isInitialized==true;
+   final duration=initialized?(usingVlc?compat!.value.duration:v!.value.duration):Duration.zero;
+   final position=initialized?(usingVlc?compat!.value.position:v!.value.position):Duration.zero;
+   final seekable=initialized&&!widget.live&&duration.inSeconds>0&&
+     duration<const Duration(days:1);
    final progress=seekable&&duration.inMilliseconds>0?
      (position.inMilliseconds/duration.inMilliseconds).clamp(0.0,1.0):0.0;
    return Scaffold(backgroundColor:Colors.black,body:FocusTraversalGroup(
@@ -1380,12 +1461,16 @@ class _PlayerScreenState extends State<PlayerScreen>{
        Positioned.fill(child:Focus(
          focusNode:surfaceFocus,autofocus:true,onKeyEvent:_surfaceKey,
          child:GestureDetector(behavior:HitTestBehavior.opaque,onTap:_showControls,
-           child:initialized?FittedBox(
+           child:usingVlc&&compat!=null?FittedBox(
              fit:[BoxFit.contain,BoxFit.cover,BoxFit.fill][displayMode],
-             child:SizedBox(width:v!.value.size.width>0?v.value.size.width:640,
-               height:v.value.size.height>0?v.value.size.height:360,
-               child:VideoPlayer(v))):
-             const ColoredBox(color:Colors.black)))),
+             child:SizedBox(width:1280,height:720,
+               child:VlcPlayer(controller:compat,aspectRatio:16/9))):
+             initialized?FittedBox(
+               fit:[BoxFit.contain,BoxFit.cover,BoxFit.fill][displayMode],
+               child:SizedBox(width:v!.value.size.width>0?v.value.size.width:640,
+                 height:v.value.size.height>0?v.value.size.height:360,
+                 child:VideoPlayer(v))):
+               const ColoredBox(color:Colors.black)))),
        if(buffering)Center(child:Column(mainAxisSize:MainAxisSize.min,children:[
          const CircularProgressIndicator(color:C.aqua),
          const SizedBox(height:15),
@@ -1404,7 +1489,8 @@ class _PlayerScreenState extends State<PlayerScreen>{
                Text(episodeTitle??widget.title,maxLines:1,
                  overflow:TextOverflow.ellipsis,
                  style:const TextStyle(fontSize:20,fontWeight:FontWeight.w800)),
-               Text(widget.live?'LIVE · IPTV PROVIDER':'ON DEMAND · IPTV PROVIDER',
+               Text(usingVlc?'ON DEMAND · COMPATIBILITY ENGINE':
+                 widget.live?'LIVE · IPTV PROVIDER':'ON DEMAND · IPTV PROVIDER',
                  style:const TextStyle(fontSize:11,color:C.secondary,letterSpacing:1.4)),
              ])),
              _action(Icons.refresh,'Retry',_init),
@@ -1431,8 +1517,8 @@ class _PlayerScreenState extends State<PlayerScreen>{
              ]),
              const SizedBox(height:12),
              SingleChildScrollView(scrollDirection:Axis.horizontal,child:Row(children:[
-               _action(v!.value.isPlaying?Icons.pause:Icons.play_arrow,
-                 v.value.isPlaying?'Pause':'Play',_playPause,node:playFocus),
+               _action(_isPlaying?Icons.pause:Icons.play_arrow,
+                 _isPlaying?'Pause':'Play',_playPause,node:playFocus),
                if(seekable)_action(Icons.replay_10,'Back 10s',
                  ()=>_seek(const Duration(seconds:-10))),
                if(seekable)_action(Icons.forward_10,'Forward 10s',
@@ -1440,7 +1526,8 @@ class _PlayerScreenState extends State<PlayerScreen>{
                _action(muted?Icons.volume_off:Icons.volume_up,
                  muted?'Unmute':'Mute',(){
                    setState(()=>muted=!muted);
-                   v.setVolume(muted?0:1);
+                   if(usingVlc){compat?.setVolume(muted?0:100);}
+                   else {v?.setVolume(muted?0:1);}
                    _showControls();
                  }),
                _action(Icons.aspect_ratio,'Aspect ratio',_aspectMenu),
