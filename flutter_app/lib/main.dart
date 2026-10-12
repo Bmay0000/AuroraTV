@@ -1299,10 +1299,14 @@ class _PlayerScreenState extends State<PlayerScreen>{
    if(isPlaying && (buffering || status.isNotEmpty)){
      setState((){buffering=false;status='';error='';});
    }else if(p.value.hasError && error.isEmpty){
-     setState(()=>status='Compatibility decoder reported an error');
-   }else if(p.value.isInitialized && controls){
-     // Keep position/timing up to date for the controls.
-     setState((){});
+     // VLC can also fail *after* reporting successful startup. Surface it.
+     setState((){
+       buffering=false;
+       controls=true;
+       status='';
+       error='The compatibility decoder encountered a playback error. '
+         'Try another provider rendition or copy playback diagnostics.';
+     });
    }
  }
  /// The native player can initialize and then fail asynchronously when
