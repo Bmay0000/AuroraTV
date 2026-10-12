@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter_vlc_player/flutter_vlc_player.dart';
+import 'playback_probe.dart';
 import 'catalog.dart';
 import 'provider.dart';
 import 'metadata.dart';
@@ -1096,6 +1097,8 @@ class _PlayerScreenState extends State<PlayerScreen>{
  VideoPlayerController? video;
  VlcPlayerController? vlc;
  bool usingVlc=false;
+ bool _startingStandard=false,_recovering=false;
+ String playbackReport='';
  final FocusNode surfaceFocus=FocusNode(debugLabel:'Player video');
  final FocusNode playFocus=FocusNode(debugLabel:'Player controls');
  final FocusNode backFocus=FocusNode(debugLabel:'Back from player');
@@ -1114,6 +1117,9 @@ class _PlayerScreenState extends State<PlayerScreen>{
  }
  Future<void> _init()async{
    final revision=++attempt;
+   _recovering=false;
+   _startingStandard=true;
+   playbackReport='Starting provider playback';
    hideTimer?.cancel();
    final previous=video;
    final previousVlc=vlc;
@@ -1129,6 +1135,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
    if(!mounted||revision!=attempt)return;
    final candidates=<String>[episodeUrl??widget.url];
    var expanded=false;
+   bool codecLimited=false;
    Object? lastFailure;
    // Avoid hammering the same endpoint with many ExoPlayer variants.
    // An independent VLC engine is attempted after the first source failure.
@@ -1140,7 +1147,11 @@ class _PlayerScreenState extends State<PlayerScreen>{
      try{
        setState(()=>status=i==0?'Connecting to provider…':
          'Trying provider format ${i+1} of ${candidates.length}…');
-       controller=VideoPlayerController.networkUrl(Uri.parse(url));
+       controller=VideoPlayerController.networkUrl(Uri.parse(url),
+         httpHeaders:const {
+           'User-Agent':PlaybackProbe.userAgent,
+           'Accept':'*/*',
+         });
        video=controller;
        controller.addListener(_monitor);
        await controller.initialize().timeout(const Duration(seconds:12));
@@ -1152,16 +1163,23 @@ class _PlayerScreenState extends State<PlayerScreen>{
        await controller.setVolume(muted?0:1);
        try{await controller.setPlaybackSpeed(playbackSpeed);}catch(_){}
        await controller.play();
+       if(controller.value.hasError){
+         throw StateError(controller.value.errorDescription??'Decoder failure');
+       }
        if(!mounted||revision!=attempt)return;
+       _startingStandard=false;
        setState((){buffering=false;error='';status='';controls=true;});
        _showControls();
        return;
      }catch(e){
        lastFailure=e;
+       codecLimited=_codecExceeded(e.toString());
+       playbackReport='Standard player: ${_errorLabel(e.toString())}';
        controller?.removeListener(_monitor);
        if(identical(video,controller))video=null;
        try{await controller?.dispose();}catch(_){}
        if(!mounted||revision!=attempt)return;
+       if(codecLimited)break; // No other URL extension can fix a hardware decoder limit.
        if(!expanded && widget.alternatives!=null && episodeUrl==null){
          expanded=true;
          try{
@@ -1177,8 +1195,26 @@ class _PlayerScreenState extends State<PlayerScreen>{
        }
      }
    }
+   _startingStandard=false;
    if(!mounted||revision!=attempt)return;
-   if(await _tryCompatibility(candidates.first,revision))return;
+   // Identify HTTP errors separately from Android codec limitations.
+   String? transport;
+   var vlcSource=candidates.first;
+   if(!codecLimited){
+     for(final url in candidates.take(3)){
+       final probe=await PlaybackProbe.inspect(url);
+       if(!mounted||revision!=attempt)return;
+       transport=probe.summary;
+       playbackReport+='
+'+probe.summary;
+       if(probe.plausibleVideo){vlcSource=url;break;}
+     }
+   }
+   if(await _tryCompatibility(vlcSource,revision,software:codecLimited))return;
+   if(!mounted||revision!=attempt)return;
+   final additional=candidates.where((v)=>v!=vlcSource).take(1).toList();
+   if(!codecLimited&&additional.isNotEmpty&&
+      await _tryCompatibility(additional.first,revision))return;
    if(!mounted||revision!=attempt)return;
    final safe=(lastFailure??'Unknown stream error').toString()
      .replaceAll(RegExp(r'https?://[^\s,)\]]+'),'[provider URL hidden]')
@@ -1187,25 +1223,55 @@ class _PlayerScreenState extends State<PlayerScreen>{
    setState((){
      buffering=false;controls=true;
      status='';
-     error='Unable to decode or load this IPTV stream. '
-       'The provider may require a different container or codec.'
-       '\n${safe.length>210?safe.substring(0,210):safe}';
+     error=codecLimited
+       ?'Android reports this 4K HEVC video exceeds its hardware decoding '
+        'capabilities. Software VLC decoding was also attempted.'
+       :'The IPTV stream could not be opened by either built-in player. '
+        'TMDB does not control the stream URL.';
+     error+='\n${_errorLabel(safe)}';
+     if(transport!=null)error+='\n$transport';
    });
    CrashDiagnostics.record('Playback error',error,null);
  }
  /// LibVLC handles many MPEG-TS, MKV, nonstandard HTTP and codec combinations
  /// that the default Flutter ExoPlayer backend cannot open.
- Future<bool> _tryCompatibility(String url,int revision)async{
+ bool _codecExceeded(String value){
+   final text=value.toLowerCase();
+   return text.contains('no_exceeds_capabilities')||
+     text.contains('mediacodecvideorenderer')||
+     text.contains('decoderinitializationexception');
+ }
+ String _errorLabel(String message){
+   final safe=message
+     .replaceAll(RegExp(r'https?://[^\s,\)\]]+'),'[provider URL hidden]')
+     .replaceAll(RegExp(r'(username|password|token)=[^\s&,]+',
+       caseSensitive:false),'[credential hidden]');
+   return safe.length>220?safe.substring(0,220):safe;
+ }
+ Future<bool> _tryCompatibility(String url,int revision,{bool software=false})async{
    if(!mounted||revision!=attempt)return false;
    final controller=VlcPlayerController.network(url,
-     hwAcc:HwAcc.auto,autoPlay:true);
+     hwAcc:software?HwAcc.disabled:HwAcc.auto,
+     autoPlay:true,
+     options:VlcPlayerOptions(
+       advanced:VlcAdvancedOptions([
+         VlcAdvancedOptions.networkCaching(2400),
+       ]),
+       http:VlcHttpOptions([
+         VlcHttpOptions.httpUserAgent(PlaybackProbe.userAgent),
+         VlcHttpOptions.httpReconnect(true),
+         VlcHttpOptions.httpForwardCookies(true),
+       ]),
+     ));
    vlc=controller;
    usingVlc=true;
    setState((){buffering=true;error='';
-     status='Trying built-in compatibility player…';});
+     status=software?'Trying software decoding (4K HEVC)…':
+       'Trying VLC-compatible stream playback…';});
    controller.addListener(_vlcMonitor);
    var played=false;
-   for(var i=0;i<45;i++){
+   playbackReport+='\nVLC mode: ${software?'software':'automatic'}';
+   for(var i=0;i<50;i++){
      await Future<void>.delayed(const Duration(milliseconds:400));
      if(!mounted||revision!=attempt)return false;
      if(controller.value.hasError)break;
@@ -1214,11 +1280,13 @@ class _PlayerScreenState extends State<PlayerScreen>{
      }
    }
    if(played){
+     lastUrl=url;
      if(mounted)setState((){buffering=false;error='';status='';});
      _showControls();
      CrashDiagnostics.mark('Playing using built-in compatibility player');
      return true;
    }
+   playbackReport+='; result: ${controller.value.hasError?'decoder error':'not playing'}';
    controller.removeListener(_vlcMonitor);
    if(identical(vlc,controller)){vlc=null;usingVlc=false;}
    if(mounted)setState((){status='Compatibility player could not open stream';});
