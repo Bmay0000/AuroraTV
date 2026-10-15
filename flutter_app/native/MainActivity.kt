@@ -5,13 +5,64 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    // Activity window flags prevent the Fire TV screensaver / display dimming.
+    // Keep owners independent: a guide preview must not clear a fullscreen
+    // player's keep-awake request when the route changes.
+    private val screenAwakeOwners = mutableSetOf<String>()
+    private var activityResumed = false
+
+    private fun refreshScreenAwake() {
+        if (activityResumed && screenAwakeOwners.isNotEmpty()) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        activityResumed = true
+        refreshScreenAwake()
+    }
+
+    override fun onPause() {
+        activityResumed = false
+        refreshScreenAwake()
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        screenAwakeOwners.clear()
+        refreshScreenAwake()
+        super.onDestroy()
+    }
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "aurora.tv/screen_awake")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "set") {
+                    result.notImplemented()
+                } else {
+                    val owner = call.argument<String>("owner")
+                    val enabled = call.argument<Boolean>("enabled")
+                    if (owner !in setOf("player", "guide") || enabled == null) {
+                        result.error("invalid", "Invalid screen awake request", null)
+                    } else {
+                        runOnUiThread {
+                            if (enabled) screenAwakeOwners.add(owner!!)
+                            else screenAwakeOwners.remove(owner!!)
+                            refreshScreenAwake()
+                            result.success(true)
+                        }
+                    }
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "aurora.tv/picture_in_picture")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
