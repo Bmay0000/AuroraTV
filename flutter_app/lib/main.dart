@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter_vlc_player/flutter_vlc_player.dart';
 import 'playback_probe.dart';
+import 'screen_awake.dart';
 import 'catalog.dart';
 import 'provider.dart';
 import 'metadata.dart';
@@ -1098,6 +1099,12 @@ class _PlayerScreenState extends State<PlayerScreen>{
  VlcPlayerController? vlc;
  bool usingVlc=false;
  bool _startingStandard=false,_recovering=false;
+ bool _playerScreenAwake=false;
+ void _setPlaybackAwake(bool enabled){
+   if(_playerScreenAwake==enabled)return;
+   _playerScreenAwake=enabled;
+   unawaited(ScreenAwake.set('player',enabled));
+ }
  String playbackReport='';
  final FocusNode surfaceFocus=FocusNode(debugLabel:'Player video');
  final FocusNode playFocus=FocusNode(debugLabel:'Player controls');
@@ -1116,6 +1123,9 @@ class _PlayerScreenState extends State<PlayerScreen>{
    _init();
  }
  Future<void> _init()async{
+   // The user is watching or preparing to watch video: do not let Fire TV
+   // activate its idle screensaver while loading / buffering the stream.
+   _setPlaybackAwake(true);
    final revision=++attempt;
    _recovering=false;
    _startingStandard=true;
@@ -1230,6 +1240,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
      error+='\n${_errorLabel(safe)}';
      if(transport!=null)error+='\n$transport';
    });
+   _setPlaybackAwake(false);
    CrashDiagnostics.record('Playback error',error,null);
  }
  /// LibVLC handles many MPEG-TS, MKV, nonstandard HTTP and codec combinations
@@ -1279,6 +1290,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
      }
    }
    if(played){
+     _setPlaybackAwake(true);
      lastUrl=url;
      if(mounted)setState((){buffering=false;error='';status='';});
      _showControls();
@@ -1299,6 +1311,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
    if(isPlaying && (buffering || status.isNotEmpty)){
      setState((){buffering=false;status='';error='';});
    }else if(p.value.hasError && error.isEmpty){
+     _setPlaybackAwake(false);
      // VLC can also fail *after* reporting successful startup. Surface it.
      setState((){
        buffering=false;
@@ -1374,11 +1387,15 @@ class _PlayerScreenState extends State<PlayerScreen>{
      error+='\n${_errorLabel(raw)}';
      if(network!=null)error+='\n$network';
    });
+   _setPlaybackAwake(false);
    CrashDiagnostics.record('Playback failure',error,null);
  }
  void _monitor(){
    final v=video;
    if(!mounted||v==null)return;
+   if(v.value.isCompleted){
+     _setPlaybackAwake(false);
+   }
    if(v.value.hasError){
      if(!_startingStandard&&!_recovering){
        _recovering=true;
@@ -1404,11 +1421,15 @@ class _PlayerScreenState extends State<PlayerScreen>{
    if(usingVlc){
      final p=vlc;
      if(p==null)return;
-     p.value.isPlaying?p.pause():p.play();
+     final shouldPlay=!p.value.isPlaying;
+     shouldPlay?p.play():p.pause();
+     _setPlaybackAwake(shouldPlay);
    }else{
      final v=video;
      if(v==null||!v.value.isInitialized)return;
-     v.value.isPlaying?v.pause():v.play();
+     final shouldPlay=!v.value.isPlaying;
+     shouldPlay?v.play():v.pause();
+     _setPlaybackAwake(shouldPlay);
    }
    _showControls();
  }
@@ -1578,6 +1599,7 @@ class _PlayerScreenState extends State<PlayerScreen>{
  }
  @override void dispose(){
    ++attempt;
+   _setPlaybackAwake(false);
    hideTimer?.cancel();
    surfaceFocus.dispose();playFocus.dispose();backFocus.dispose();
    video?.removeListener(_monitor);
@@ -1889,6 +1911,12 @@ class _GuideScreenState extends State<GuideScreen>{
  }
  MediaEntry? focused;Timer? debounce;VideoPlayerController? preview;
  bool previewEnabled=true;
+ bool previewScreenAwake=false;
+ void _setGuideAwake(bool enabled){
+   if(previewScreenAwake==enabled)return;
+   previewScreenAwake=enabled;
+   unawaited(ScreenAwake.set('guide',enabled));
+ }
  // Decoder initialization and release must be serialized on Android TV.
  // Rapid guide navigation must not create multiple simultaneous decoders.
  Future<void> previewSerial=Future<void>.value();
@@ -1897,6 +1925,7 @@ class _GuideScreenState extends State<GuideScreen>{
  }
  void _cancelPreview(){
    ++previewRequest;
+   _setGuideAwake(false);
    debounce?.cancel();
    final old=preview;
    preview=null;
@@ -1972,6 +2001,7 @@ class _GuideScreenState extends State<GuideScreen>{
          if(!mounted||request!=previewRequest||focused?.id!=item.id){
            await controller.dispose();return;
          }
+         _setGuideAwake(true);
          setState(()=>preview=controller);
        }catch(_){
          await controller?.dispose();
