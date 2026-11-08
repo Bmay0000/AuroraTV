@@ -146,9 +146,6 @@ jobs:
           new_cert="$(cert "$new")"
           new_code="$(version_code "$new")"
           test -n "$new_cert" && test -n "$new_code"
-          if test -s dist/LEGACY_21_COMPATIBILITY.md; then
-            cat dist/LEGACY_21_COMPATIBILITY.md >> dist/RELEASE_NOTES.md
-          fi
           if gh release view rust-preview --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             mkdir -p previous
             gh release download rust-preview --pattern 'AuroraTV-Rust-Preview.apk' \
@@ -209,6 +206,9 @@ jobs:
 
           The stable/current release is separate and is not replaced by this prerelease.
           EOF
+          if test -s dist/LEGACY_21_COMPATIBILITY.md; then
+            cat dist/LEGACY_21_COMPATIBILITY.md >> dist/RELEASE_NOTES.md
+          fi
           if gh release view rust-preview --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload rust-preview dist/AuroraTV-Rust-Preview.apk dist/SHA256SUMS.txt \
               --clobber --repo "$GITHUB_REPOSITORY"
