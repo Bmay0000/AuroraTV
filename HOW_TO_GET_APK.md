@@ -1,5 +1,13 @@
 # Download or build an AuroraTV APK
 
+## Direct APK download (recommended)
+
+**[Download the published AuroraTV 2.1 APK](https://github.com/Bmay0000/AuroraTV/releases/download/2.1/AuroraTV-Flutter-Compact-UI.apk)**
+
+This is a direct `.apk` file. You do **not** need to sign in to GitHub, run a build workflow, or extract a ZIP. Open the link in a browser, save the APK, and install it on a supported Fire TV or Android TV device. If installing from the Downloader app, you may have to allow app installs from that source in device settings.
+
+[Browse all published versions](https://github.com/Bmay0000/AuroraTV/releases).
+
 ## Fire TV — Downloader code
 
 **AuroraTV Downloader code: `6700987`**
