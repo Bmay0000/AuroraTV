@@ -826,8 +826,9 @@ public class MainActivity extends Activity {
    LibraryCore.Item item=rows.get(position);
    cards.addView(cinematicRail?
       landscapeCard(item,ranked?position+1:0,
-       discoverRail || (position<6&&
-        (heading.startsWith("TOP 20")||heading.startsWith("NEW & RECENT")))):
+       (discoverRail&&position<5) ||
+       (position<6&&(heading.startsWith("TOP 20")||
+          heading.startsWith("NEW & RECENT")))):
       mediaCard(item,type.equals("personal")?item.type:type,ranked?position+1:0));
   }
  }
