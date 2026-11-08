@@ -1,0 +1,77 @@
+name: AuroraTV 3.0 Rust
+
+on:
+  push:
+    branches: [rust-rewrite]
+    paths: ["rust_app/**", ".github/workflows/rust-tv.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-core-and-ui:
+    name: Rust core tests and UI build
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust_app
+      - name: Unit tests (Rust IPTV engine)
+        run: cargo test -p aurora-core
+        working-directory: rust_app
+      - name: Compile Slint UI and desktop launcher
+        run: cargo check -p aurora-tv
+        working-directory: rust_app
+
+  fire-tv-apk:
+    name: Fire TV arm64 APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: rust-core-and-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Select Android NDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          NDK_DIR="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          if [ -z "$NDK_DIR" ]; then
+            sdkmanager "ndk;27.2.12479018"
+            NDK_DIR="$ANDROID_HOME/ndk/27.2.12479018"
+          fi
+          echo "ANDROID_NDK_ROOT=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+      - name: Install cargo-apk2
+        run: cargo install cargo-apk2 --locked
+      - name: Build Android APK (Rust Slint + native Java player)
+        working-directory: rust_app
+        env:
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: aarch64-linux-android26-clang
+          CC_aarch64_linux_android: aarch64-linux-android26-clang
+          AR_aarch64_linux_android: llvm-ar
+        run: cargo apk2 build -p aurora-tv --target aarch64-linux-android --lib
+      - name: Collect APK
+        run: |
+          mkdir -p rust_app/dist
+          find rust_app/target -type f -iname "*.apk" -print
+          apk="$(find rust_app/target -type f -iname "*.apk" | head -1)"
+          test -n "$apk"
+          cp "$apk" rust_app/dist/AuroraTV-Rust-3.0-Preview.apk
+          ls -lh rust_app/dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AuroraTV-Rust-3.0-FireTV-APK
+          path: rust_app/dist/AuroraTV-Rust-3.0-Preview.apk
+          retention-days: 30
