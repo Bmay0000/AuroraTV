@@ -75,3 +75,51 @@ jobs:
           name: AuroraTV-RustCore-debug-APK
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+  release-preview:
+    name: Publish direct-download Rust preview
+    needs: android
+    if: github.event_name == 'push' && github.ref == 'refs/heads/rust-rebuild-foundation'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated APK from this build
+        uses: actions/download-artifact@v4
+        with:
+          name: AuroraTV-RustCore-debug-APK
+          path: dist
+      - name: Verify APK and produce checksum
+        run: |
+          test -s dist/app-debug.apk
+          cd dist
+          mv app-debug.apk AuroraTV-Rust-Preview.apk
+          sha256sum AuroraTV-Rust-Preview.apk > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Publish or update GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > dist/RELEASE_NOTES.md <<EOF
+          # AuroraTV Rust Preview — experimental APK
+
+          This is a test build containing a Rust core plus the existing Android/Media3 interface. It is **not** a complete Rust rewrite or a verified stable release. Real Fire TV playback, import, and navigation must be tested on-device.
+
+          Built from commit: \${GITHUB_SHA}
+          CI run: https://github.com/\${GITHUB_REPOSITORY}/actions/runs/\${GITHUB_RUN_ID}
+
+          Download **AuroraTV-Rust-Preview.apk** directly below. SHA256SUMS.txt contains the verification checksum.
+
+          The stable/current release is separate and is not replaced by this prerelease.
+          EOF
+          if gh release view rust-preview --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload rust-preview dist/AuroraTV-Rust-Preview.apk dist/SHA256SUMS.txt \
+              --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit rust-preview --title "AuroraTV Rust Preview (experimental)" \
+              --notes-file dist/RELEASE_NOTES.md --prerelease --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create rust-preview dist/AuroraTV-Rust-Preview.apk dist/SHA256SUMS.txt \
+              --title "AuroraTV Rust Preview (experimental)" \
+              --notes-file dist/RELEASE_NOTES.md --prerelease \
+              --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY"
+          fi
