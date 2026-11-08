@@ -1,0 +1,13 @@
+[package]
+name = "auroratv-android"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "auroratv_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+auroratv-core = { path = "../auroratv-core" }
+jni = "0.21"
