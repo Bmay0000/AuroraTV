@@ -14,6 +14,8 @@ public final class XtreamReference {
     private XtreamReference(){}
 
     public static String of(String kind,String streamId,String ext){
+        String nativeResult=RustBridge.reference(kind,streamId,ext);
+        if(nativeResult!=null)return nativeResult;
         if(!("live".equals(kind)||"movie".equals(kind)||"series".equals(kind)))return null;
         if(streamId==null||!streamId.matches("[A-Za-z0-9_-]{1,64}"))return null;
         if("series".equals(kind))return PREFIX+"series:"+streamId+":none";
@@ -24,6 +26,8 @@ public final class XtreamReference {
         return text!=null&&text.startsWith(PREFIX);
     }
     public static String url(String reference,String server,String username,String password)throws Exception{
+        String nativeResult=RustBridge.resolve(reference,server,username,password);
+        if(nativeResult!=null)return nativeResult;
         if(!isReference(reference))throw new IllegalArgumentException("Not an Xtream reference");
         String[] components=reference.substring(PREFIX.length()).split(":",-1);
         if(components.length!=3)throw new IllegalArgumentException("Invalid stream reference");

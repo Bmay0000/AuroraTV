@@ -1,0 +1,72 @@
+name: Validate Rust Engine and Build Android APK
+
+on:
+  push:
+    branches: [rust-rebuild-foundation, 'rust/**']
+  pull_request:
+    paths:
+      - 'rust/**'
+      - 'app/src/main/java/tv/aurora/player/RustBridge.java'
+      - 'app/src/main/java/tv/aurora/player/XtreamReference.java'
+      - '.github/workflows/rust-android.yml'
+
+jobs:
+  rust-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Test full Rust workspace
+        working-directory: rust
+        run: cargo test --workspace
+
+  android:
+    needs: rust-tests
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK / NDK
+        run: |
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - name: Set up stable Rust for Android
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Install Cargo NDK
+        run: cargo install cargo-ndk --locked
+      - name: Build Rust JNI libraries for Fire OS / Android TV
+        working-directory: rust
+        run: |
+          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -p 23 -o ../app/src/main/jniLibs build --release -p auroratv-android
+          find ../app/src/main/jniLibs -name 'libauroratv_native.so' -print
+      - name: Test existing Java core (with native fallback)
+        run: |
+          mkdir -p build/core-tests
+          javac -d build/core-tests app/src/main/java/tv/aurora/player/RustBridge.java app/src/main/java/tv/aurora/player/XtreamReference.java tests/XtreamReferenceTest.java
+          java -cp build/core-tests XtreamReferenceTest
+      - name: Build APK with bundled Rust libraries
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon assembleDebug
+      - name: Upload Rust-backed AuroraTV APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AuroraTV-RustCore-debug-APK
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
