@@ -39,6 +39,12 @@ public final class TvLayoutTest {
   verify(dense.posterCardHeight<compact.posterCardHeight,"Dense layout reveals more rows");
   verify(hd.discoveryHeroHeight()+hd.discoveryRailHeight()<hd.heightDp*.9,
     "Discovery hero and first poster rail must share the screen");
+  verify(hd.discoveryLandscapeWidth()>=205,
+    "Movie/show discovery must have substantial visible widescreen cards");
+  verify(hd.discoveryLandscapeHeight()*16d/hd.discoveryLandscapeWidth()>=8.8,
+    "Discovery cards should maintain a cinematic widescreen aspect ratio");
+  verify(hd.discoveryHeroHeight()+hd.discoveryRailHeight()<hd.heightDp*.75,
+    "Hover artwork and at least one rail must remain clearly visible");
   verify(comfortable.discoveryPosterWidth()>dense.discoveryPosterWidth(),
     "Comfortable discovery should use larger artwork");
   verify(TvLayout.of(640,360).headerHeight()+TvLayout.of(640,360).navRow+
