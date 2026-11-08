@@ -68,8 +68,15 @@ public final class TvLayout {
     public int discoveryPosterHeight(){
         return (int)Math.round(discoveryPosterWidth()*1.43);
     }
+    /** Widescreen 16:9 rails: large artwork, without boxing every tile. */
+    public int discoveryLandscapeWidth(){
+        return clamp((contentWidth()-4*columnGap)/4,145,350);
+    }
+    public int discoveryLandscapeHeight(){
+        return (int)Math.round(discoveryLandscapeWidth()*9d/16d);
+    }
     public int discoveryRailHeight(){
-        return discoveryPosterHeight()+42;
+        return discoveryLandscapeHeight()+12;
     }
     public static int clamp(int value,int low,int high){
         return Math.max(low,Math.min(high,value));

@@ -373,7 +373,7 @@ public class MainActivity extends Activity {
   cinemaStage.addView(cinemaBackground,new FrameLayout.LayoutParams(-1,-1));
   cinemaVeil=new View(this);
   cinemaVeil.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-    new int[]{0xf907090c,0xd9091015,0x7b081019,0x30060b13}));
+    new int[]{0xf4091017,0xd60a141d,0x650b161e,0x1c07111b}));
   cinemaVeil.setVisibility(View.GONE);
   cinemaStage.addView(cinemaVeil,new FrameLayout.LayoutParams(-1,-1));
   cinemaStage.addView(root,new FrameLayout.LayoutParams(-1,-1));
@@ -824,78 +824,27 @@ public class MainActivity extends Activity {
   final int renderCount=cinematicRail?Math.min(20,rows.size()):rows.size();
   for(int position=0;position<renderCount;position++){
    LibraryCore.Item item=rows.get(position);
-   cards.addView(discoverRail?
-      discoveryPosterCard(item,ranked?position+1:0):
-      cinematicRail?
-      landscapeCard(item,ranked?position+1:0,position<6&&
-       (heading.startsWith("TOP 20")||heading.startsWith("NEW & RECENT"))):
+   cards.addView(cinematicRail?
+      landscapeCard(item,ranked?position+1:0,
+       discoverRail || (position<6&&
+        (heading.startsWith("TOP 20")||heading.startsWith("NEW & RECENT")))):
       mediaCard(item,type.equals("personal")?item.type:type,ranked?position+1:0));
   }
- }
-
- /** Larger portrait artwork rails on Movies / TV Shows. Unlike the home
-  * widescreen cards these never stretch a small poster into a landscape crop. */
- View discoveryPosterCard(LibraryCore.Item item,int rank){
-  TvLayout m=tv();
-  int width=m.discoveryPosterWidth(),height=m.discoveryPosterHeight();
-  LinearLayout card=column();
-  card.setBackground(rounded(0xff111d2a,11,0xff29404e));
-  card.setClipChildren(false);
-  LinearLayout.LayoutParams cardSize=new LinearLayout.LayoutParams(
-     dp(width),dp(height+36));
-  cardSize.rightMargin=dp(12);
-  card.setLayoutParams(cardSize);
-  FrameLayout art=new FrameLayout(this);
-  art.setBackground(rounded(0xff172937,10,0));
-  art.setClipToOutline(true);
-  card.addView(art,new LinearLayout.LayoutParams(-1,dp(height)));
-  TextView initial=headline(item.name.isEmpty()?"A":
-     item.name.substring(0,1).toUpperCase(Locale.ROOT),30,0xff657e8a);
-  art.addView(initial,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
-  ImageView poster=new ImageView(this);
-  poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
-  art.addView(poster,new FrameLayout.LayoutParams(-1,-1));
-  posters.bind(poster,item.artwork);
-  if(rank>0){
-   TextView rankLabel=kicker("#"+rank);
-   rankLabel.setTextSize(10);
-   rankLabel.setPadding(dp(7),dp(3),dp(7),dp(3));
-   rankLabel.setBackground(rounded(0xee122c39,7,0xff416f71));
-   FrameLayout.LayoutParams top=new FrameLayout.LayoutParams(-2,-2,
-       Gravity.LEFT|Gravity.TOP);
-   top.leftMargin=dp(7);top.topMargin=dp(7);
-   art.addView(rankLabel,top);
-  }
-  TextView title=text(displayMediaName(item),14);
-  title.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
-  title.setMaxLines(2);
-  title.setEllipsize(TextUtils.TruncateAt.END);
-  title.setPadding(dp(5),dp(4),dp(4),dp(2));
-  card.addView(title,new LinearLayout.LayoutParams(-1,dp(36)));
-  card.setFocusable(true);card.setClickable(true);
-  card.setContentDescription(displayMediaName(item)+", view details");
-  card.setOnClickListener(v->showMediaDetails(item));
-  card.setOnFocusChangeListener((v,focus)->{
-   if(focus){featurePriority=4;updateCinematicPanel(item);}
-   card.setBackground(rounded(focus?0xff234d47:0xff111d2a,11,
-      focus?ACCENT:0xff29404e));
-   title.setTextColor(focus?ACCENT:Color.WHITE);
-   card.animate().scaleX(focus?1.045f:1f).scaleY(focus?1.045f:1f)
-       .setDuration(140).start();
-  });
-  return card;
  }
 
  /** Widescreen artwork cards make the discovery feed visibly different from a provider poster grid. */
  View landscapeCard(LibraryCore.Item item,int rank,boolean getBackdrop){
   TvLayout m=tv();
-  int w=TvLayout.clamp((m.contentWidth()-dp(48))/5,125,275);
-  int h=TvLayout.clamp(m.heightDp/5,88,148);
+  boolean featuredRail="discover".equals(screen);
+  int w=featuredRail?m.discoveryLandscapeWidth():
+      TvLayout.clamp((m.contentWidth()-dp(48))/5,125,275);
+  int h=featuredRail?m.discoveryLandscapeHeight():
+      TvLayout.clamp(m.heightDp/5,88,148);
   FrameLayout tile=new FrameLayout(this);
   LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(dp(w),dp(h));
-  layout.rightMargin=dp(9);tile.setLayoutParams(layout);
+  layout.rightMargin=dp(featuredRail?15:9);tile.setLayoutParams(layout);
   tile.setClipToOutline(true);
-  tile.setBackground(rounded(0xff11202b,12,0));
+  tile.setBackground(rounded(0xff0a1620,featuredRail?17:12,0));
   ImageView picture=new ImageView(this);
   picture.setScaleType(ImageView.ScaleType.CENTER_CROP);
   tile.addView(picture,new FrameLayout.LayoutParams(-1,-1));
@@ -915,12 +864,13 @@ public class MainActivity extends Activity {
   }
   View shade=new View(this);
   shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
-      new int[]{0xf4000b16,0x74000c1a,0x0c05111b}));
+      new int[]{0xeb06101a,0x4d06101a,0x0006111a}));
   tile.addView(shade,new FrameLayout.LayoutParams(-1,-1));
   LinearLayout info=column();info.setGravity(Gravity.BOTTOM);
-  info.setPadding(dp(13),dp(4),dp(9),dp(12));
+  info.setPadding(dp(featuredRail?16:13),dp(4),dp(10),dp(featuredRail?13:12));
   tile.addView(info,new FrameLayout.LayoutParams(-1,-1,Gravity.BOTTOM));
-  TextView title=headline(displayMediaName(item),TvLayout.clamp(m.bodySize()+3,14,21),Color.WHITE);
+  TextView title=headline(displayMediaName(item),
+     TvLayout.clamp(m.bodySize()+(featuredRail?4:3),14,22),Color.WHITE);
   title.setMaxLines(2);title.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(title);
   TextView meta=text((rank>0?"#"+rank+"  ·  ":"")+
@@ -931,9 +881,12 @@ public class MainActivity extends Activity {
   tile.setOnClickListener(v->showMediaDetails(item));
   tile.setOnFocusChangeListener((v,focus)->{
    if(focus){featurePriority=4;updateCinematicPanel(item);}
-   tile.setBackground(rounded(focus?0xff164c47:0xff11202b,12,focus?ACCENT:0));
-   tile.animate().scaleX(focus?1.035f:1f).scaleY(focus?1.035f:1f)
-      .setDuration(150).start();
+   // Selection is a subtle luminous outline, not a chunky colored box.
+   tile.setBackground(rounded(0xff0a1620,featuredRail?17:12,
+       focus?ACCENT:0));
+   tile.setElevation(dp(focus?13:0));
+   tile.animate().scaleX(focus?1.045f:1f).scaleY(focus?1.045f:1f)
+      .setDuration(175).start();
   });
   return tile;
  }
@@ -1404,9 +1357,10 @@ public class MainActivity extends Activity {
   hero.addView(cinematicTrailerLayer,new FrameLayout.LayoutParams(-1,-1));
   View shade=new View(this);
   shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-    new int[]{0xff081321,0xf0081423,0x87081524,0x240b1724}));
+    new int[]{0xee08121c,0xc9091420,0x4b091621,0x00101a24}));
   hero.addView(shade,new FrameLayout.LayoutParams(-1,-1));
-  // The compact featured area leaves enough room to browse real poster artwork.
+  // Transparent floating metadata over the shared full-screen backdrop. The
+  // browse rails remain visible instead of a giant rectangular preview.
   // Portrait artwork remains portrait-sized on the right when a wide backdrop
   // is missing; no giant cropped faces pretending to be film backdrops.
   cinematicPoster=new ImageView(this);
@@ -1415,7 +1369,7 @@ public class MainActivity extends Activity {
        dp(TvLayout.clamp(m.contentWidth()/7,82,138)),-1,Gravity.RIGHT|Gravity.CENTER_VERTICAL);
   posterSpace.rightMargin=dp(20);
   hero.addView(cinematicPoster,posterSpace);
-  if(cinemaBackground!=null)cinemaBackground.setVisibility(View.GONE);
+  if(cinemaBackground!=null)cinemaBackground.setVisibility(View.VISIBLE);
   if(cinemaVeil!=null)cinemaVeil.setVisibility(View.VISIBLE);
   LinearLayout info=column();info.setGravity(Gravity.CENTER_VERTICAL);
   info.setPadding(dp(14),dp(2),dp(6),dp(2));
@@ -1425,7 +1379,7 @@ public class MainActivity extends Activity {
   info.addView(eyebrow);
   cinematicTitle=headline("Discover your next favorite",
     TvLayout.clamp(m.headingSize()+4,23,34),Color.WHITE);
-  cinematicTitle.setMaxLines(m.heightDp<690?1:2);
+  cinematicTitle.setMaxLines(m.heightDp<610?1:2);
   cinematicTitle.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicTitle);
   cinematicSubtitle=text("Move between titles to explore your collection",13);
@@ -1498,15 +1452,24 @@ public class MainActivity extends Activity {
    if(cinematicOverview!=null)cinematicOverview.setText("");
    if(cinematicMeta!=null)cinematicMeta.setText("");
    if(cinematicPoster!=null)posters.bind(cinematicPoster,item.artwork);
-   // Provider poster images are often 200-400 pixels wide. Keep them
-   // portrait-sized; NEVER enlarge/blur them across the television.
+   // Restore an immersive FULL-SCREEN selection backdrop on every focus.
+   // Provider cover images are often small portraits: use them only as a
+   // dim ambient fallback. When TMDB has a widescreen image we replace it
+   // with a high-quality, sharp cinematic background (without blur).
    if(cinemaBackground!=null){
-    cinemaBackground.setImageDrawable(null);
-    cinemaBackground.setVisibility(View.GONE);
-    cinemaBackground.setAlpha(0f);
+    cinemaBackground.animate().cancel();
+    cinemaBackground.setVisibility(View.VISIBLE);
+    cinemaBackground.setScaleType(ImageView.ScaleType.CENTER_CROP);
     if(android.os.Build.VERSION.SDK_INT>=31)cinemaBackground.setRenderEffect(null);
+    if(item.artwork!=null&&!item.artwork.isEmpty()){
+     cinemaBackground.setAlpha(.23f);
+     posters.bind(cinemaBackground,item.artwork);
+    }else{
+     cinemaBackground.setImageDrawable(null);cinemaBackground.setAlpha(0f);
+    }
    }
-   if(cinematicBackdrop!=null)cinematicBackdrop.setAlpha(0f);
+   if(cinematicBackdrop!=null)cinematicBackdrop.animate().alpha(0f)
+       .setDuration(160).start();
    scheduleCinematicTrailer(item,revision);
    cinematicSubtitle.setText((item.releaseYear>0?item.releaseYear+"  •  ":"")+
         ("series".equals(item.type)?"SERIES":"MOVIE")+"  •  YOUR LIBRARY");
@@ -1590,17 +1553,33 @@ public class MainActivity extends Activity {
    if(child instanceof ImageView&&child!=old&&child!=cinematicPoster)parent.removeView(child);
   }
   if(url==null||url.isEmpty()){
+   // No high-resolution match: preserve the ambient, full-screen artwork
+   // behind the content, rather than returning to an empty black backdrop.
    if(cinematicPoster!=null)cinematicPoster.setVisibility(View.VISIBLE);
-   if(cinemaBackground!=null)cinemaBackground.setVisibility(View.GONE);
    if(old!=null)old.animate().alpha(0f).setDuration(160).start();
    return;
   }
   if(cinemaBackground!=null){
    if(android.os.Build.VERSION.SDK_INT>=31)cinemaBackground.setRenderEffect(null);
    cinemaBackground.setVisibility(View.VISIBLE);
-   cinemaBackground.setAlpha(0f);
+   cinemaBackground.animate().cancel();
+   cinemaBackground.setAlpha(.23f);
    posters.bindBackdrop(cinemaBackground,url);
-   cinemaBackground.animate().alpha(1f).setDuration(400).start();
+   // Reveal the detailed image once it has finished decoding; avoid a blank
+   // screen while the poster loader is still fetching artwork.
+   final int frameRevision=revision;
+   Runnable backgroundReveal=new Runnable(){
+    int checks;
+    public void run(){
+     if(frameRevision!=cinematicRevision||cinemaBackground==null)return;
+     if(cinemaBackground.getDrawable()==null&&checks++<42){
+      uiHandler.postDelayed(this,70);return;
+     }
+     if(cinemaBackground.getDrawable()!=null)
+      cinemaBackground.animate().alpha(.94f).setDuration(480).start();
+    }
+   };
+   uiHandler.post(backgroundReveal);
   }
   ImageView incoming=new ImageView(this);
   incoming.setScaleType(ImageView.ScaleType.CENTER_CROP);

@@ -51,7 +51,7 @@ import androidx.media3.ui.PlayerView;
  */
 public final class PlaybackScreen {
     public interface Exit { void goBack(); }
-    private static final long CONTROLS_TIMEOUT_MS = 5000;
+    private static final long CONTROLS_TIMEOUT_MS = 6500;
     private static final long HEALTH_INTERVAL_MS = 20000;
     private final Activity activity;
     private final PlaybackDiagnostics diagnostics;
@@ -173,9 +173,9 @@ public final class PlaybackScreen {
 
     private GradientDrawable controlBackground(boolean focused,boolean primary){
         GradientDrawable d=shape(focused?0xff5debd0:
-            (primary?0xffe9f9f5:0xcc172a39),11);
-        d.setStroke(Math.max(1,dp(1)),focused?0xffb8fff2:
-            (primary?0xfff0ffff:0xff416071));
+            (primary?0xffecf9f6:0x5512222e),24);
+        if(focused||primary)
+            d.setStroke(Math.max(1,dp(1)),focused?0xffb8fff2:0x66ffffff);
         return d;
     }
 
@@ -185,11 +185,11 @@ public final class PlaybackScreen {
         b.setMinWidth(0);b.setMinimumWidth(0);b.setMinHeight(0);b.setMinimumHeight(0);
         float dpWidth=activity.getResources().getDisplayMetrics().widthPixels/
             Math.max(.5f,activity.getResources().getDisplayMetrics().density);
-        b.setTextSize(dpWidth<780?11:dpWidth<1050?12:13);
+        b.setTextSize(dpWidth<780?12:dpWidth<1050?13:15);
         b.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
         b.setLetterSpacing(.012f);
         b.setTextColor(Color.WHITE);
-        b.setPadding(dp(5),0,dp(5),0);
+        b.setPadding(dp(3),0,dp(3),0);
         b.setBackground(controlBackground(false,false));
         b.setFocusable(true);
         b.setOnClickListener(v->{
@@ -265,45 +265,64 @@ public final class PlaybackScreen {
         statusSpace.topMargin=dp(9);
         centerBanner.addView(centerStatus,statusSpace);
 
+
+        // A single compact transport dock replaces the old two rows of
+        // rectangular buttons. The picture remains visible behind it.
         controlsOverlay = new LinearLayout(activity);
         controlsOverlay.setOrientation(LinearLayout.VERTICAL);
-        controlsOverlay.setPadding(dp(27),dp(19),dp(27),dp(19));
+        controlsOverlay.setPadding(dp(30),dp(29),dp(30),dp(24));
         GradientDrawable glass=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-            new int[]{0x00070d18,0x9c0b1928,0xf6091422});
+            new int[]{0x00050b12,0x85070e19,0xfa08101c});
         controlsOverlay.setBackground(glass);
-        FrameLayout.LayoutParams overlayBounds = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM);
-        root.addView(controlsOverlay, overlayBounds);
+        FrameLayout.LayoutParams overlayBounds=new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT,Gravity.BOTTOM);
+        root.addView(controlsOverlay,overlayBounds);
 
-        TextView label=label("AURORA   /   "+("live".equals(type)?"LIVE TV":
-            "movie".equals(type)?"MOVIE":"EPISODE"),11,0xff5debd0);
-        label.setLetterSpacing(.13f);label.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
-        controlsOverlay.addView(label);
-        TextView title = label(media.name, TvLayout.clamp(
-            (int)(activity.getResources().getDisplayMetrics().widthPixels/
-                activity.getResources().getDisplayMetrics().density*.020),19,26),
-            Color.WHITE);
+        LinearLayout titleLine=new LinearLayout(activity);
+        titleLine.setGravity(Gravity.CENTER_VERTICAL);
+        controlsOverlay.addView(titleLine,new LinearLayout.LayoutParams(-1,dp(27)));
+        TextView programmeType=label("AURORA  /  "+
+            ("live".equals(type)?"LIVE TELEVISION":
+            "movie".equals(type)?"FEATURE FILM":"EPISODE"),11,0xff8af1dd);
+        programmeType.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        programmeType.setLetterSpacing(.13f);
+        titleLine.addView(programmeType,new LinearLayout.LayoutParams(0,-1,1));
+        TextView hint=label("SELECT  •  CONTROLS",11,0xffa5b8c4);
+        hint.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        titleLine.addView(hint,new LinearLayout.LayoutParams(-2,-1));
+
+        LinearLayout nowPlaying=new LinearLayout(activity);
+        nowPlaying.setGravity(Gravity.CENTER_VERTICAL);
+        controlsOverlay.addView(nowPlaying,new LinearLayout.LayoutParams(-1,dp(43)));
+        TextView title=label(media.name,27,Color.WHITE);
         title.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
         title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);
-        controlsOverlay.addView(title);
-        state = label("Connecting to stream…",12,0xffb5d0dc);
-        LinearLayout.LayoutParams stateBounds =
-            new LinearLayout.LayoutParams(-1,dp(21));
-        controlsOverlay.addView(state,stateBounds);
+        nowPlaying.addView(title,new LinearLayout.LayoutParams(0,-1,1));
+        state=label("Connecting…",12,0xffaac6d4);
+        state.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        state.setSingleLine(true);state.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams statusWidth=new LinearLayout.LayoutParams(dp(230),-1);
+        statusWidth.leftMargin=dp(14);
+        nowPlaying.addView(state,statusWidth);
 
         if(!"live".equals(type)){
             LinearLayout timing=new LinearLayout(activity);
             timing.setGravity(Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams timeline=new LinearLayout.LayoutParams(-1,dp(46));
+            timeline.topMargin=dp(1);controlsOverlay.addView(timing,timeline);
             playbackSeekbar=new SeekBar(activity);
             playbackSeekbar.setMax(1000);
+            playbackSeekbar.setSplitTrack(false);
             playbackSeekbar.setProgressTintList(ColorStateList.valueOf(0xff5debd0));
-            playbackSeekbar.setThumbTintList(ColorStateList.valueOf(0xff5debd0));
-            timing.addView(playbackSeekbar,new LinearLayout.LayoutParams(0,dp(34),1));
-            clockText=label("00:00  /  —",13,0xffe2f1f6);
-            clockText.setGravity(Gravity.CENTER_VERTICAL|Gravity.RIGHT);
-            timing.addView(clockText,new LinearLayout.LayoutParams(dp(130),dp(34)));
-            controlsOverlay.addView(timing);
+            playbackSeekbar.setSecondaryProgressTintList(ColorStateList.valueOf(0x99759aaa));
+            playbackSeekbar.setProgressBackgroundTintList(ColorStateList.valueOf(0x8897aab3));
+            playbackSeekbar.setThumbTintList(ColorStateList.valueOf(0xffeafff9));
+            timing.addView(playbackSeekbar,new LinearLayout.LayoutParams(0,-1,1));
+            clockText=label("00:00  /  —",13,0xffd2e9e6);
+            clockText.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams clockSpace=new LinearLayout.LayoutParams(dp(135),-1);
+            clockSpace.leftMargin=dp(8);
+            timing.addView(clockText,clockSpace);
             playbackSeekbar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
                 @Override public void onStartTrackingTouch(SeekBar bar){scrubbing=true;handler.removeCallbacks(hideControls);}
                 @Override public void onProgressChanged(SeekBar bar,int progress,boolean user){
@@ -332,61 +351,73 @@ public final class PlaybackScreen {
                     scheduleHide();
                 }
             });
+
+        }else{
+            TextView liveRail=label("● LIVE    •    DIRECT STREAM",12,0xff7dedcf);
+            liveRail.setLetterSpacing(.06f);
+            controlsOverlay.addView(liveRail,new LinearLayout.LayoutParams(-1,dp(31)));
         }
 
-        LinearLayout buttons=new LinearLayout(activity);
-        buttons.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(42));
-        actions.topMargin=dp(5);
-        controlsOverlay.addView(buttons,actions);
+        LinearLayout dock=new LinearLayout(activity);
+        dock.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams dockArea=new LinearLayout.LayoutParams(-1,dp(62));
+        dockArea.topMargin=dp(4);
+        controlsOverlay.addView(dock,dockArea);
+
+        // Main transport is deliberately visual and easy to find by remote.
         if(!"live".equals(type)){
-            Button back30=control("↶  −30s",v->seekRelative(-30000));
-            buttons.addView(back30,new LinearLayout.LayoutParams(0,-1,1));
+            Button rewind=control("↶ 10",v->seekRelative(-10000));
+            rewind.setContentDescription("Rewind 10 seconds");
+            dock.addView(rewind,new LinearLayout.LayoutParams(dp(67),dp(48)));
         }
-        playPause=control("Ⅱ  PAUSE",v->togglePlay());
+        playPause=control("Ⅱ",v->togglePlay());
         primaryButton=playPause;
+        playPause.setTextSize(26);
+        playPause.setContentDescription("Pause or resume playback");
         playPause.setBackground(controlBackground(false,true));
         playPause.setTextColor(0xff071521);
-        buttons.addView(playPause,new LinearLayout.LayoutParams(0,-1,1));
+        LinearLayout.LayoutParams transport=new LinearLayout.LayoutParams(dp(83),dp(56));
+        transport.leftMargin=dp(5);transport.rightMargin=dp(5);
+        dock.addView(playPause,transport);
         if("live".equals(type)){
-            Button goLive=control("◉  GO LIVE",v->{
+            Button live=control("● LIVE",v->{
                 if(player==null)return;
                 manualPause=false;
                 if(player.isCurrentMediaItemLive()&&player.isCurrentMediaItemSeekable()){
                     player.seekToDefaultPosition();player.play();
                 }else retry();
             });
-            buttons.addView(goLive,new LinearLayout.LayoutParams(0,-1,1));
+            live.setContentDescription("Go to live edge");
+            dock.addView(live,new LinearLayout.LayoutParams(dp(76),dp(48)));
         }else{
-            Button back10=control("−10s",v->seekRelative(-10000));
-            buttons.addView(back10,new LinearLayout.LayoutParams(0,-1,1));
-            Button forward10=control("+10s",v->seekRelative(10000));
-            buttons.addView(forward10,new LinearLayout.LayoutParams(0,-1,1));
-            Button forward30=control("+30s  ↷",v->seekRelative(30000));
-            buttons.addView(forward30,new LinearLayout.LayoutParams(0,-1,1));
+            Button forward=control("10 ↷",v->seekRelative(10000));
+            forward.setContentDescription("Forward 10 seconds");
+            dock.addView(forward,new LinearLayout.LayoutParams(dp(67),dp(48)));
         }
-        Button reconnect=control("⟳  RELOAD",v->retry());
-        buttons.addView(reconnect,new LinearLayout.LayoutParams(0,-1,1));
-        Button back=control("←  BACK",v->exit.goBack());
-        buttons.addView(back,new LinearLayout.LayoutParams(0,-1,1));
-        LinearLayout extras=new LinearLayout(activity);
-        extras.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams tools=new LinearLayout.LayoutParams(-1,dp(37));
-        tools.topMargin=dp(5);
-        controlsOverlay.addView(extras,tools);
-        if(!"live".equals(type)){
-            speedButton=control("1×  SPEED",v->chooseSpeed());
-            extras.addView(speedButton,new LinearLayout.LayoutParams(0,-1,1));
-            Button subtitles=control("CC  SUBTITLES",v->chooseTrack(true));
-            extras.addView(subtitles,new LinearLayout.LayoutParams(0,-1,1));
-            Button audio=control("AUDIO",v->chooseTrack(false));
-            extras.addView(audio,new LinearLayout.LayoutParams(0,-1,1));
-        }
-        aspectButton=control("▣  "+aspectLabel(),v->cycleAspect());
-        extras.addView(aspectButton,new LinearLayout.LayoutParams(0,-1,1));
-        optionsButton=control("⚙  OPTIONS",v->showSettings());
-        extras.addView(optionsButton,new LinearLayout.LayoutParams(0,-1,1));
-        setControlsVisible(false);
+
+        // The overflow menu holds less-used tools (buffer settings, format,
+        // audio tracks, subtitles, speed and diagnostics). Keep the main dock
+        // focused on immediate playback.
+        View space=new View(activity);
+        dock.addView(space,new LinearLayout.LayoutParams(0,1,1));
+        Button audio=control("♫",v->chooseTrack(false));
+        audio.setTextSize(21);audio.setContentDescription("Audio tracks");
+        dock.addView(audio,new LinearLayout.LayoutParams(dp(49),dp(45)));
+        Button subtitles=control("CC",v->chooseTrack(true));
+        subtitles.setTextSize(14);subtitles.setContentDescription("Subtitles and captions");
+        dock.addView(subtitles,new LinearLayout.LayoutParams(dp(50),dp(45)));
+        aspectButton=control("▣",v->cycleAspect());
+        aspectButton.setTextSize(21);
+        aspectButton.setContentDescription("Aspect ratio: "+aspectLabel());
+        dock.addView(aspectButton,new LinearLayout.LayoutParams(dp(49),dp(45)));
+        optionsButton=control("⋯",v->showSettings());
+        optionsButton.setTextSize(26);optionsButton.setContentDescription("More playback options");
+        dock.addView(optionsButton,new LinearLayout.LayoutParams(dp(49),dp(45)));
+        Button back=control("✕",v->exit.goBack());
+        back.setTextSize(22);back.setContentDescription("Exit programme");
+        dock.addView(back,new LinearLayout.LayoutParams(dp(47),dp(45)));
+        overlayVisible=false;
+        controlsOverlay.setVisibility(View.GONE);
         activity.setContentView(root);
         root.requestFocus();
         handler.postDelayed(updateClock,1000L);
@@ -647,7 +678,8 @@ public final class PlaybackScreen {
             diagnostics.event("Source unavailable after "+recovery.attempts()+" recoveries");
             if(player!=null){try{player.pause();}catch(Exception ignored){}}
             state.setText("Stream unavailable · choose Retry or another channel");
-            playPause.setText("⟳  RETRY");
+            playPause.setText("⟳");
+        playPause.setContentDescription("Retry stream");
             playPause.setOnClickListener(v->retry());
             showStatus("Stream stopped responding.\nUse Retry, Options or Exit.",false);
             showControls();
@@ -712,7 +744,7 @@ public final class PlaybackScreen {
         else resizeMode=AspectRatioFrameLayout.RESIZE_MODE_FIT;
         view.setResizeMode(resizeMode);
         settings.edit().putInt("aspectMode",resizeMode).apply();
-        if(aspectButton!=null)aspectButton.setText("▣  "+aspectLabel());
+        if(aspectButton!=null)aspectButton.setContentDescription("Aspect ratio: "+aspectLabel());
         state.setText("Picture: "+aspectLabel());
         showControls();
     }
@@ -796,7 +828,9 @@ public final class PlaybackScreen {
             showStatus("This stream is unavailable.\nUse Retry, Options or Exit.",false);
             return;
         }
-        playPause.setText(player.getPlayWhenReady()?"Ⅱ  PAUSE":"▶  PLAY");
+        playPause.setText(player.getPlayWhenReady()?"Ⅱ":"▶");
+        playPause.setContentDescription(player.getPlayWhenReady()?
+            "Pause playback":"Resume playback");
         playPause.setOnClickListener(v->togglePlay());
         switch(player.getPlaybackState()){
             case Player.STATE_BUFFERING:
@@ -839,15 +873,26 @@ public final class PlaybackScreen {
     }
 
     private void setControlsVisible(boolean shown) {
-        if (closed) return;
-        overlayVisible = shown;
-        controlsOverlay.setVisibility(shown ? View.VISIBLE : View.GONE);
-        if (shown) {
-            primaryButton.requestFocus();
+        if(closed)return;
+        overlayVisible=shown;
+        controlsOverlay.animate().cancel();
+        if(shown){
+            if(controlsOverlay.getVisibility()!=View.VISIBLE){
+                controlsOverlay.setAlpha(0f);
+                controlsOverlay.setTranslationY(dp(18));
+                controlsOverlay.setVisibility(View.VISIBLE);
+                controlsOverlay.animate().alpha(1f).translationY(0f)
+                    .setDuration(210).start();
+            }
+            if(primaryButton!=null)primaryButton.requestFocus();
             scheduleHide();
-        } else {
+        }else{
             handler.removeCallbacks(hideControls);
             root.requestFocus();
+            controlsOverlay.animate().alpha(0f).translationY(dp(18))
+                .setDuration(165).withEndAction(()->{
+                    if(!overlayVisible)controlsOverlay.setVisibility(View.GONE);
+                }).start();
         }
     }
 

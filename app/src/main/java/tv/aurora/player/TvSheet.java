@@ -25,8 +25,8 @@ import java.util.function.IntConsumer;
  * An independent UI helper: does not access IPTV credentials or library state.
  */
 public final class TvSheet {
-    private static final int SURFACE=0xff101e2c, HIGHLIGHT=0xff24463f,
-        BORDER=0xff34505a, ACCENT=0xff5debd0, MUTED=0xffaac0cd;
+    private static final int SURFACE=0x25152935, HIGHLIGHT=0xff17362f,
+        BORDER=0x00000000, ACCENT=0xff5debd0, MUTED=0xffaac0cd;
     private TvSheet(){}
 
     public static final class Entry {
@@ -61,7 +61,7 @@ public final class TvSheet {
         Dialog dialog=new Dialog(a);
         LinearLayout base=new LinearLayout(a);base.setOrientation(LinearLayout.VERTICAL);
         base.setPadding(dp(a,23),dp(a,20),dp(a,23),dp(a,17));
-        base.setBackground(panel(a,0xff0b1624,0xff3a5360,20));
+        base.setBackground(panel(a,0xf30a1722,0x443d5961,25));
         TextView caption=text(a,"A U R O R A   /   SETTINGS",11,ACCENT,true);
         caption.setLetterSpacing(.13f);
         base.addView(caption,new LinearLayout.LayoutParams(-1,dp(a,21)));
@@ -108,9 +108,9 @@ public final class TvSheet {
                             boolean selected,Runnable onClick){
         LinearLayout card=new LinearLayout(a);
         card.setGravity(Gravity.CENTER_VERTICAL);card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setPadding(dp(a,15),dp(a,8),dp(a,12),dp(a,8));
+        card.setPadding(dp(a,17),dp(a,7),dp(a,12),dp(a,7));
         card.setBackground(panel(a,selected?HIGHLIGHT:SURFACE,
-            selected?ACCENT:BORDER,12));
+            selected?0x665debd0:0,17));
         card.setFocusable(true);card.setClickable(true);
         card.setContentDescription(title+(detail.isEmpty()?"":". "+detail));
         if(icon!=null&&!icon.isEmpty()){
@@ -135,9 +135,9 @@ public final class TvSheet {
         arrow.setGravity(Gravity.CENTER);
         card.addView(arrow,new LinearLayout.LayoutParams(dp(a,28),dp(a,34)));
         card.setOnFocusChangeListener((v,focused)->{
-            card.setBackground(panel(a,focused?0xff25493f:
-                (selected?HIGHLIGHT:SURFACE),focused?ACCENT:
-                (selected?ACCENT:BORDER),12));
+            card.setBackground(panel(a,focused?0xff1e403b:
+                (selected?HIGHLIGHT:SURFACE),focused?0xff5debd0:
+                (selected?0x665debd0:0),17));
             label.setTextColor(focused?ACCENT:Color.WHITE);
             card.animate().scaleX(focused?1.012f:1f).scaleY(focused?1.012f:1f)
                 .setDuration(100).start();
@@ -146,8 +146,8 @@ public final class TvSheet {
             parent.dialog.dismiss();
             onClick.run();
         });
-        LinearLayout.LayoutParams pos=new LinearLayout.LayoutParams(-1,dp(a,63));
-        pos.bottomMargin=dp(a,7);
+        LinearLayout.LayoutParams pos=new LinearLayout.LayoutParams(-1,dp(a,59));
+        pos.bottomMargin=dp(a,5);
         parent.content.addView(card,pos);
         return card;
     }
