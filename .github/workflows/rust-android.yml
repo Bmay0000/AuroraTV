@@ -74,6 +74,20 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon assembleDebug
+      - name: Verify signed APK can update the AuroraTV package
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -s "$APK"
+          "$APKSIGNER" verify --print-certs "$APK"
+          package_line=$("$AAPT" dump badging "$APK" | grep '^package:')
+          [[ "$package_line" == *"name='tv.aurora.player'"* ]] || {
+            echo "::error::Unexpected application ID. Updates would lose access to local user data."
+            exit 1
+          }
+          printf '%s\n' "$package_line"
       - name: Upload Rust-backed AuroraTV APK
         uses: actions/upload-artifact@v4
         with:
@@ -89,6 +103,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android signing verification tools
+        run: sdkmanager --install "build-tools;35.0.0"
       - name: Download validated APK from this build
         uses: actions/download-artifact@v4
         with:
@@ -101,6 +120,67 @@ jobs:
           mv app-debug.apk AuroraTV-Rust-Preview.apk
           sha256sum AuroraTV-Rust-Preview.apk > SHA256SUMS.txt
           cat SHA256SUMS.txt
+      - name: Check signature and version against installed release lineage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK_TOOL="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          cert() {
+            "$APK_TOOL" verify --print-certs "$1" |
+              grep -m1 'Signer #1 certificate SHA-256 digest:' | awk '{print $NF}'
+          }
+          package() {
+            "$AAPT" dump badging "$1" |
+              sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -1
+          }
+          version_code() {
+            "$AAPT" dump badging "$1" |
+              sed -n "s/^package:.*versionCode='\\([0-9]*\\)'.*/\\1/p" | head -1
+          }
+          new=dist/AuroraTV-Rust-Preview.apk
+          test "$(package "$new")" = "tv.aurora.player" || {
+            echo "::error::APK application ID changed; refusing to replace update."; exit 1;
+          }
+          new_cert="$(cert "$new")"
+          new_code="$(version_code "$new")"
+          test -n "$new_cert" && test -n "$new_code"
+          if gh release view rust-preview --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            mkdir -p previous
+            gh release download rust-preview --pattern 'AuroraTV-Rust-Preview.apk' \
+              --dir previous --repo "$GITHUB_REPOSITORY"
+            old=previous/AuroraTV-Rust-Preview.apk
+            old_cert="$(cert "$old")"
+            old_code="$(version_code "$old")"
+            if [[ "$(package "$old")" != "$(package "$new")" ||
+                  "$old_cert" != "$new_cert" ]]; then
+              echo "::error::APK signing certificate or application ID changed. Existing users would have to uninstall and lose local logins. Not publishing."
+              exit 1
+            fi
+            if (( new_code < old_code )); then
+              echo "::error::Version code regressed ($new_code < $old_code)."
+              exit 1
+            fi
+            echo "Safe in-place upgrade from existing Rust preview: same package, same certificate; version $old_code -> $new_code"
+          fi
+          # Legacy 2.1 is a different published APK lineage. Diagnose it
+          # without blocking updates for already-installed Rust previews.
+          if gh release view 2.1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            mkdir -p legacy
+            if gh release download 2.1 --pattern 'AuroraTV-Flutter-Compact-UI.apk' \
+                --dir legacy --repo "$GITHUB_REPOSITORY"; then
+              old=legacy/AuroraTV-Flutter-Compact-UI.apk
+              if [[ "$(package "$old")" == "$(package "$new")" &&
+                    "$(cert "$old")" == "$new_cert" ]]; then
+                echo "Compatible signing and package with legacy 2.1 release."
+                echo "A direct in-place upgrade from version 2.1 is allowed by package identity." >> "$GITHUB_STEP_SUMMARY"
+              else
+                echo "::warning::Published 2.1 APK has a different package or signature. Android cannot migrate its login automatically into this Rust preview."
+                echo "Legacy 2.1 APK cannot be upgraded in place due to package/signing mismatch." >> "$GITHUB_STEP_SUMMARY"
+              fi
+            fi
+          fi
       - name: Publish or update GitHub prerelease
         env:
           GH_TOKEN: ${{ github.token }}

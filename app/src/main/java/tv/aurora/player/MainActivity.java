@@ -149,16 +149,22 @@ public class MainActivity extends Activity {
  }
 
  void start(){
-  // Repair v0.4 staged imports. Do not claim Movies/TV Shows are empty
-  // merely because an interrupted import left only Live TV in the database.
-  if(store.hasLibrary()&&!prefs.getString("import.pending","").isEmpty()){
-   loadingScreen("RESTORING YOUR COMPLETE LIBRARY",
-     "Updating Live TV, Movies and TV Shows together. Your existing catalog stays safe.");
-   refresh();
+  // An APK update preserves this app's private database and encrypted prefs.
+  // Always open an existing catalog first; never force a login or block the
+  // home screen behind a network import just because a newer APK launched.
+  if(store.hasLibrary()){
+   shell();home();
+   if(!prefs.getString("import.pending","").isEmpty()){
+    // Repair unfinished older imports without hiding a usable saved library.
+    uiHandler.postDelayed(()->{
+     if(!isDestroyed()&&!isFinishing()&&!loading)refresh();
+    },1200L);
+   }
    return;
   }
-  if(store.hasLibrary()){shell();home();}
-  else restoreAccountOrLogin();
+  // An empty local catalog is not evidence that credentials were lost.
+  // If encrypted connection details are present, rebuild it automatically.
+  restoreAccountOrLogin();
  }
  void restoreAccountOrLogin(){
   String mode=prefs.getString("mode","");
@@ -2916,9 +2922,32 @@ public class MainActivity extends Activity {
     "Schedules, custom sources and guide preview",this::guideSettings),
    new TvSheet.Entry("","⚙","Playback diagnostics",
     "Inspect buffering, stream errors and retries",this::showPlaybackDiagnostics),
-   new TvSheet.Entry("ACCOUNT","×","Disconnect provider",
+   new TvSheet.Entry("ACCOUNT","✓","Updates & saved account",
+    "Check login preservation and installed version",this::showUpdateStatus),
+   new TvSheet.Entry("","×","Disconnect provider",
     "Remove saved login, filters and library",this::confirmDisconnect)
   );
+ }
+ void showUpdateStatus(){
+  String version="unknown";
+  try{
+   android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);
+   version=info.versionName==null?"unknown":info.versionName;
+  }catch(Exception ignored){}
+  String mode=prefs.getString("mode","");
+  String provider=mode.equals("xtream")?"Xtream Codes":
+     mode.equals("m3u")?"M3U playlist":"Not connected";
+  String detail="AuroraTV "+version+"\n\n"+
+     "Provider: "+provider+"\n"+
+     "Saved library: "+(store.hasLibrary()?"Available":"Will be rebuilt after login restore")+"\n\n"+
+     "When you install a newer AuroraTV APK over this app, Android keeps "+
+     "your encrypted login, favorites, hidden categories and viewing history. "+
+     "The update must have the same package ID and signing certificate.\n\n"+
+     "Do not uninstall AuroraTV or clear its storage before updating. "+
+     "Uninstalling removes the device's locally encrypted login. "+
+     "A separately packaged or differently signed edition cannot access "+
+     "this installation's saved data.";
+  TvSheet.message(this,"Updates & account",detail,"Close",()->{});
  }
  void confirmDisconnect(){
   TvSheet.menu(this,"Disconnect this device?",
@@ -3042,9 +3071,9 @@ public class MainActivity extends Activity {
   final boolean existing=store.hasLibrary();
   final boolean repairing=!prefs.getString("import.pending","").isEmpty();
   final int token=++generation;
-  if(!existing||repairing||"loading".equals(screen))
+  if(!existing||"loading".equals(screen))
    loadingScreen("PREPARING YOUR COMPLETE LIBRARY",
-       "Importing Live TV, Movies and TV Shows. This will run just once.");
+       "Importing Live TV, Movies and TV Shows. Your saved login stays on this device.");
   else toast("Refreshing the complete catalog. Your current library remains available.");
   importIO.execute(()->{
    try{
@@ -3121,8 +3150,8 @@ public class MainActivity extends Activity {
      loading=false;
      // Errors are displayed without stream URLs, usernames, or passwords.
      String kind=error.getClass().getSimpleName();
-     if(store.hasLibrary()&&!repairing){
-      toast("Catalog refresh failed ("+kind+"). Your previous library is unchanged.");
+     if(store.hasLibrary()){
+      toast("Catalog refresh failed ("+kind+"). Your previous library and login are unchanged.");
       if(screen.equals("loading")){shell();home();}
      }else{
       loadingScreen("LIBRARY IMPORT INTERRUPTED",
