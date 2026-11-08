@@ -1,6 +1,10 @@
 # AuroraTV — Fire TV & Android TV IPTV Player
 
-**Downloader code: `6700987`** · [Fire TV installation guide](HOW_TO_GET_APK.md) · [Latest APK builds](https://github.com/Bmay0000/AuroraTV/actions)
+**[Download AuroraTV 2.1 APK directly](https://github.com/Bmay0000/AuroraTV/releases/download/2.1/AuroraTV-Flutter-Compact-UI.apk)** · [Installation instructions](HOW_TO_GET_APK.md) · [All releases](https://github.com/Bmay0000/AuroraTV/releases)
+
+No GitHub account, Actions workflow, or ZIP extraction is required to download this published APK. Open the link on a computer or your Fire TV browser and download the `.apk` file.
+
+**Fire TV Downloader code:** `6700987` (separately maintained; it may not point to the same APK as the direct download).
 
 AuroraTV is an independent, original dark-themed streaming interface for Android TV and Fire OS devices that support Android APKs. It is **not affiliated with Netflix, Amazon, or any IPTV provider**. AuroraTV includes no channels or subscriptions; users must supply their own legally accessible IPTV service.
 
@@ -37,7 +41,9 @@ Check **Sources & Settings → Library status & import speed** for the actual Li
 
 ## Get the APK
 
-On Fire TV, open the **Downloader** app and enter **`6700987`**. The destination of this separately managed code should be checked before installation; publishing a new GitHub Actions build does not automatically update the code's destination.
+For the published 2.1 build, **[download the APK directly](https://github.com/Bmay0000/AuroraTV/releases/download/2.1/AuroraTV-Flutter-Compact-UI.apk)** — no GitHub sign-in and no ZIP extraction. Install it on a supported Fire TV / Android TV device.
+
+Alternatively, open Fire TV **Downloader** and enter **`6700987`**; this code is independently managed and its destination may differ from the current release.
 
 Alternatively visit [GitHub Actions](https://github.com/Bmay0000/AuroraTV/actions), open a successful **Build AuroraTV APK** workflow and download the **AuroraTV-debug-APK** artifact. Extract its ZIP and install `app-debug.apk`.
 
