@@ -1,6 +1,13 @@
 # AuroraTV — Fire TV & Android TV IPTV Player
 
-**[Download AuroraTV 2.1 APK directly](https://github.com/Bmay0000/AuroraTV/releases/download/2.1/AuroraTV-Flutter-Compact-UI.apk)** · [Installation instructions](HOW_TO_GET_APK.md) · [All releases](https://github.com/Bmay0000/AuroraTV/releases)
+## Download AuroraTV
+
+- **[Download AuroraTV 2.1 APK — published release](https://github.com/Bmay0000/AuroraTV/releases/download/2.1/AuroraTV-Flutter-Compact-UI.apk)**
+- **[Download AuroraTV Rust Preview APK — experimental](https://github.com/Bmay0000/AuroraTV/releases/download/rust-preview/AuroraTV-Rust-Preview.apk)**
+
+Both links download standalone `.apk` files directly without a GitHub account or ZIP extraction. The Rust preview is an early test build; its interface and playback still use parts of the existing Android app and it has not been verified on Fire TV hardware.
+
+[Installation instructions](HOW_TO_GET_APK.md) · [Browse GitHub Releases](https://github.com/Bmay0000/AuroraTV/releases)
 
 No GitHub account, Actions workflow, or ZIP extraction is required to download this published APK. Open the link on a computer or your Fire TV browser and download the `.apk` file.
 
@@ -40,6 +47,8 @@ The importer now requests **gzip-compressed JSON** when available, streams provi
 Check **Sources & Settings → Library status & import speed** for the actual Live TV, Movie and Series import timings on your device. Those measurements help identify whether provider download or local indexing is still slow.
 
 ## Get the APK
+
+For the **experimental Rust-core version**, [download the standalone APK directly](https://github.com/Bmay0000/AuroraTV/releases/download/rust-preview/AuroraTV-Rust-Preview.apk). It is a testing preview, not a replacement for the published 2.1 release.
 
 For the published 2.1 build, **[download the APK directly](https://github.com/Bmay0000/AuroraTV/releases/download/2.1/AuroraTV-Flutter-Compact-UI.apk)** — no GitHub sign-in and no ZIP extraction. Install it on a supported Fire TV / Android TV device.
 
