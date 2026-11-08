@@ -105,8 +105,8 @@ jobs:
 
           This is a test build containing a Rust core plus the existing Android/Media3 interface. It is **not** a complete Rust rewrite or a verified stable release. Real Fire TV playback, import, and navigation must be tested on-device.
 
-          Built from commit: \${GITHUB_SHA}
-          CI run: https://github.com/\${GITHUB_REPOSITORY}/actions/runs/\${GITHUB_RUN_ID}
+          Built from commit: ${GITHUB_SHA}
+          CI run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
           Download **AuroraTV-Rust-Preview.apk** directly below. SHA256SUMS.txt contains the verification checksum.
 
