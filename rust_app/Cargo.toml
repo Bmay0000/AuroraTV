@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["core", "tv"]
+default-members = ["tv"]
+
+[workspace.package]
+edition = "2024"
+version = "3.0.0"
+license = "MIT"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
