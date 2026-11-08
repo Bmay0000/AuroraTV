@@ -797,9 +797,12 @@ public class MainActivity extends Activity {
   carousel.setHorizontalScrollBarEnabled(false);
   carousel.setClipChildren(true);carousel.setClipToPadding(true);
   carousel.setPadding(dp(2),dp(2),dp(2),dp(2));
+  boolean discoverRail="discover".equals(screen)&&
+      ("movie".equals(type)||"series".equals(type));
   boolean cinematicRail=("home".equals(screen)||"discover".equals(screen))&&
       ("movie".equals(type)||"series".equals(type));
   feed.addView(carousel,new LinearLayout.LayoutParams(-1,dp(
+    discoverRail?dim.discoveryRailHeight():
     cinematicRail?TvLayout.clamp(dim.heightDp/4,120,205):
     ("live".equals(type)?dim.liveCardHeight:dim.posterCardHeight)+8)));
   LinearLayout cards=new LinearLayout(this);
@@ -815,11 +818,66 @@ public class MainActivity extends Activity {
   final int renderCount=cinematicRail?Math.min(20,rows.size()):rows.size();
   for(int position=0;position<renderCount;position++){
    LibraryCore.Item item=rows.get(position);
-   cards.addView(cinematicRail?
+   cards.addView(discoverRail?
+      discoveryPosterCard(item,ranked?position+1:0):
+      cinematicRail?
       landscapeCard(item,ranked?position+1:0,position<6&&
        (heading.startsWith("TOP 20")||heading.startsWith("NEW & RECENT"))):
       mediaCard(item,type.equals("personal")?item.type:type,ranked?position+1:0));
   }
+ }
+
+ /** Larger portrait artwork rails on Movies / TV Shows. Unlike the home
+  * widescreen cards these never stretch a small poster into a landscape crop. */
+ View discoveryPosterCard(LibraryCore.Item item,int rank){
+  TvLayout m=tv();
+  int width=m.discoveryPosterWidth(),height=m.discoveryPosterHeight();
+  LinearLayout card=column();
+  card.setBackground(rounded(0xff111d2a,11,0xff29404e));
+  card.setClipChildren(false);
+  LinearLayout.LayoutParams cardSize=new LinearLayout.LayoutParams(
+     dp(width),dp(height+36));
+  cardSize.rightMargin=dp(12);
+  card.setLayoutParams(cardSize);
+  FrameLayout art=new FrameLayout(this);
+  art.setBackground(rounded(0xff172937,10,0));
+  art.setClipToOutline(true);
+  card.addView(art,new LinearLayout.LayoutParams(-1,dp(height)));
+  TextView initial=headline(item.name.isEmpty()?"A":
+     item.name.substring(0,1).toUpperCase(Locale.ROOT),30,0xff657e8a);
+  art.addView(initial,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
+  ImageView poster=new ImageView(this);
+  poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
+  art.addView(poster,new FrameLayout.LayoutParams(-1,-1));
+  posters.bind(poster,item.artwork);
+  if(rank>0){
+   TextView rankLabel=kicker("#"+rank);
+   rankLabel.setTextSize(10);
+   rankLabel.setPadding(dp(7),dp(3),dp(7),dp(3));
+   rankLabel.setBackground(rounded(0xee122c39,7,0xff416f71));
+   FrameLayout.LayoutParams top=new FrameLayout.LayoutParams(-2,-2,
+       Gravity.LEFT|Gravity.TOP);
+   top.leftMargin=dp(7);top.topMargin=dp(7);
+   art.addView(rankLabel,top);
+  }
+  TextView title=text(displayMediaName(item),14);
+  title.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+  title.setMaxLines(2);
+  title.setEllipsize(TextUtils.TruncateAt.END);
+  title.setPadding(dp(5),dp(4),dp(4),dp(2));
+  card.addView(title,new LinearLayout.LayoutParams(-1,dp(36)));
+  card.setFocusable(true);card.setClickable(true);
+  card.setContentDescription(displayMediaName(item)+", view details");
+  card.setOnClickListener(v->showMediaDetails(item));
+  card.setOnFocusChangeListener((v,focus)->{
+   if(focus){featurePriority=4;updateCinematicPanel(item);}
+   card.setBackground(rounded(focus?0xff234d47:0xff111d2a,11,
+      focus?ACCENT:0xff29404e));
+   title.setTextColor(focus?ACCENT:Color.WHITE);
+   card.animate().scaleX(focus?1.045f:1f).scaleY(focus?1.045f:1f)
+       .setDuration(140).start();
+  });
+  return card;
  }
 
  /** Widescreen artwork cards make the discovery feed visibly different from a provider poster grid. */
@@ -1274,21 +1332,16 @@ public class MainActivity extends Activity {
    });
  }
  void trendingSettings(){
-   EditText input=new EditText(this);
-   input.setSingleLine(true);
-   input.setText(prefs.getString("tmdb.apiKey",""));
-   input.setHint("TMDB API key");
-   input.setInputType(android.text.InputType.TYPE_CLASS_TEXT|
-       android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
-   new AlertDialog.Builder(this).setTitle("DAILY TOP 20")
-     .setMessage("Enter your own TMDB v3 API key to display daily trending movies and series available in your IPTV library. The key stays on this device. Movie rankings update daily.")
-     .setView(input).setPositiveButton("SAVE",(dialog,which)->{
-       prefs.edit().putString("tmdb.apiKey",input.getText().toString().trim()).apply();
-       if("home".equals(screen))home();
-       else if("discover".equals(screen))catalogLanding(section);
-     }).setNegativeButton("CANCEL",null).show();
+  TvSheet.prompt(this,"TMDB & cinematic artwork",
+    "Your own TMDB API v3 key provides sharp landscape backdrops, title details "+
+    "and daily film/TV rankings. The key stays on this device.",
+    prefs.getString("tmdb.apiKey",""),"Enter TMDB API v3 key",
+    value->{
+     prefs.edit().putString("tmdb.apiKey",value).apply();
+     if("home".equals(screen))home();
+     else if("discover".equals(screen))catalogLanding(section);
+    });
  }
-
 
  void clearCinematic(){
   cinematicRevision++;
@@ -1331,12 +1384,12 @@ public class MainActivity extends Activity {
   hero.setBackgroundColor(Color.TRANSPARENT);
   hero.setClipToOutline(false);
   LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(-1,
-    dp(TvLayout.clamp(m.heightDp*60/100,270,475)));
+    dp(m.discoveryHeroHeight()));
   size.bottomMargin=dp(9);
   feed.addView(hero,size);
   cinematicArtwork=hero;
   cinematicBackdrop=new ImageView(this);
-  cinematicBackdrop.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+  cinematicBackdrop.setScaleType(ImageView.ScaleType.CENTER_CROP);
   cinematicBackdrop.setAlpha(0f);
   hero.addView(cinematicBackdrop,new FrameLayout.LayoutParams(-1,-1));
   cinematicTrailerLayer=new FrameLayout(this);
@@ -1346,55 +1399,56 @@ public class MainActivity extends Activity {
   View shade=new View(this);
   shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
     new int[]{0xff081321,0xf0081423,0x87081524,0x240b1724}));
-  // Full-screen canvas provides the vignette; avoid an obvious rectangular hero panel.
+  hero.addView(shade,new FrameLayout.LayoutParams(-1,-1));
+  // The compact featured area leaves enough room to browse real poster artwork.
   // Portrait artwork remains portrait-sized on the right when a wide backdrop
   // is missing; no giant cropped faces pretending to be film backdrops.
   cinematicPoster=new ImageView(this);
   cinematicPoster.setScaleType(ImageView.ScaleType.FIT_CENTER);
   FrameLayout.LayoutParams posterSpace=new FrameLayout.LayoutParams(
-       dp(TvLayout.clamp(m.contentWidth()/6,85,160)),-1,Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+       dp(TvLayout.clamp(m.contentWidth()/7,82,138)),-1,Gravity.RIGHT|Gravity.CENTER_VERTICAL);
   posterSpace.rightMargin=dp(20);
   hero.addView(cinematicPoster,posterSpace);
-  if(cinemaBackground!=null)cinemaBackground.setVisibility(View.VISIBLE);
+  if(cinemaBackground!=null)cinemaBackground.setVisibility(View.GONE);
   if(cinemaVeil!=null)cinemaVeil.setVisibility(View.VISIBLE);
   LinearLayout info=column();info.setGravity(Gravity.CENTER_VERTICAL);
-  info.setPadding(dp(24),dp(3),dp(8),dp(3));
+  info.setPadding(dp(14),dp(2),dp(6),dp(2));
   hero.addView(info,new FrameLayout.LayoutParams(
-      dp(TvLayout.clamp(m.contentWidth()*3/5,265,780)),-1,Gravity.LEFT));
+      dp(TvLayout.clamp(m.contentWidth()*2/3,265,780)),-1,Gravity.LEFT));
   TextView eyebrow=kicker("AURORATV    •    FEATURED FOR YOU");eyebrow.setTextSize(11);
   info.addView(eyebrow);
   cinematicTitle=headline("Discover your next favorite",
-    TvLayout.clamp(m.headingSize()+13,28,48),Color.WHITE);
-  cinematicTitle.setMaxLines(2);
+    TvLayout.clamp(m.headingSize()+4,23,34),Color.WHITE);
+  cinematicTitle.setMaxLines(m.heightDp<690?1:2);
   cinematicTitle.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicTitle);
   cinematicSubtitle=text("Move between titles to explore your collection",13);
   cinematicSubtitle.setTextColor(0xffd1dce7);
-  cinematicSubtitle.setMaxLines(2);
+  cinematicSubtitle.setMaxLines(1);
   cinematicSubtitle.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicSubtitle);
   cinematicMeta=text("",13);cinematicMeta.setTextColor(0xffefc665);
   cinematicMeta.setMaxLines(1);info.addView(cinematicMeta);
   cinematicOverview=text("",TvLayout.clamp(m.bodySize(),12,16));
   cinematicOverview.setTextColor(0xffd6e4e9);
-  cinematicOverview.setMaxLines(3);
-  if(m.heightDp<490)cinematicOverview.setVisibility(View.GONE);
+  cinematicOverview.setMaxLines(2);
+  if(m.heightDp<670)cinematicOverview.setVisibility(View.GONE);
   cinematicOverview.setEllipsize(TextUtils.TruncateAt.END);
   info.addView(cinematicOverview);
   LinearLayout controls=new LinearLayout(this);
-  LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(45));
-  actions.topMargin=dp(m.heightDp<620?3:9);info.addView(controls,actions);
+  LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(37));
+  actions.topMargin=dp(2);info.addView(controls,actions);
   Button watch=button("▶   Play",()->{
    if(cinematicFocused!=null)showMediaDetails(cinematicFocused);
   });
-  watch.setTextSize(12);
+  watch.setTextSize(11);
   watch.setBackground(rounded(0xfff1f5f4,9,0xffe0eeed));
   watch.setTextColor(0xff0a1015);
   controls.addView(watch,new LinearLayout.LayoutParams(0,-1,1));
   Button browseButton=button("ⓘ   More Info",()->{
    if(cinematicFocused!=null)showMediaDetails(cinematicFocused);
   });
-  browseButton.setTextSize(12);
+  browseButton.setTextSize(11);
   browseButton.setBackground(rounded(0x9919232e,9,0x55677886));
   LinearLayout.LayoutParams browsePos=new LinearLayout.LayoutParams(0,-1,1);
   browsePos.leftMargin=dp(8);controls.addView(browseButton,browsePos);
@@ -1438,14 +1492,15 @@ public class MainActivity extends Activity {
    if(cinematicOverview!=null)cinematicOverview.setText("");
    if(cinematicMeta!=null)cinematicMeta.setText("");
    if(cinematicPoster!=null)posters.bind(cinematicPoster,item.artwork);
-   // Every provider gets a cinematic atmospheric background even without a TMDB key.
-   if(cinemaBackground!=null && item.artwork!=null && item.artwork.startsWith("http")){
-    posters.bind(cinemaBackground,item.artwork);
-    cinemaBackground.setAlpha(.22f);
-    if(android.os.Build.VERSION.SDK_INT>=31)
-     cinemaBackground.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(
-       35f,35f,android.graphics.Shader.TileMode.CLAMP));
+   // Provider poster images are often 200-400 pixels wide. Keep them
+   // portrait-sized; NEVER enlarge/blur them across the television.
+   if(cinemaBackground!=null){
+    cinemaBackground.setImageDrawable(null);
+    cinemaBackground.setVisibility(View.GONE);
+    cinemaBackground.setAlpha(0f);
+    if(android.os.Build.VERSION.SDK_INT>=31)cinemaBackground.setRenderEffect(null);
    }
+   if(cinematicBackdrop!=null)cinematicBackdrop.setAlpha(0f);
    scheduleCinematicTrailer(item,revision);
    cinematicSubtitle.setText((item.releaseYear>0?item.releaseYear+"  •  ":"")+
         ("series".equals(item.type)?"SERIES":"MOVIE")+"  •  YOUR LIBRARY");
@@ -1530,13 +1585,15 @@ public class MainActivity extends Activity {
   }
   if(url==null||url.isEmpty()){
    if(cinematicPoster!=null)cinematicPoster.setVisibility(View.VISIBLE);
+   if(cinemaBackground!=null)cinemaBackground.setVisibility(View.GONE);
    if(old!=null)old.animate().alpha(0f).setDuration(160).start();
    return;
   }
   if(cinemaBackground!=null){
    if(android.os.Build.VERSION.SDK_INT>=31)cinemaBackground.setRenderEffect(null);
-   cinemaBackground.setAlpha(.12f);
-   posters.bind(cinemaBackground,url);
+   cinemaBackground.setVisibility(View.VISIBLE);
+   cinemaBackground.setAlpha(0f);
+   posters.bindBackdrop(cinemaBackground,url);
    cinemaBackground.animate().alpha(1f).setDuration(400).start();
   }
   ImageView incoming=new ImageView(this);
@@ -1544,7 +1601,7 @@ public class MainActivity extends Activity {
   incoming.setAlpha(0f);
   parent.addView(incoming,old!=null&&old.getParent()==parent?1:0,
       new FrameLayout.LayoutParams(-1,-1));
-  posters.bind(incoming,url);
+  posters.bindBackdrop(incoming,url);
   // Wait for the asynchronous bitmap before fading; otherwise the fade is invisible.
   Runnable reveal=new Runnable(){
    int checks=0;
@@ -2274,40 +2331,39 @@ public class MainActivity extends Activity {
   });
  }
  void guideSettings(){
-  String[] options={
-   "Guide health · diagnose missing programmes",
-   "Enable public US + UK guide feeds",
-   "Enable public Free TV + Sports feeds",
-   "Disable public EPG presets",
-   "Set independent XMLTV source A",
-   "Set independent XMLTV source B",
-   "Refresh all configured guide sources",
-   "Automatic muted preview: "+(prefs.getBoolean("guide.preview.auto",true)?"ON":"OFF"),
-   "About Aurora Smart EPG"
-  };
-  new AlertDialog.Builder(this).setTitle("AuroraTV · Smart EPG")
-   .setItems(options,(dialog,index)->{
-    if(index==0){epgDiagnostics();return;}
-    if(index==1){confirmGuidePreset("US + UK guide feeds",
-      "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/US_guide.xml.gz",
-      "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/UK_guide.xml.gz");return;}
-    if(index==2){confirmGuidePreset("Free streaming + sports guide feeds",
-      "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/FreeTV_guide.xml.gz",
-      "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Sports_guide.xml.gz");return;}
-    if(index==3){confirmGuidePreset("Disable public guide feeds","","");return;}
-    if(index==4||index==5){promptGuideUrl(index==4?"external1":"external2");return;}
-    if(index==6){scheduleGuideSync(true,true);toast("Updating configured EPG feeds in the background");return;}
-    if(index==7){
-     boolean enabled=!prefs.getBoolean("guide.preview.auto",true);
-     prefs.edit().putBoolean("guide.preview.auto",enabled).apply();
-     if("guide".equals(screen))tvGuide();
-     toast(enabled?"Automatic muted previews enabled":"Automatic video previews disabled");
-     return;
-    }
-    new AlertDialog.Builder(this).setTitle("About Smart EPG")
-     .setMessage("Aurora combines your provider's XMLTV and per-channel data with two custom XMLTV and two optional public feeds. A schedule can only be displayed when a real source supplies it. Unmatched stations can be mapped through their guide row.")
-     .setPositiveButton("OK",null).show();
-   }).show();
+  TvSheet.menu(this,"TV Guide & EPG",
+   "Manage programme data and automatic previews. Entries appear only when a real EPG source matches a channel.",
+   new TvSheet.Entry("STATUS","◷","Guide health","Diagnose missing or stale programmes",this::epgDiagnostics),
+   new TvSheet.Entry("SOURCES","＋","US + UK feeds","Enable public guide listings",()->confirmGuidePreset(
+     "US + UK guide feeds","https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/US_guide.xml.gz",
+     "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/UK_guide.xml.gz")),
+   new TvSheet.Entry("","＋","Free TV & sports","Enable optional guide feeds",()->confirmGuidePreset(
+     "Free streaming + sports guide feeds",
+     "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/FreeTV_guide.xml.gz",
+     "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Sports_guide.xml.gz")),
+   new TvSheet.Entry("","−","Disable public presets","Keep your provider and custom guide feeds",()->
+     confirmGuidePreset("Disable public guide feeds","","")),
+   new TvSheet.Entry("CUSTOM FEEDS","1","XMLTV source A","Set an independent guide URL",()->
+     promptGuideUrl("external1")),
+   new TvSheet.Entry("","2","XMLTV source B","Set another independent guide URL",()->
+     promptGuideUrl("external2")),
+   new TvSheet.Entry("SYNC","⟳","Refresh guide now","Update all configured programme sources",()->{
+     scheduleGuideSync(true,true);toast("Updating configured EPG feeds");}),
+   new TvSheet.Entry("PREVIEW","▶","Automatic live preview",
+     prefs.getBoolean("guide.preview.auto",true)?"Currently on":"Currently off",()->{
+      boolean enabled=!prefs.getBoolean("guide.preview.auto",true);
+      prefs.edit().putBoolean("guide.preview.auto",enabled).apply();
+      if("guide".equals(screen))tvGuide();
+      toast(enabled?"Automatic muted previews enabled":"Automatic video previews disabled");
+   }),
+   new TvSheet.Entry("HELP","ⓘ","About Smart EPG",
+     "How provider and independent programme data combine",()->
+      TvSheet.message(this,"About Smart EPG",
+       "Aurora combines your provider's XMLTV and per-channel data with independent XMLTV feeds. "+
+       "Schedules display only when a real source supplies them. Use a channel's guide row "+
+       "to manually match an unmatched station.",
+       "Close",()->{}))
+  );
  }
  void confirmGuidePreset(String title,String url1,String url2){
   new AlertDialog.Builder(this).setTitle(title)
@@ -2831,60 +2887,77 @@ public class MainActivity extends Activity {
  EditText field(LinearLayout form,String hint,boolean secret){EditText e=new EditText(this);e.setHint(hint);e.setTextColor(Color.WHITE);e.setHintTextColor(0xff9caebe);e.setBackgroundTintList(ColorStateList.valueOf(ACCENT));e.setSingleLine();if(secret)e.setInputType(129);form.addView(e);return e;}
 
  void trailerSettings(){
-  final String[] choices={"Off (best performance)","On · after 3 seconds of focus"};
-  int which=prefs.getBoolean("cinema.trailers",false)?1:0;
-  new AlertDialog.Builder(this).setTitle("CINEMATIC TRAILER PREVIEWS")
-   .setSingleChoiceItems(choices,which,(dialog,index)->{
+  TvSheet.choices(this,"Cinematic trailer previews",
+   "Trailer clips can use more bandwidth and may be unavailable on some Fire TV devices.",
+   new String[]{"Off · best performance","On · after 3 seconds of focus"},
+   prefs.getBoolean("cinema.trailers",false)?1:0,index->{
     prefs.edit().putBoolean("cinema.trailers",index==1).apply();
     if(index==0)stopCinematicTrailer();
-    dialog.dismiss();
-   }).setNegativeButton("CANCEL",null).show();
+   });
  }
  void connect(){
-  new AlertDialog.Builder(this).setTitle("MANAGE YOUR CONNECTION")
-   .setItems(new String[]{"Change or add IPTV source","Refresh library from provider","Smart EPG settings","Playback diagnostics","Library status & import speed","Display density / poster size","Daily Top 20 / TMDB key","Cinematic trailer previews","Disconnect and clear this device"},(d,n)->{
-    if(n==0){loginScreen(false);return;}
-    if(n==1){refresh();return;}
-    if(n==2){guideSettings();return;}
-    if(n==3){showPlaybackDiagnostics();return;}
-    if(n==4){showLibraryStatus();return;}
-    if(n==5){chooseDisplayDensity();return;}
-    if(n==6){trendingSettings();return;}
-    if(n==7){trailerSettings();return;}
-    new AlertDialog.Builder(this).setTitle("Remove connected provider?")
-     .setMessage("This deletes the imported library, saved login and filters from this device.")
-     .setPositiveButton("Disconnect",(a,b)->{
-      generation++;browseToken++;loading=false;
-      prefs.edit().clear().apply();
-      store.clear();epg.clearAll();items.clear();guide.clear();guideIndex.clear();
-      hidden.clear();categories.clear();favorites.clear();allowed.clear();shown.clear();shownCategories.clear();hideUnknown=false;
-      page=0;category="All";query="";loginScreen(false);
-     }).setNegativeButton("Cancel",null).show();
-   }).show();
+  TvSheet.menu(this,"Settings",
+   "Manage your streaming library, picture quality, guide, playback and account.",
+   new TvSheet.Entry("YOUR LIBRARY","▣","Connection & sources",
+    "Add or change your Xtream/M3U provider",()->loginScreen(false)),
+   new TvSheet.Entry("","⟳","Refresh library",
+    "Sync movies, shows and channels",this::refresh),
+   new TvSheet.Entry("","☷","Edit library filters",
+    "Languages, category visibility and favorites",this::smart),
+   new TvSheet.Entry("","◷","Library status & cache",
+    "Import speed, title counts and navigation times",this::showLibraryStatus),
+   new TvSheet.Entry("PICTURE & CONTENT","▦","Display density",
+    "Change poster sizes and how many titles are visible",this::chooseDisplayDensity),
+   new TvSheet.Entry("","✦","TMDB & sharp artwork",
+    "Full-resolution backdrops and daily trending movies",this::trendingSettings),
+   new TvSheet.Entry("","▶","Trailer previews",
+    "Enable or disable cinematic trailers",this::trailerSettings),
+   new TvSheet.Entry("LIVE TV & PLAYBACK","▤","TV Guide & Smart EPG",
+    "Schedules, custom sources and guide preview",this::guideSettings),
+   new TvSheet.Entry("","⚙","Playback diagnostics",
+    "Inspect buffering, stream errors and retries",this::showPlaybackDiagnostics),
+   new TvSheet.Entry("ACCOUNT","×","Disconnect provider",
+    "Remove saved login, filters and library",this::confirmDisconnect)
+  );
  }
-
+ void confirmDisconnect(){
+  TvSheet.menu(this,"Disconnect this device?",
+    "This permanently clears saved provider details, imported media, favorites, filters and local guide data.",
+    new TvSheet.Entry("SAFE","←","Keep my connection",
+      "Return without changing anything",()->{}),
+    new TvSheet.Entry("DESTRUCTIVE ACTION","×","Disconnect and erase local data",
+      "This cannot be undone on this device",()->{
+       generation++;browseToken++;loading=false;
+       prefs.edit().clear().apply();
+       store.clear();epg.clearAll();items.clear();guide.clear();guideIndex.clear();
+       hidden.clear();categories.clear();favorites.clear();allowed.clear();
+       shown.clear();shownCategories.clear();hideUnknown=false;
+       page=0;category="All";query="";loginScreen(false);
+     })
+  );
+ }
  void chooseDisplayDensity(){
   final String[] values={"comfortable","compact","dense"};
   final String[] labels={
    "Comfortable · larger posters",
-   "Compact · recommended (more titles)",
-   "Extra compact · maximum titles on screen"
+   "Compact · balanced layout",
+   "Extra compact · maximum titles per row"
   };
   String current=prefs.getString("display.density","compact");
   int active=1;
   for(int i=0;i<values.length;i++)if(values[i].equals(current))active=i;
-  new AlertDialog.Builder(this).setTitle("AuroraTV · Display Density")
-   .setSingleChoiceItems(labels,active,(dialog,index)->{
+  TvSheet.choices(this,"Display & poster sizes",
+   "Choose how much artwork appears on screen. The movie and show discovery preview stays compact.",
+   labels,active,index->{
     prefs.edit().putString("display.density",values[index]).apply();
-    dialog.dismiss();
     String previous=screen;
     shell();
     if("guide".equals(previous))tvGuide();
     else if("browse".equals(previous))browse();
+    else if("discover".equals(previous))catalogLanding(section);
     else home();
-   }).setNegativeButton("CANCEL",null).show();
+   });
  }
-
  void showLibraryStatus(){
   io.execute(()->{
    StringBuilder report=new StringBuilder();

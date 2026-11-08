@@ -20,6 +20,9 @@ public final class TvLayoutTest {
    verify(layout.posterColumns>=4 && layout.posterColumns<=24,"Reasonable number of visible posters");
    verify(layout.posterCardHeight<layout.heightDp,"Poster tiles taller than screen");
    verify(layout.heroHeight<=170 && layout.heroHeight<=layout.heightDp*.3,"Compact hero reveals first shelf");
+   verify(layout.discoveryHeroHeight()<layout.heightDp*.4,"Discovery hero must not take over screen");
+   verify(layout.discoveryPosterHeight()>layout.heightDp*.25,"Discovery movie poster must be readable");
+   verify(layout.discoveryRailHeight()>layout.discoveryPosterHeight(),"Rail needs metadata height");
    verify(layout.navRow<=62,"Remote nav row bounded");
    verify(layout.guideWidth()>=Math.min(layout.contentWidth()*.7,1300),"Guide table missing columns");
   }
@@ -33,6 +36,10 @@ public final class TvLayoutTest {
   verify(comfortable.posterColumns<compact.posterColumns,"Comfortable layout has larger tiles");
   verify(dense.posterColumns>compact.posterColumns,"Dense layout shows extra titles");
   verify(dense.posterCardHeight<compact.posterCardHeight,"Dense layout reveals more rows");
+  verify(hd.discoveryHeroHeight()+hd.discoveryRailHeight()<hd.heightDp*.9,
+    "Discovery hero and first poster rail must share the screen");
+  verify(comfortable.discoveryPosterWidth()>dense.discoveryPosterWidth(),
+    "Comfortable discovery should use larger artwork");
   verify(TvLayout.of(640,360).headerHeight()+TvLayout.of(640,360).navRow+
     36+38+TvLayout.of(640,360).posterCardHeight<=360,
     "Compact Fire TV can show a full first shelf without hero");
