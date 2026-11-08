@@ -7,7 +7,9 @@
 
 Both links download standalone `.apk` files directly without a GitHub account or ZIP extraction. The Rust preview is an early test build; its interface and playback still use parts of the existing Android app and it has not been verified on Fire TV hardware.
 
-[Installation instructions](HOW_TO_GET_APK.md) · [Browse GitHub Releases](https://github.com/Bmay0000/AuroraTV/releases)
+[Installation instructions](HOW_TO_GET_APK.md) · [Browse GitHub Releases](https://github.com/Bmay0000/AuroraTV/releases) · [Update without losing your login](UPGRADE_GUIDE.md)
+
+**Already installed?** Download the updated APK and install it **over** the existing AuroraTV app. Do **not** uninstall or clear app data first. Android retains your saved login and library only when the APK uses the same package and signing certificate. The Rust-preview publishing workflow verifies this against the preceding Rust-preview release.
 
 **Fire TV Downloader code:** `6700987` (separately maintained; it may not point to the same APK as the direct download).
 
