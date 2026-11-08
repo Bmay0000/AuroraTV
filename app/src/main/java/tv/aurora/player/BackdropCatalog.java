@@ -60,7 +60,7 @@ public final class BackdropCatalog {
  private static Info parseInfo(JSONObject row){
   String path=row.optString("backdrop_path","");
   String backdrop=path.startsWith("/")&&!path.contains("..")?
-      "https://image.tmdb.org/t/p/w1280"+path:"";
+      "https://image.tmdb.org/t/p/original"+path:"";
   String plot=row.optString("overview","");
   double rating=row.optDouble("vote_average",0);
   JSONArray ids=row.optJSONArray("genre_ids");StringBuilder tags=new StringBuilder();
@@ -89,7 +89,7 @@ public final class BackdropCatalog {
   String id=LibraryCore.key((series?"tv":"movie")+"|"+clean+"|"+year+"|"+key);
   SharedPreferences prefs=ctx.getSharedPreferences("aurora_backdrops",Context.MODE_PRIVATE);
   String cached=prefs.getString(id,null);
-  if(cached!=null)return cached;
+  if(cached!=null)return cached.replace("https://image.tmdb.org/t/p/w780/","https://image.tmdb.org/t/p/original/");
   String backdrop="";
   HttpURLConnection con=null;
   try{
@@ -115,7 +115,7 @@ public final class BackdropCatalog {
         !norm.equals(TrendingCatalog.normalize(original)))continue;
      String path=row.optString("backdrop_path","");
      if(path.startsWith("/")&&!path.contains("..")){
-      backdrop="https://image.tmdb.org/t/p/w780"+path;break;
+      backdrop="https://image.tmdb.org/t/p/original"+path;break;
      }
     }
    }

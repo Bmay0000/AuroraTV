@@ -481,6 +481,21 @@ public final class ChannelDiscovery {
         return "other:"+name;
     }
 
+    // Regions are explicit whole-word metadata, not substrings ("US" in "MUSIC").
+    private static final Pattern US_SOURCE=Pattern.compile(
+        "(?i)(?<![A-Z0-9])(?:US|USA|UNITED STATES)(?![A-Z0-9])");
+    private static final Pattern CA_SOURCE=Pattern.compile(
+        "(?i)(?<![A-Z0-9])(?:CA|CAN|CANADA|CANADIAN)(?![A-Z0-9])");
+
+    private static int javaRegionScore(String name,String category){
+        // A source explicitly named "US" overrides an ambiguous group.
+        if(US_SOURCE.matcher(name).find())return 70;
+        if(CA_SOURCE.matcher(name).find())return -40;
+        if(US_SOURCE.matcher(category).find())return 70;
+        if(CA_SOURCE.matcher(category).find())return -40;
+        return 0;
+    }
+
     /** Provider quality affects primary choice, not availability of alternates. */
     public static int renditionScore(LibraryCore.Item item){
         if(item==null)return Integer.MIN_VALUE;
@@ -495,6 +510,13 @@ public final class ChannelDiscovery {
         else if(HD.matcher(name).find())quality+=11;
         if(BACKUP.matcher(name).find())quality-=80;
         if(HEVC.matcher(name).find())quality-=5;
+        // Prefer a real US source over a CA rendition of the same network.
+        // Rust's conservative scorer is authoritative when bundled; preserve
+        // the same country ordering on older Java-only APKs.
+        int nativeScore=RustBridge.scoreUsNetwork(canonicalName(item.name),
+            item.name,category);
+        if(nativeScore>0)quality+=nativeScore-100;
+        else quality+=javaRegionScore(name,category);
         return quality;
     }
 

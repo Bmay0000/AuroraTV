@@ -6,13 +6,14 @@ package tv.aurora.player;
  * television from showing only three or four oversized posters.
  */
 public final class TvLayout {
+    private final String displayDensity;
     public final int widthDp, heightDp, marginX, marginY, sidebar,
             navRow, heroHeight, posterWidth, posterHeight, posterCardHeight,
             posterColumns, liveCardWidth, liveCardHeight, guideChannel, guideNow,
             guideNext, guideAction, columnGap;
 
     private TvLayout(int w,int h,String densityMode){
-        widthDp=w;heightDp=h;
+        widthDp=w;heightDp=h;displayDensity=densityMode;
         marginX=clamp((int)Math.round(w*.019),10,34);
         marginY=clamp((int)Math.round(h*.013),6,17);
         navRow=clamp((int)Math.round(h*.065),36,47);
@@ -49,6 +50,27 @@ public final class TvLayout {
     public int headerHeight(){return clamp((int)Math.round(heightDp*.075),42,61);}
     public int headingSize(){return clamp((int)Math.round(widthDp*.023),22,35);}
     public int bodySize(){return clamp((int)Math.round(widthDp*.014),13,18);}
+
+    /** Film/series discovery balances one readable featured card and a real
+     * poster rail. The former 60%-height preview hid most browse results. */
+    public int discoveryHeroHeight(){
+        int h=(int)Math.round(heightDp*(
+            "comfortable".equals(displayDensity)?0.31:
+            "dense".equals(displayDensity)?0.25:0.28));
+        return clamp(h,92,208);
+    }
+    public int discoveryPosterWidth(){
+        int w=(int)Math.round(heightDp*(
+            "comfortable".equals(displayDensity)?0.29:
+            "dense".equals(displayDensity)?0.23:0.255));
+        return clamp(w,105,202);
+    }
+    public int discoveryPosterHeight(){
+        return (int)Math.round(discoveryPosterWidth()*1.43);
+    }
+    public int discoveryRailHeight(){
+        return discoveryPosterHeight()+42;
+    }
     public static int clamp(int value,int low,int high){
         return Math.max(low,Math.min(high,value));
     }

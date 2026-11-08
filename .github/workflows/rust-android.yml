@@ -1,0 +1,222 @@
+name: Validate Rust Engine and Build Android APK
+
+on:
+  push:
+    branches: [rust-rebuild-foundation, 'rust/**']
+  pull_request:
+    paths:
+      - 'rust/**'
+      - 'app/src/main/java/tv/aurora/player/RustBridge.java'
+      - 'app/src/main/java/tv/aurora/player/XtreamReference.java'
+      - '.github/workflows/rust-android.yml'
+
+jobs:
+  rust-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Test full Rust workspace
+        working-directory: rust
+        run: cargo test --workspace
+
+  android:
+    needs: rust-tests
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK / NDK
+        run: |
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "CARGO_NDK_PLATFORM=23" >> "$GITHUB_ENV"
+      - name: Set up stable Rust for Android
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Install Cargo NDK
+        run: cargo install cargo-ndk --locked
+      - name: Build Rust JNI libraries for Fire OS / Android TV
+        working-directory: rust
+        run: |
+          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o ../app/src/main/jniLibs build --release --package auroratv-android
+          find ../app/src/main/jniLibs -name 'libauroratv_native.so' -print
+      - name: Test existing Java core (with native fallback)
+        run: |
+          mkdir -p build/core-tests
+          javac -d build/core-tests app/src/main/java/tv/aurora/player/LibraryCore.java app/src/main/java/tv/aurora/player/RustBridge.java app/src/main/java/tv/aurora/player/XtreamReference.java tests/XtreamReferenceTest.java
+          java -cp build/core-tests XtreamReferenceTest
+      - name: Validate responsive Movies and TV layout
+        run: |
+          mkdir -p build/layout-tests
+          javac -d build/layout-tests app/src/main/java/tv/aurora/player/TvLayout.java tests/TvLayoutTest.java
+          java -cp build/layout-tests TvLayoutTest
+      - name: Build APK with bundled Rust libraries
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon assembleDebug
+      - name: Verify signed APK can update the AuroraTV package
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -s "$APK"
+          "$APKSIGNER" verify --print-certs "$APK"
+          package_line=$("$AAPT" dump badging "$APK" | grep '^package:')
+          [[ "$package_line" == *"name='tv.aurora.player'"* ]] || {
+            echo "::error::Unexpected application ID. Updates would lose access to local user data."
+            exit 1
+          }
+          printf '%s\n' "$package_line"
+      - name: Upload Rust-backed AuroraTV APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AuroraTV-RustCore-debug-APK
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  release-preview:
+    name: Publish direct-download Rust preview
+    needs: android
+    if: github.event_name == 'push' && github.ref == 'refs/heads/rust-rebuild-foundation'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android signing verification tools
+        run: sdkmanager --install "build-tools;35.0.0"
+      - name: Download validated APK from this build
+        uses: actions/download-artifact@v4
+        with:
+          name: AuroraTV-RustCore-debug-APK
+          path: dist
+      - name: Verify APK and produce checksum
+        run: |
+          test -s dist/app-debug.apk
+          cd dist
+          mv app-debug.apk AuroraTV-Rust-Preview.apk
+          sha256sum AuroraTV-Rust-Preview.apk > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Check signature and version against installed release lineage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK_TOOL="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          cert() {
+            "$APK_TOOL" verify --print-certs "$1" |
+              grep -m1 'Signer #1 certificate SHA-256 digest:' | awk '{print $NF}'
+          }
+          package() {
+            "$AAPT" dump badging "$1" |
+              sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -1
+          }
+          version_code() {
+            "$AAPT" dump badging "$1" |
+              sed -n "s/^package:.*versionCode='\\([0-9]*\\)'.*/\\1/p" | head -1
+          }
+          new=dist/AuroraTV-Rust-Preview.apk
+          test "$(package "$new")" = "tv.aurora.player" || {
+            echo "::error::APK application ID changed; refusing to replace update."; exit 1;
+          }
+          new_cert="$(cert "$new")"
+          new_code="$(version_code "$new")"
+          test -n "$new_cert" && test -n "$new_code"
+          if gh release view rust-preview --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            mkdir -p previous
+            gh release download rust-preview --pattern 'AuroraTV-Rust-Preview.apk' \
+              --dir previous --repo "$GITHUB_REPOSITORY"
+            old=previous/AuroraTV-Rust-Preview.apk
+            old_cert="$(cert "$old")"
+            old_code="$(version_code "$old")"
+            if [[ "$(package "$old")" != "$(package "$new")" ||
+                  "$old_cert" != "$new_cert" ]]; then
+              echo "::error::APK signing certificate or application ID changed. Existing users would have to uninstall and lose local logins. Not publishing."
+              exit 1
+            fi
+            if (( new_code < old_code )); then
+              echo "::error::Version code regressed ($new_code < $old_code)."
+              exit 1
+            fi
+            echo "Safe in-place upgrade from existing Rust preview: same package, same certificate; version $old_code -> $new_code"
+          fi
+          # Legacy 2.1 is a different published APK lineage. Diagnose it
+          # without blocking updates for already-installed Rust previews.
+          if gh release view 2.1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            mkdir -p legacy
+            if gh release download 2.1 --pattern 'AuroraTV-Flutter-Compact-UI.apk' \
+                --dir legacy --repo "$GITHUB_REPOSITORY"; then
+              old=legacy/AuroraTV-Flutter-Compact-UI.apk
+              if [[ "$(package "$old")" == "$(package "$new")" &&
+                    "$(cert "$old")" == "$new_cert" ]]; then
+                echo "Compatible signing and package with legacy 2.1 release."
+                echo "A direct in-place upgrade from version 2.1 is allowed by package identity." >> "$GITHUB_STEP_SUMMARY"
+              else
+                if [[ "$(package "$old")" != "$(package "$new")" ]]; then
+                  reason="different Android package ID"
+                else
+                  reason="different APK signing certificate"
+                fi
+                echo "::warning::Published 2.1 Flutter APK uses a $reason. Android cannot upgrade it to the Rust preview while retaining the saved login."
+                echo "Legacy 2.1 APK cannot be upgraded in place ($reason)." >> "$GITHUB_STEP_SUMMARY"
+                printf '%s\n' '' '### Important for users upgrading from the Flutter 2.1 release' '' \
+                  "**The previously published AuroraTV 2.1 APK is not in-place-upgrade compatible with this Rust preview ($reason).**" \
+                  'Do not uninstall 2.1 unless you have your original provider credentials saved elsewhere. You may need to sign into the Rust preview once; future Rust-preview upgrades will preserve that account.' \
+                  > dist/LEGACY_21_COMPATIBILITY.md
+              fi
+            fi
+          fi
+      - name: Publish or update GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > dist/RELEASE_NOTES.md <<EOF
+          # AuroraTV Rust Preview — experimental APK
+
+          This is a test build containing a Rust core plus the existing Android/Media3 interface. It is **not** a complete Rust rewrite or a verified stable release. Real Fire TV playback, import, and navigation must be tested on-device.
+
+          Built from commit: ${GITHUB_SHA}
+          CI run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          Download **AuroraTV-Rust-Preview.apk** directly below. SHA256SUMS.txt contains the verification checksum.
+
+          The stable/current release is separate and is not replaced by this prerelease.
+          EOF
+          if test -s dist/LEGACY_21_COMPATIBILITY.md; then
+            cat dist/LEGACY_21_COMPATIBILITY.md >> dist/RELEASE_NOTES.md
+          fi
+          if gh release view rust-preview --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload rust-preview dist/AuroraTV-Rust-Preview.apk dist/SHA256SUMS.txt \
+              --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit rust-preview --title "AuroraTV Rust Preview (experimental)" \
+              --notes-file dist/RELEASE_NOTES.md --prerelease --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create rust-preview dist/AuroraTV-Rust-Preview.apk dist/SHA256SUMS.txt \
+              --title "AuroraTV Rust Preview (experimental)" \
+              --notes-file dist/RELEASE_NOTES.md --prerelease \
+              --target main --repo "$GITHUB_REPOSITORY"
+          fi

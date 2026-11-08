@@ -81,6 +81,7 @@ public final class PlaybackScreen {
     private TextView state;
     private Button playPause;
     private Button optionsButton;
+    private Button aspectButton;
     private Button speedButton;
     private TextView centerStatus;
     private LinearLayout centerBanner;
@@ -170,25 +171,38 @@ public final class PlaybackScreen {
         return t;
     }
 
-    private Button control(String text, View.OnClickListener onClick) {
-        Button b = new Button(activity);
-        b.setAllCaps(false);
-        b.setText(text);
+    private GradientDrawable controlBackground(boolean focused,boolean primary){
+        GradientDrawable d=shape(focused?0xff5debd0:
+            (primary?0xffe9f9f5:0xcc172a39),11);
+        d.setStroke(Math.max(1,dp(1)),focused?0xffb8fff2:
+            (primary?0xfff0ffff:0xff416071));
+        return d;
+    }
+
+    private Button control(String text,View.OnClickListener onClick){
+        Button b=new Button(activity);
+        b.setAllCaps(false);b.setText(text);
+        b.setMinWidth(0);b.setMinimumWidth(0);b.setMinHeight(0);b.setMinimumHeight(0);
         float dpWidth=activity.getResources().getDisplayMetrics().widthPixels/
             Math.max(.5f,activity.getResources().getDisplayMetrics().density);
-        b.setTextSize(dpWidth<780?12:dpWidth<1050?14:16);
+        b.setTextSize(dpWidth<780?11:dpWidth<1050?12:13);
+        b.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
+        b.setLetterSpacing(.012f);
         b.setTextColor(Color.WHITE);
-        b.setBackground(shape(0xd91b344a, 12));
-        b.setPadding(dp(10),0,dp(10),0);
-        b.setOnClickListener(v -> {
+        b.setPadding(dp(5),0,dp(5),0);
+        b.setBackground(controlBackground(false,false));
+        b.setFocusable(true);
+        b.setOnClickListener(v->{
             handler.removeCallbacks(hideControls);
             onClick.onClick(v);
-            if (!closed && overlayVisible) scheduleHide();
+            if(!closed&&overlayVisible)scheduleHide();
         });
-        b.setOnFocusChangeListener((v, focused) -> {
-            b.setBackground(shape(focused ? 0xff4ddbc4 : 0xd91b344a,12));
-            b.setTextColor(focused ? 0xff071421 : Color.WHITE);
-            if (focused) scheduleHide();
+        b.setOnFocusChangeListener((v,focused)->{
+            boolean primary=b==primaryButton;
+            b.setBackground(controlBackground(focused,primary));
+            b.setTextColor(focused||primary?0xff071521:Color.WHITE);
+            if(focused)handler.removeCallbacks(hideControls);
+            else if(overlayVisible)scheduleHide();
         });
         return b;
     }
@@ -202,6 +216,11 @@ public final class PlaybackScreen {
         this.exit = exit;
         this.resumeAt = Math.max(0, resumeAt);
         this.settings = activity.getSharedPreferences("playback_options",Context.MODE_PRIVATE);
+        this.resizeMode=settings.getInt("aspectMode",AspectRatioFrameLayout.RESIZE_MODE_FIT);
+        if(resizeMode!=AspectRatioFrameLayout.RESIZE_MODE_FIT &&
+            resizeMode!=AspectRatioFrameLayout.RESIZE_MODE_ZOOM &&
+            resizeMode!=AspectRatioFrameLayout.RESIZE_MODE_FILL)
+            resizeMode=AspectRatioFrameLayout.RESIZE_MODE_FIT;
         ActivityManager manager=(ActivityManager)activity.getSystemService(Context.ACTIVITY_SERVICE);
         this.lowRam=manager!=null&&(manager.isLowRamDevice()||manager.getMemoryClass()<=160);
 
@@ -219,7 +238,7 @@ public final class PlaybackScreen {
         root.setFocusableInTouchMode(true);
         view = new PlayerView(activity);
         view.setUseController(false);
-        view.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+        view.setResizeMode(resizeMode);
         // AuroraTV owns the buffering UI so a failed source never leaves
         // Media3's spinner displayed indefinitely.
         view.setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER);
@@ -230,7 +249,7 @@ public final class PlaybackScreen {
         centerBanner.setOrientation(LinearLayout.VERTICAL);
         centerBanner.setGravity(Gravity.CENTER);
         centerBanner.setPadding(dp(28),dp(17),dp(28),dp(17));
-        centerBanner.setBackground(shape(0xe9152535,15));
+        centerBanner.setBackground(shape(0xef0a1b2b,18));
         FrameLayout.LayoutParams centerBounds=new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.CENTER);
@@ -248,29 +267,29 @@ public final class PlaybackScreen {
 
         controlsOverlay = new LinearLayout(activity);
         controlsOverlay.setOrientation(LinearLayout.VERTICAL);
-        controlsOverlay.setPadding(dp(35),dp(45),dp(35),dp(22));
+        controlsOverlay.setPadding(dp(27),dp(19),dp(27),dp(19));
         GradientDrawable glass=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-            new int[]{0x05070d18,0xc00a1525,0xf7061020});
+            new int[]{0x00070d18,0x9c0b1928,0xf6091422});
         controlsOverlay.setBackground(glass);
         FrameLayout.LayoutParams overlayBounds = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM);
         root.addView(controlsOverlay, overlayBounds);
 
-        TextView label=label("AuroraTV   •   "+("live".equals(type)?"LIVE TELEVISION":
-            "movie".equals(type)?"MOVIE":"TV SERIES"),13,0xff5debd0);
+        TextView label=label("AURORA   /   "+("live".equals(type)?"LIVE TV":
+            "movie".equals(type)?"MOVIE":"EPISODE"),11,0xff5debd0);
         label.setLetterSpacing(.13f);label.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
         controlsOverlay.addView(label);
         TextView title = label(media.name, TvLayout.clamp(
             (int)(activity.getResources().getDisplayMetrics().widthPixels/
-                activity.getResources().getDisplayMetrics().density*.023),20,29),
+                activity.getResources().getDisplayMetrics().density*.020),19,26),
             Color.WHITE);
         title.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
         title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);
         controlsOverlay.addView(title);
-        state = label("Connecting to stream…",14,0xffb5d0dc);
+        state = label("Connecting to stream…",12,0xffb5d0dc);
         LinearLayout.LayoutParams stateBounds =
-            new LinearLayout.LayoutParams(-1,dp(27));
+            new LinearLayout.LayoutParams(-1,dp(21));
         controlsOverlay.addView(state,stateBounds);
 
         if(!"live".equals(type)){
@@ -280,10 +299,10 @@ public final class PlaybackScreen {
             playbackSeekbar.setMax(1000);
             playbackSeekbar.setProgressTintList(ColorStateList.valueOf(0xff5debd0));
             playbackSeekbar.setThumbTintList(ColorStateList.valueOf(0xff5debd0));
-            timing.addView(playbackSeekbar,new LinearLayout.LayoutParams(0,dp(40),1));
+            timing.addView(playbackSeekbar,new LinearLayout.LayoutParams(0,dp(34),1));
             clockText=label("00:00  /  —",13,0xffe2f1f6);
             clockText.setGravity(Gravity.CENTER_VERTICAL|Gravity.RIGHT);
-            timing.addView(clockText,new LinearLayout.LayoutParams(dp(134),dp(40)));
+            timing.addView(clockText,new LinearLayout.LayoutParams(dp(130),dp(34)));
             controlsOverlay.addView(timing);
             playbackSeekbar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
                 @Override public void onStartTrackingTouch(SeekBar bar){scrubbing=true;handler.removeCallbacks(hideControls);}
@@ -317,15 +336,17 @@ public final class PlaybackScreen {
 
         LinearLayout buttons=new LinearLayout(activity);
         buttons.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(49));
-        actions.topMargin=dp(8);
+        LinearLayout.LayoutParams actions=new LinearLayout.LayoutParams(-1,dp(42));
+        actions.topMargin=dp(5);
         controlsOverlay.addView(buttons,actions);
         if(!"live".equals(type)){
-            Button back30=control("↶  30s",v->seekRelative(-30000));
+            Button back30=control("↶  −30s",v->seekRelative(-30000));
             buttons.addView(back30,new LinearLayout.LayoutParams(0,-1,1));
         }
         playPause=control("Ⅱ  PAUSE",v->togglePlay());
         primaryButton=playPause;
+        playPause.setBackground(controlBackground(false,true));
+        playPause.setTextColor(0xff071521);
         buttons.addView(playPause,new LinearLayout.LayoutParams(0,-1,1));
         if("live".equals(type)){
             Button goLive=control("◉  GO LIVE",v->{
@@ -344,26 +365,26 @@ public final class PlaybackScreen {
             Button forward30=control("+30s  ↷",v->seekRelative(30000));
             buttons.addView(forward30,new LinearLayout.LayoutParams(0,-1,1));
         }
-        Button reconnect=control("⟳  RECONNECT",v->retry());
+        Button reconnect=control("⟳  RELOAD",v->retry());
         buttons.addView(reconnect,new LinearLayout.LayoutParams(0,-1,1));
-        Button back=control("←  EXIT",v->exit.goBack());
+        Button back=control("←  BACK",v->exit.goBack());
         buttons.addView(back,new LinearLayout.LayoutParams(0,-1,1));
         LinearLayout extras=new LinearLayout(activity);
         extras.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams tools=new LinearLayout.LayoutParams(-1,dp(44));
-        tools.topMargin=dp(7);
+        LinearLayout.LayoutParams tools=new LinearLayout.LayoutParams(-1,dp(37));
+        tools.topMargin=dp(5);
         controlsOverlay.addView(extras,tools);
         if(!"live".equals(type)){
-            speedButton=control("SPEED  1×",v->chooseSpeed());
+            speedButton=control("1×  SPEED",v->chooseSpeed());
             extras.addView(speedButton,new LinearLayout.LayoutParams(0,-1,1));
-            Button subtitles=control("CC / SUBTITLES",v->chooseTrack(true));
+            Button subtitles=control("CC  SUBTITLES",v->chooseTrack(true));
             extras.addView(subtitles,new LinearLayout.LayoutParams(0,-1,1));
             Button audio=control("AUDIO",v->chooseTrack(false));
             extras.addView(audio,new LinearLayout.LayoutParams(0,-1,1));
         }
-        Button aspect=control("ASPECT",v->cycleAspect());
-        extras.addView(aspect,new LinearLayout.LayoutParams(0,-1,1));
-        optionsButton=control("⚙  SETTINGS",v->showSettings());
+        aspectButton=control("▣  "+aspectLabel(),v->cycleAspect());
+        extras.addView(aspectButton,new LinearLayout.LayoutParams(0,-1,1));
+        optionsButton=control("⚙  OPTIONS",v->showSettings());
         extras.addView(optionsButton,new LinearLayout.LayoutParams(0,-1,1));
         setControlsVisible(false);
         activity.setContentView(root);
@@ -508,42 +529,47 @@ public final class PlaybackScreen {
     private void showStreamInfo(){
         long ahead=player==null?0:Math.max(0,
             player.getBufferedPosition()-player.getCurrentPosition());
-        String report="Channel: "+media.name+"\n"+
-            "Source format: "+(isHls?"HLS":"MPEG-TS / progressive")+"\n"+
-            "Buffer profile: "+bufferProfile+"\n"+
+        String report="Current programme: "+media.name+"\n"+
+            "Format: "+(isHls?"HLS":"MPEG-TS / progressive")+"\n"+
+            "Buffer setting: "+bufferProfile+"\n"+
             "Buffered ahead: "+(ahead/1000)+" seconds\n"+
             "Rebuffer events: "+rebufferCount+"\n"+
             "Automatic reconnects: "+recovery.attempts()+" / "+
                 PlaybackRecoveryPolicy.MAX_ATTEMPTS+"\n\n"+
-            "If this stream freezes, choose Reconnect. AuroraTV also retries "+
-            "automatically before suggesting another source or format.";
-        new AlertDialog.Builder(activity).setTitle("AuroraTV · Stream Health")
-          .setMessage(report).setPositiveButton("RECONNECT",(d,n)->retry())
-          .setNegativeButton("CLOSE",null).show();
+            "If a stream freezes, reconnect or try a different format if your provider supports it.";
+        TvSheet.message(activity,"Stream health",report,"Reconnect now",this::retry);
     }
 
     private void showSettings(){
-        String[] options={
-                "Buffering: "+labelBuffer(),
-                "Live stream format: "+labelFormat(),
-                "Restart this stream",
-                "Stream Health · current connection",
-                "Why does Live TV buffer?"
-        };
-        new AlertDialog.Builder(activity).setTitle("AuroraTV · Playback Settings")
-          .setItems(options,(dialog,index)->{
-              if(index==0){chooseBuffering();return;}
-              if(index==1){chooseFormat();return;}
-              if(index==2){restartPlayer();return;}
-              if(index==3){showStreamInfo();return;}
-              new AlertDialog.Builder(activity).setTitle("Playback buffering")
-                 .setMessage("Stable mode builds a bigger buffer to help smooth out uneven IPTV streams. "
-                   +"Original keeps your provider's stream type. Some Xtream providers offer both MPEG-TS and HLS. "
-                   +"Try HLS if live TS frequently stalls or repeats. Stream formats only switch when the provider "
-                   +"uses the standard Xtream /live/ endpoint. Playback errors and buffering counts are available "
-                   +"in Connect / Refresh → Playback diagnostics.")
-                 .setPositiveButton("OK",null).show();
-          }).show();
+        java.util.ArrayList<TvSheet.Entry> options=new java.util.ArrayList<>();
+        options.add(new TvSheet.Entry("PLAYBACK","▥","Buffering mode",
+            labelBuffer(),this::chooseBuffering));
+        if("live".equals(type))
+            options.add(new TvSheet.Entry("","◉","Stream format",
+                labelFormat(),this::chooseFormat));
+        else options.add(new TvSheet.Entry("","▷","Playback speed",
+                String.format(java.util.Locale.US,"%.2g×",speed),this::chooseSpeed));
+        options.add(new TvSheet.Entry("PICTURE & SOUND","▣","Aspect ratio",
+            aspectLabel(),this::cycleAspect));
+        options.add(new TvSheet.Entry("","♫","Audio tracks",
+            "Choose a compatible language or track",()->chooseTrack(false)));
+        options.add(new TvSheet.Entry("","CC","Subtitles",
+            "Turn captions on or off",()->chooseTrack(true)));
+        options.add(new TvSheet.Entry("CONNECTION","⟳","Reconnect stream",
+            "Restart the current stream without changing your library",
+            this::restartPlayer));
+        options.add(new TvSheet.Entry("","◷","Stream health",
+            "Buffer status, errors and retry history",this::showStreamInfo));
+        options.add(new TvSheet.Entry("HELP","ⓘ","Understanding buffering",
+            "How stream format and buffer sizes affect playback",()->
+             TvSheet.message(activity,"About buffering",
+                "Stable mode gives uneven IPTV connections a larger buffer. "+
+                "Balanced uses a moderate buffer. Low latency starts faster but may stall. "+
+                "Some Xtream providers support both MPEG-TS and HLS; switch only if "+
+                "the stream URL supports it.","Close",()->{})));
+        TvSheet.menu(activity,"Playback options",
+            "Adjust the picture, audio and stream behavior without leaving the programme.",
+            options.toArray(new TvSheet.Entry[0]));
     }
 
     private String labelBuffer(){
@@ -562,50 +588,47 @@ public final class PlaybackScreen {
     }
     private void chooseBuffering(){
         final String[] labels={
-                "Stable – fewer stalls; slightly slower start",
-                "Balanced – moderate buffer",
-                "Low latency – starts sooner, may buffer more"
+                "Stable · fewer interruptions",
+                "Balanced · moderate buffer",
+                "Low latency · quicker channel start"
         };
         final String[] values={"stable","balanced","fast"};
         int selection=0;
         String current=PlaybackTuning.profile(settings.getString("buffer","stable"));
         for(int i=0;i<values.length;i++)if(values[i].equals(current))selection=i;
-        new AlertDialog.Builder(activity).setTitle("Choose buffering profile")
-             .setSingleChoiceItems(labels,selection,(dialog,index)->{
-                 settings.edit().putString("buffer",values[index]).apply();
-                 dialog.dismiss();
-                 restartPlayer();
-             }).setNegativeButton("CANCEL",null).show();
+        TvSheet.choices(activity,"Buffering profile",
+            "The new setting takes effect when the stream reconnects.",
+            labels,selection,index->{
+                settings.edit().putString("buffer",values[index]).apply();
+                restartPlayer();
+            });
     }
     private void chooseFormat(){
         if(!"live".equals(type)){
-            Toast.makeText(activity,"Stream format switching is for Live TV.",
-                    Toast.LENGTH_SHORT).show();return;
+            toastShort("Format switching is available for Live TV.");return;
         }
-        String[] labels={"Provider original (recommended)",
-                "HLS (.m3u8) – try for choppy MPEG-TS",
-                "MPEG-TS (.ts) – continuous transport stream"};
+        String[] labels={
+            "Provider original · recommended",
+            "HLS (.m3u8) · segmented stream",
+            "MPEG-TS (.ts) · transport stream"
+        };
         String[] values={"original","hls","ts"};
-        int selection=0;
+        int selected=0;
         String current=PlaybackTuning.format(settings.getString("live_format","original"));
-        for(int i=0;i<values.length;i++)if(values[i].equals(current))selection=i;
-        new AlertDialog.Builder(activity).setTitle("Live streaming format")
-          .setMessage("Not every provider supports both formats. If HLS fails, switch back to Original.")
-          .setSingleChoiceItems(labels,selection,(dialog,index)->{
-              String selected=values[index];
-              String testUrl=PlaybackTuning.resolveUrl(media.url,type,selected);
-              boolean canSwitch=!PlaybackTuning.resolveUrl(media.url,type,"hls").equals(media.url)
-                      || !PlaybackTuning.resolveUrl(media.url,type,"ts").equals(media.url);
-              if(!selected.equals("original") && !canSwitch){
-                  Toast.makeText(activity,
-                    "This playlist uses a custom URL. Format cannot be switched safely.",
-                    Toast.LENGTH_LONG).show();
-              }else{
-                  settings.edit().putString("live_format",selected).apply();
-                  restartPlayer();
-              }
-              dialog.dismiss();
-          }).setNegativeButton("CANCEL",null).show();
+        for(int i=0;i<values.length;i++)if(values[i].equals(current))selected=i;
+        TvSheet.choices(activity,"Live streaming format",
+            "Not every IPTV provider offers both formats. If an alternate fails, return to Original.",
+            labels,selected,index->{
+                String selectedFormat=values[index];
+                boolean canSwitch=!PlaybackTuning.resolveUrl(media.url,type,"hls").equals(media.url)
+                     || !PlaybackTuning.resolveUrl(media.url,type,"ts").equals(media.url);
+                if(!selectedFormat.equals("original")&&!canSwitch){
+                    toastShort("This source URL cannot safely switch formats.");
+                }else{
+                    settings.edit().putString("live_format",selectedFormat).apply();
+                    restartPlayer();
+                }
+            });
     }
 
 
@@ -676,6 +699,11 @@ public final class PlaybackScreen {
         state.setText("Seek to "+time(target));
         scheduleHide();
     }
+    private String aspectLabel(){
+        if(resizeMode==AspectRatioFrameLayout.RESIZE_MODE_ZOOM)return "Zoom to fill";
+        if(resizeMode==AspectRatioFrameLayout.RESIZE_MODE_FILL)return "Stretch";
+        return "Original fit";
+    }
     private void cycleAspect(){
         if(resizeMode==AspectRatioFrameLayout.RESIZE_MODE_FIT)
             resizeMode=AspectRatioFrameLayout.RESIZE_MODE_ZOOM;
@@ -683,24 +711,26 @@ public final class PlaybackScreen {
             resizeMode=AspectRatioFrameLayout.RESIZE_MODE_FILL;
         else resizeMode=AspectRatioFrameLayout.RESIZE_MODE_FIT;
         view.setResizeMode(resizeMode);
-        state.setText(resizeMode==AspectRatioFrameLayout.RESIZE_MODE_FIT?"Aspect: original":
-            resizeMode==AspectRatioFrameLayout.RESIZE_MODE_ZOOM?"Aspect: zoom":"Aspect: stretch");
+        settings.edit().putInt("aspectMode",resizeMode).apply();
+        if(aspectButton!=null)aspectButton.setText("▣  "+aspectLabel());
+        state.setText("Picture: "+aspectLabel());
+        showControls();
     }
     private void chooseSpeed(){
         if("live".equals(type)){toastShort("Speed adjustment is for movies and episodes");return;}
         final float[] speeds={0.5f,0.75f,1f,1.25f,1.5f,2f,3f,4f};
-        final String[] labels={"0.5× Slow","0.75× Slow","1× Normal",
-            "1.25×","1.5×","2× Fast","3× Fast","4× Fast"};
+        final String[] labels={"0.5× · Slow","0.75× · Slow","1× · Normal",
+            "1.25×","1.5×","2× · Fast","3× · Fast","4× · Fast"};
         int selected=2;
         for(int i=0;i<speeds.length;i++)if(Math.abs(speed-speeds[i])<.01f)selected=i;
-        new AlertDialog.Builder(activity).setTitle("Playback speed")
-            .setSingleChoiceItems(labels,selected,(d,n)->{
-                speed=speeds[n];
-                if(speedButton!=null)speedButton.setText("SPEED  "+speeds[n]+"×");
+        TvSheet.choices(activity,"Playback speed","Choose a speed for this movie or episode.",
+            labels,selected,index->{
+                speed=speeds[index];
+                if(speedButton!=null)speedButton.setText(speeds[index]+"×  SPEED");
                 if(player!=null)player.setPlaybackSpeed(speed);
-                state.setText("Playback speed  "+labels[n]);
-                d.dismiss();scheduleHide();
-            }).setNegativeButton("CLOSE",null).show();
+                state.setText("Playback speed  "+labels[index]);
+                scheduleHide();
+            });
     }
     private void toastShort(String message){
         Toast.makeText(activity,message,Toast.LENGTH_SHORT).show();
@@ -725,9 +755,11 @@ public final class PlaybackScreen {
             }
         }
         if(options.size()==1 && !subtitles){toastShort("No alternate audio tracks available");return;}
-        new AlertDialog.Builder(activity)
-            .setTitle(subtitles?"Subtitles & captions":"Audio tracks")
-            .setItems(options.toArray(new String[0]),(d,n)->{
+        TvSheet.choices(activity,
+            subtitles?"Subtitles & captions":"Audio tracks",
+            "Only streams supplied by your IPTV provider can be selected.",
+            options.toArray(new String[0]),0,n->{
+                if(player==null)return;
                 androidx.media3.common.TrackSelectionParameters.Builder builder=
                     player.getTrackSelectionParameters().buildUpon();
                 builder.clearOverridesOfType(typeToShow);
@@ -735,7 +767,7 @@ public final class PlaybackScreen {
                 if(n>0)builder.addOverride(overrides.get(n));
                 player.setTrackSelectionParameters(builder.build());
                 scheduleHide();
-            }).setNegativeButton("CANCEL",null).show();
+            });
     }
 
     private void togglePlay(){
