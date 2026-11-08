@@ -9,8 +9,6 @@ Both links download standalone `.apk` files directly without a GitHub account or
 
 [Installation instructions](HOW_TO_GET_APK.md) · [Browse GitHub Releases](https://github.com/Bmay0000/AuroraTV/releases)
 
-No GitHub account, Actions workflow, or ZIP extraction is required to download this published APK. Open the link on a computer or your Fire TV browser and download the `.apk` file.
-
 **Fire TV Downloader code:** `6700987` (separately maintained; it may not point to the same APK as the direct download).
 
 AuroraTV is an independent, original dark-themed streaming interface for Android TV and Fire OS devices that support Android APKs. It is **not affiliated with Netflix, Amazon, or any IPTV provider**. AuroraTV includes no channels or subscriptions; users must supply their own legally accessible IPTV service.
