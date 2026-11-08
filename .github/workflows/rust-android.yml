@@ -121,5 +121,5 @@ jobs:
             gh release create rust-preview dist/AuroraTV-Rust-Preview.apk dist/SHA256SUMS.txt \
               --title "AuroraTV Rust Preview (experimental)" \
               --notes-file dist/RELEASE_NOTES.md --prerelease \
-              --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY"
+              --target main --repo "$GITHUB_REPOSITORY"
           fi
