@@ -57,6 +57,19 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon assembleDebug
 
+      - name: Verify Android package and APK signature
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
+          package_line=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep '^package:')
+          [[ "$package_line" == *"name='tv.aurora.player'"* ]] || {
+            echo "::error::Application ID changed; updates would not retain saved data."
+            exit 1
+          }
+          printf '%s\n' "$package_line"
+
       - name: Upload AuroraTV APK
         uses: actions/upload-artifact@v4
         with:
