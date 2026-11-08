@@ -20,6 +20,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust_app
+      - name: Install Slint Linux build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libfontconfig1-dev libfreetype6-dev libxkbcommon-dev \
+            libx11-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev \
+            libwayland-dev libgl1-mesa-dev
       - name: Unit tests (Rust IPTV engine)
         run: cargo test -p aurora-core
         working-directory: rust_app
