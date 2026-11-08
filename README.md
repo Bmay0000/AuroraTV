@@ -7,6 +7,8 @@
 
 Both links download standalone `.apk` files directly without a GitHub account or ZIP extraction. The Rust preview is an early test build; its interface and playback still use parts of the existing Android app and it has not been verified on Fire TV hardware.
 
+**Important upgrade compatibility:** The previously published **2.1 Flutter APK cannot be upgraded in place to the Rust Preview** because its Android package or signing identity differs. Do not uninstall 2.1 unless you have your provider login saved. **Users already on the Rust Preview can install new Rust Preview builds over their old version without logging in again.**
+
 [Installation instructions](HOW_TO_GET_APK.md) · [Browse GitHub Releases](https://github.com/Bmay0000/AuroraTV/releases) · [Update without losing your login](UPGRADE_GUIDE.md)
 
 **Already installed?** Download the updated APK and install it **over** the existing AuroraTV app. Do **not** uninstall or clear app data first. Android retains your saved login and library only when the APK uses the same package and signing certificate. The Rust-preview publishing workflow verifies this against the preceding Rust-preview release.
