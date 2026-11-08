@@ -65,6 +65,11 @@ jobs:
           mkdir -p build/core-tests
           javac -d build/core-tests app/src/main/java/tv/aurora/player/LibraryCore.java app/src/main/java/tv/aurora/player/RustBridge.java app/src/main/java/tv/aurora/player/XtreamReference.java tests/XtreamReferenceTest.java
           java -cp build/core-tests XtreamReferenceTest
+      - name: Validate responsive Movies and TV layout
+        run: |
+          mkdir -p build/layout-tests
+          javac -d build/layout-tests app/src/main/java/tv/aurora/player/TvLayout.java tests/TvLayoutTest.java
+          java -cp build/layout-tests TvLayoutTest
       - name: Build APK with bundled Rust libraries
         run: |
           chmod +x ./gradlew
