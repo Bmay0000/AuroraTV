@@ -23,7 +23,8 @@ public final class TvLayoutTest {
    verify(layout.discoveryHeroHeight()<layout.heightDp*.4,"Discovery hero must not take over screen");
    verify(layout.discoveryPosterHeight()>=150 && layout.discoveryPosterHeight()<=300,
       "Discovery poster needs a bounded, readable TV size");
-   verify(layout.discoveryRailHeight()>layout.discoveryPosterHeight(),"Rail needs metadata height");
+   verify(layout.discoveryRailHeight()>layout.discoveryLandscapeHeight(),
+      "Cinematic rail should give the widescreen artwork breathing room");
    verify(layout.navRow<=62,"Remote nav row bounded");
    verify(layout.guideWidth()>=Math.min(layout.contentWidth()*.7,1300),"Guide table missing columns");
   }

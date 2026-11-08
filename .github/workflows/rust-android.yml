@@ -194,6 +194,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Older builds must never overwrite a newer GitHub download.
+          HEAD_COMMIT="$(gh api "repos/${GITHUB_REPOSITORY}/branches/rust-rebuild-foundation" --jq '.commit.sha')"
+          if [ "$HEAD_COMMIT" != "$GITHUB_SHA" ]; then
+            echo "A newer commit exists. Skipping publication from this superseded build."
+            exit 0
+          fi
           cat > dist/RELEASE_NOTES.md <<EOF
           # AuroraTV Rust Preview — experimental APK
 
