@@ -146,6 +146,9 @@ jobs:
           new_cert="$(cert "$new")"
           new_code="$(version_code "$new")"
           test -n "$new_cert" && test -n "$new_code"
+          if test -s dist/LEGACY_21_COMPATIBILITY.md; then
+            cat dist/LEGACY_21_COMPATIBILITY.md >> dist/RELEASE_NOTES.md
+          fi
           if gh release view rust-preview --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             mkdir -p previous
             gh release download rust-preview --pattern 'AuroraTV-Rust-Preview.apk' \
@@ -176,8 +179,17 @@ jobs:
                 echo "Compatible signing and package with legacy 2.1 release."
                 echo "A direct in-place upgrade from version 2.1 is allowed by package identity." >> "$GITHUB_STEP_SUMMARY"
               else
-                echo "::warning::Published 2.1 APK has a different package or signature. Android cannot migrate its login automatically into this Rust preview."
-                echo "Legacy 2.1 APK cannot be upgraded in place due to package/signing mismatch." >> "$GITHUB_STEP_SUMMARY"
+                if [[ "$(package "$old")" != "$(package "$new")" ]]; then
+                  reason="different Android package ID"
+                else
+                  reason="different APK signing certificate"
+                fi
+                echo "::warning::Published 2.1 Flutter APK uses a $reason. Android cannot upgrade it to the Rust preview while retaining the saved login."
+                echo "Legacy 2.1 APK cannot be upgraded in place ($reason)." >> "$GITHUB_STEP_SUMMARY"
+                printf '%s\n' '' '### Important for users upgrading from the Flutter 2.1 release' '' \
+                  "**The previously published AuroraTV 2.1 APK is not in-place-upgrade compatible with this Rust preview ($reason).**" \
+                  'Do not uninstall 2.1 unless you have your original provider credentials saved elsewhere. You may need to sign into the Rust preview once; future Rust-preview upgrades will preserve that account.' \
+                  > dist/LEGACY_21_COMPATIBILITY.md
               fi
             fi
           fi
