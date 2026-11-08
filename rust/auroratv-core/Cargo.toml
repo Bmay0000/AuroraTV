@@ -1,0 +1,16 @@
+[package]
+name = "auroratv-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Rust domain, catalog, matching, EPG and cache engine for AuroraTV"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+quick-xml = "0.37"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+url = "2.5"
+percent-encoding = "2.3"
