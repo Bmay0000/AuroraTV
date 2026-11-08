@@ -21,7 +21,8 @@ public final class TvLayoutTest {
    verify(layout.posterCardHeight<layout.heightDp,"Poster tiles taller than screen");
    verify(layout.heroHeight<=170 && layout.heroHeight<=layout.heightDp*.3,"Compact hero reveals first shelf");
    verify(layout.discoveryHeroHeight()<layout.heightDp*.4,"Discovery hero must not take over screen");
-   verify(layout.discoveryPosterHeight()>layout.heightDp*.25,"Discovery movie poster must be readable");
+   verify(layout.discoveryPosterHeight()>=150 && layout.discoveryPosterHeight()<=300,
+      "Discovery poster needs a bounded, readable TV size");
    verify(layout.discoveryRailHeight()>layout.discoveryPosterHeight(),"Rail needs metadata height");
    verify(layout.navRow<=62,"Remote nav row bounded");
    verify(layout.guideWidth()>=Math.min(layout.contentWidth()*.7,1300),"Guide table missing columns");
