@@ -63,7 +63,7 @@ jobs:
       - name: Test existing Java core (with native fallback)
         run: |
           mkdir -p build/core-tests
-          javac -d build/core-tests app/src/main/java/tv/aurora/player/RustBridge.java app/src/main/java/tv/aurora/player/XtreamReference.java tests/XtreamReferenceTest.java
+          javac -d build/core-tests app/src/main/java/tv/aurora/player/LibraryCore.java app/src/main/java/tv/aurora/player/RustBridge.java app/src/main/java/tv/aurora/player/XtreamReference.java tests/XtreamReferenceTest.java
           java -cp build/core-tests XtreamReferenceTest
       - name: Build APK with bundled Rust libraries
         run: |
