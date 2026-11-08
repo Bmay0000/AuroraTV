@@ -26,8 +26,9 @@ For a local Android build, install Android SDK platform 35, NDK 27.2.12479018, A
 
     rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
     cargo install cargo-ndk --locked
+    export CARGO_NDK_PLATFORM=23
     cd rust
-    cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -p 23 -o ../app/src/main/jniLibs build --release -p auroratv-android
+    cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o ../app/src/main/jniLibs build --release --package auroratv-android
     cd ..
     ./gradlew assembleDebug
 
