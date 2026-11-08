@@ -249,6 +249,7 @@ public final class PlayerActivity extends Activity implements SurfaceHolder.Call
                 if(what==MediaPlayer.MEDIA_INFO_BUFFERING_END)message("Playing");
                 return false;
             });
+            changing=false;
             mp.prepareAsync();
             main.postDelayed(()->{
                 if(token==activeToken&&!prepared)fail("Stream connection timed out.");
