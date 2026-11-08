@@ -8,6 +8,12 @@ This is a direct `.apk` file. You do **not** need to sign in to GitHub, run a bu
 
 [Browse all published versions](https://github.com/Bmay0000/AuroraTV/releases).
 
+## Experimental Rust preview APK
+
+**[Download AuroraTV Rust Preview (.apk)](https://github.com/Bmay0000/AuroraTV/releases/download/rust-preview/AuroraTV-Rust-Preview.apk)**
+
+This link downloads the Rust-backed test APK directly from GitHub Releases, without a ZIP or GitHub sign-in. It is **experimental**; the existing Android Media3 player and interface remain, and successful CI packaging does not establish Fire TV playback compatibility.
+
 ## Fire TV — Downloader code
 
 **AuroraTV Downloader code: `6700987`**
