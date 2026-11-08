@@ -1464,7 +1464,9 @@ public class MainActivity extends Activity {
     if(android.os.Build.VERSION.SDK_INT>=31)cinemaBackground.setRenderEffect(null);
     if(item.artwork!=null&&!item.artwork.isEmpty()){
      cinemaBackground.setAlpha(.23f);
-     posters.bind(cinemaBackground,item.artwork);
+     // Decode at television resolution if the provider actually supplies it.
+     // The previous poster-only decode forcibly shrank even large sources.
+     posters.bindBackdrop(cinemaBackground,item.artwork);
     }else{
      cinemaBackground.setImageDrawable(null);cinemaBackground.setAlpha(0f);
     }
