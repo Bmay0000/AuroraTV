@@ -110,7 +110,7 @@ pub fn clean_title(name:&str)->String{
 #[cfg(test)]
 mod tests{
     use super::*;
-    #[test] fn 2026_movie_title_does_not_contaminate_stream(){
+    #[test] fn movie_2026_title_does_not_contaminate_stream(){
         assert_eq!(clean_title("Obsession (2026)"),"Obsession");
         assert_eq!(clean_title("The Simpsons (1989)"),"The Simpsons");
     }
